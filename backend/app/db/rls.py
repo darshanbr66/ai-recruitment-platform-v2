@@ -21,6 +21,8 @@ than every tenant's data.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,3 +116,27 @@ async def set_rls_bypass(session: AsyncSession, *, enabled: bool) -> None:
         text(f"SELECT set_config('{BYPASS_SETTING}', :value, true)"),
         {"value": "on" if enabled else "off"},
     )
+
+
+@asynccontextmanager
+async def rls_bypass(session: AsyncSession) -> AsyncIterator[None]:
+    """Scope a Postgres RLS bypass to a single block of code, then restore
+    the previous state.
+
+    Used ONLY for the narrow, well-precedented cases the RLS design already
+    anticipated: resolving *who a caller is* before a tenant is known (e.g.
+    looking up a user by id from a JWT subject, or by email/refresh-token
+    hash at login — none of which can be scoped to a tenant in advance), and
+    genuine platform-admin operations (e.g. creating an Organization, which
+    by definition cannot be scoped to a tenant that doesn't exist yet). Every
+    call site using this must be able to point at one of those two
+    justifications — it is not a general-purpose "skip RLS" escape hatch.
+
+    Restores bypass to OFF afterward (not to whatever it was before), which
+    is correct for every current call site — none of them are nested.
+    """
+    await set_rls_bypass(session, enabled=True)
+    try:
+        yield
+    finally:
+        await set_rls_bypass(session, enabled=False)

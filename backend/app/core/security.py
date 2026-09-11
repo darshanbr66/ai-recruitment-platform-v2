@@ -6,6 +6,8 @@ wires these primitives into actual register/login/refresh services and
 FastAPI dependencies.
 """
 
+import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -93,3 +95,23 @@ def decode_access_token(token: str, *, audience: TokenAudience) -> dict[str, Any
         )
     except jwt.PyJWTError as exc:
         raise InvalidTokenError(str(exc)) from exc
+
+
+def generate_opaque_token() -> str:
+    """High-entropy bearer token for refresh tokens (and, from Phase 7,
+    assessment invitations) — random, not a JWT, shown to the client once.
+    """
+    return secrets.token_urlsafe(48)
+
+
+def hash_opaque_token(token: str) -> str:
+    """Deterministic digest for opaque bearer tokens, so a presented token
+    can be looked up by equality (`WHERE token_hash = :hash`) without ever
+    storing it in reversible or comparable-to-many form.
+
+    Not for passwords: Argon2id (`hash_password`/`verify_password`) is
+    salted and non-deterministic by design, which is exactly wrong for a
+    "find the row this token belongs to" query — but exactly right for
+    "verify this one already-identified user's password."
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
