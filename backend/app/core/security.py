@@ -77,6 +77,9 @@ def create_access_token(
         "org_id": str(organization_id) if organization_id else None,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
+        # Distinguishes tokens issued within the same second (e.g. an
+        # immediate login->refresh) so two issuances are never byte-identical.
+        "jti": str(uuid.uuid4()),
     }
     if extra_claims:
         claims.update(extra_claims)

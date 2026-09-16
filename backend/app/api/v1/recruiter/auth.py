@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
+from app.db.rls import rls_bypass
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import LoginRequest, TokenResponse
@@ -96,7 +97,14 @@ async def me(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    roles = await user_service.get_user_role_names(db, current_user.id)
+    # A SUPER_ADMIN's own user_roles row is only reachable through its own
+    # user row, which normal (non-bypass) tenant-scoped RLS on `users`
+    # deliberately hides — see app/api/deps.py::get_current_user, which
+    # resolves the same principal's identity under an identical bypass for
+    # the same reason ("who am I" is a privileged self-lookup, not a
+    # tenant-scoped query, per app/db/rls.py::rls_bypass).
+    async with rls_bypass(db):
+        roles = await user_service.get_user_role_names(db, current_user.id)
     return UserResponse(
         id=current_user.id,
         organization_id=current_user.organization_id,

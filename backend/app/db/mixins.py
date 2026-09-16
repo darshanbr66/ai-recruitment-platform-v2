@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 from sqlalchemy.sql import func
 
 
@@ -32,6 +33,16 @@ class TimestampMixin:
         onupdate=func.now(),
         nullable=False,
     )
+
+    # `updated_at` is refreshed by the database (`onupdate=func.now()`), not
+    # computed in Python — reading it back after an UPDATE would otherwise
+    # require an implicit SELECT, which async SQLAlchemy cannot do lazily
+    # (raises MissingGreenlet the moment a response schema touches the
+    # attribute). `eager_defaults` appends a RETURNING clause to the UPDATE
+    # itself instead, so the refreshed value is already loaded.
+    @declared_attr.directive
+    def __mapper_args__(cls) -> dict[str, Any]:
+        return {"eager_defaults": True}
 
 
 class TenantScopedMixin:

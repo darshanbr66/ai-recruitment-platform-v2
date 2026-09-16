@@ -132,7 +132,13 @@ async def rotate_refresh_token(db: AsyncSession, raw_token: str) -> tuple[User, 
                 )
                 .values(revoked_at=datetime.now(UTC))
             )
-            await db.flush()
+            # Commit the breach-containment revocation immediately rather
+            # than letting it ride on the request's normal end-of-request
+            # commit (see app/db/session.py::get_db): this handler raises
+            # right after, and get_db rolls back the whole transaction on
+            # any exception — which would silently undo the very
+            # revocation this branch exists to guarantee.
+            await db.commit()
             raise UnauthorizedError(_INVALID_REFRESH_TOKEN)
 
         user = await db.get(User, token_row.user_id)

@@ -4,6 +4,10 @@
  * through this (or a feature-specific service built on top of it), never
  * `fetch` directly, so audience base paths and error handling stay
  * consistent (see docs/api.md).
+ *
+ * `credentials: "include"` on every call so the recruiter refresh-token
+ * cookie (httpOnly, set by the backend) is sent/received automatically —
+ * see docs/architecture.md § 4.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -28,13 +32,25 @@ interface ErrorEnvelope {
   };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+interface RequestOptions {
+  accessToken?: string;
+  body?: unknown;
+}
+
+async function request<T>(path: string, method: string, options?: RequestOptions): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (options?.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (options?.accessToken) {
+    headers.Authorization = `Bearer ${options.accessToken}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    method,
+    credentials: "include",
+    headers,
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
   if (!response.ok) {
@@ -50,9 +66,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, response.status, code);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 
 export const apiClient = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, accessToken?: string) => request<T>(path, "GET", { accessToken }),
+  post: <T>(path: string, body?: unknown, accessToken?: string) =>
+    request<T>(path, "POST", { body, accessToken }),
+  patch: <T>(path: string, body?: unknown, accessToken?: string) =>
+    request<T>(path, "PATCH", { body, accessToken }),
 };
