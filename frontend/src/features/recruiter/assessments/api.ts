@@ -1,0 +1,37 @@
+import { apiClient } from "../../../lib/apiClient";
+import type {
+  AssessmentCreateRequest,
+  AssessmentInvitationResponse,
+  AssessmentResponse,
+  AssessmentSummary,
+} from "../../../types/assessment";
+
+export function listAssessments(accessToken: string) {
+  return apiClient.get<AssessmentSummary[]>("/api/v1/recruiter/assessments", accessToken);
+}
+
+export function getAssessment(assessmentId: string, accessToken: string) {
+  return apiClient.get<AssessmentResponse>(`/api/v1/recruiter/assessments/${assessmentId}`, accessToken);
+}
+
+export function createAssessment(payload: AssessmentCreateRequest, accessToken: string) {
+  return apiClient.post<AssessmentResponse>("/api/v1/recruiter/assessments", payload, accessToken);
+}
+
+export function inviteCandidate(
+  payload: { assessment_id: string; application_id: string },
+  accessToken: string,
+) {
+  return apiClient.post<AssessmentInvitationResponse>(
+    "/api/v1/recruiter/assessments/invite",
+    payload,
+    accessToken,
+  );
+}
+
+export function getApplicationAssessment(applicationId: string, accessToken: string) {
+  return apiClient.get<AssessmentInvitationResponse | null>(
+    `/api/v1/recruiter/applications/${applicationId}/assessment`,
+    accessToken,
+  );
+}

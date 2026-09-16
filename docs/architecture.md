@@ -1,8 +1,15 @@
 # Architecture
 
-Status: **Phase 0 — approved design, not yet implemented.** This document
-describes the target architecture. Nothing described here exists in code yet
-unless a later revision of this document says otherwise.
+Status: **Largely implemented as a local development demo**, not the
+original phase-by-phase order below. This document describes the target
+architecture; the decisions in § 4 and the tech stack in § 3 (mirrored in
+`CLAUDE.md`) are exactly what's built. The domain/phase breakdown further
+down is the *original* plan — actual delivery order diverged (AI
+screening, assessments, campus drives, and reports were built together
+rather than strictly sequenced, and each was intentionally simplified from
+its full spec; see the "Implementation status" note at the top of
+`docs/ai-screening.md`, `docs/assessment.md`, and `docs/campus-hiring.md`
+for specifics). No candidate portal (self-service login) exists yet.
 
 ## 1. System shape
 

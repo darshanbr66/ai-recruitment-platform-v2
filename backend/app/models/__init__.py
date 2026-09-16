@@ -8,10 +8,24 @@ from app.models.application import (
     ApplicationStatus,
     ApplicationStatusHistory,
 )
+from app.models.assessment import (
+    Assessment,
+    AssessmentInvitation,
+    AssessmentResult,
+    CandidateAnswer,
+    InvitationStatus,
+    Question,
+    QuestionOption,
+    QuestionType,
+)
+from app.models.campus_drive import CampusDrive, CampusDriveStatus
 from app.models.candidate import Candidate, CandidateSource
 from app.models.job import Job, JobStatus
+from app.models.note import Note
 from app.models.organization import Organization
 from app.models.rbac import Permission, Role, RolePermission, UserRole
+from app.models.resume import Resume
+from app.models.screening import ScreeningRun, ScreeningStatus
 from app.models.user import User, UserRefreshToken
 
 __all__ = [
@@ -30,4 +44,18 @@ __all__ = [
     "ApplicationSource",
     "ApplicationStatus",
     "ApplicationStatusHistory",
+    "Resume",
+    "ScreeningRun",
+    "ScreeningStatus",
+    "Assessment",
+    "Question",
+    "QuestionType",
+    "QuestionOption",
+    "AssessmentInvitation",
+    "InvitationStatus",
+    "CandidateAnswer",
+    "AssessmentResult",
+    "CampusDrive",
+    "CampusDriveStatus",
+    "Note",
 ]

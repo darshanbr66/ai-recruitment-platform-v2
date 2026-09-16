@@ -1,7 +1,14 @@
 # Security Model
 
-Status: Phase 0 design. Implemented incrementally starting Phase 2; this
-document is the checklist Phase 12 hardening is measured against.
+Status: Implemented — Argon2id password hashing, JWT access tokens, hashed
+opaque refresh tokens with rotation/reuse detection, two-layer tenant
+isolation (application-scoped queries + Postgres RLS, `app/db/rls.py`),
+and hashed opaque tokens for assessment invitations (same pattern as
+refresh tokens) all exist in code today, not just as a plan. This document
+was the checklist that build was measured against; it has not been audited
+end-to-end for a production/external deployment (see CLAUDE.md's "local
+development demo" framing) — treat it as accurate for what's implemented,
+not as a completed hardening sign-off.
 
 ## 1. Authentication
 

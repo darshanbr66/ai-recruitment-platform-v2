@@ -11,7 +11,11 @@ from app.models.candidate import Candidate
 from app.models.job import Job
 from app.workflows import application_workflow
 
-_WITH_CANDIDATE_AND_JOB = (joinedload(Application.candidate), joinedload(Application.job))
+_WITH_CANDIDATE_AND_JOB = (
+    joinedload(Application.candidate),
+    joinedload(Application.job),
+    joinedload(Application.resume),
+)
 
 
 async def create_application(
@@ -21,7 +25,8 @@ async def create_application(
     candidate_id: uuid.UUID,
     job_id: uuid.UUID,
     source: ApplicationSource,
-    actor_user_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+    campus_drive_id: uuid.UUID | None = None,
 ) -> Application:
     # RLS already scopes db.get() to the caller's own tenant (see
     # docs/security.md § 2) — a cross-tenant id is indistinguishable from a
@@ -37,6 +42,7 @@ async def create_application(
         job_id=job_id,
         status=ApplicationStatus.APPLIED,
         source=source,
+        campus_drive_id=campus_drive_id,
     )
     db.add(application)
     try:
@@ -58,6 +64,7 @@ async def list_applications(
     job_id: uuid.UUID | None = None,
     candidate_id: uuid.UUID | None = None,
     status: ApplicationStatus | None = None,
+    campus_drive_id: uuid.UUID | None = None,
 ) -> list[Application]:
     query = (
         select(Application)
@@ -71,6 +78,8 @@ async def list_applications(
         query = query.where(Application.candidate_id == candidate_id)
     if status is not None:
         query = query.where(Application.status == status)
+    if campus_drive_id is not None:
+        query = query.where(Application.campus_drive_id == campus_drive_id)
 
     result = await db.execute(query)
     return list(result.unique().scalars().all())
@@ -90,7 +99,7 @@ async def change_status(
     application: Application,
     *,
     to_status: ApplicationStatus,
-    actor_user_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
     reason: str | None = None,
 ) -> Application:
     return await application_workflow.transition(

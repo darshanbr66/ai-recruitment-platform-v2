@@ -1,6 +1,14 @@
 # API Architecture
 
-Status: Phase 0 design. No endpoints exist yet.
+Status: Implemented for the domains that exist (auth, admin/organizations,
+recruiter jobs/candidates/applications/reports/screening/assessments/
+campus-drives/notes, public career site + apply + assessment-taking). No
+`/api/v1/candidate/*` audience exists yet — there is no candidate portal
+login (see `docs/recruitment-workflow.md`'s implementation-status note).
+The versioning/audience-partitioning convention below is exactly what's
+implemented; the endpoint list further down predates several of the
+domains actually built and was not kept in lockstep with every new route —
+`GET /api/v1/*/openapi.json` (or `/docs`) is the authoritative live list.
 
 ## 1. Versioning & audience partitioning
 

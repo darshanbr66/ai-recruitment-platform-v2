@@ -1,8 +1,14 @@
 # Database Design
 
-Status: Phase 0 design. No migrations exist yet. This document is the
-reference Phase 2+ Alembic migrations must implement; keep it in sync as
-tables are actually created.
+Status: Implemented — 9 migrations exist (`backend/alembic/versions/`)
+covering identity/tenancy, jobs/candidates/applications, resumes, AI
+screening, assessments, campus drives, and notes. This document was the
+reference those migrations implemented against; where an actual table
+deviates from what's described here (mostly: assessments/campus
+hiring/screening built simpler than originally specced), the corresponding
+domain doc (`docs/assessment.md`, `docs/campus-hiring.md`,
+`docs/ai-screening.md`) has an "Implementation status" note explaining the
+gap — this document was not rewritten table-by-table to match.
 
 ## 1. Primary key strategy (decision record)
 

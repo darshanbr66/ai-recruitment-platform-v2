@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
 from app.core.security import hash_password
+from app.db.rls import rls_bypass
 from app.models.organization import Organization
 from app.models.rbac import Role, UserRole
 from app.models.user import User
@@ -57,3 +58,16 @@ async def bootstrap_organization(
 async def list_organizations(db: AsyncSession) -> list[Organization]:
     result = await db.execute(select(Organization).order_by(Organization.created_at))
     return list(result.scalars().all())
+
+
+async def get_organization_by_slug(db: AsyncSession, slug: str) -> Organization | None:
+    """`organizations` is itself RLS-protected, keyed on its own `id` rather
+    than an `organization_id` column (see the identity/tenancy foundation
+    migration) — so resolving a tenant from a slug is exactly the
+    "identity not known yet" bootstrap case `rls_bypass` documents (see
+    app/db/rls.py). Used by the anonymous public career site before any
+    Candidate/Job/Application query, which get properly tenant-scoped via
+    `set_tenant_context()` immediately afterward — this bypass only covers
+    the one lookup needed to find the org id in the first place."""
+    async with rls_bypass(db):
+        return await db.scalar(select(Organization).where(Organization.slug == slug))

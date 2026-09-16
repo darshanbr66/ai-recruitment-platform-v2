@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
-import { APPLICATION_TRANSITIONS, type ApplicationStatus } from "../../../types/recruitment";
+import { APPLICATION_STATUSES, type ApplicationStatus } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
-import { changeApplicationStatus, createApplication, listApplications } from "./api";
+import { createApplication, listApplications } from "./api";
 
 const APPLICATIONS_QUERY_KEY = ["recruiter", "applications"];
 
@@ -19,6 +20,7 @@ const TERMINAL_BADGE: Partial<Record<ApplicationStatus, string>> = {
 export function ApplicationsPage() {
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const token = accessToken as string;
 
   const applicationsQuery = useQuery({
@@ -39,6 +41,9 @@ export function ApplicationsPage() {
     enabled: accessToken !== null,
   });
 
+  const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("");
+  const [jobFilter, setJobFilter] = useState("");
+
   const [candidateId, setCandidateId] = useState("");
   const [jobId, setJobId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -56,12 +61,6 @@ export function ApplicationsPage() {
     },
   });
 
-  const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: ApplicationStatus }) =>
-      changeApplicationStatus(id, status, token),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: APPLICATIONS_QUERY_KEY }),
-  });
-
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     createApplicationMutation.mutate();
@@ -71,12 +70,23 @@ export function ApplicationsPage() {
     applicationsQuery.error instanceof ApiError && applicationsQuery.error.status === 403
   );
 
+  const filteredApplications = useMemo(() => {
+    if (!applicationsQuery.data) return [];
+    return applicationsQuery.data.filter((application) => {
+      if (statusFilter && application.status !== statusFilter) return false;
+      if (jobFilter && application.job_id !== jobFilter) return false;
+      return true;
+    });
+  }, [applicationsQuery.data, statusFilter, jobFilter]);
+
   return (
     <div className="stack-lg">
-      <section>
-        <h1>Applications</h1>
-        <p className="muted">Every candidate's progress through your hiring pipeline.</p>
-      </section>
+      <div className="page-header">
+        <div>
+          <h1>Applications</h1>
+          <p className="muted">Every candidate's progress through your hiring pipeline.</p>
+        </div>
+      </div>
 
       {applicationsQuery.isPending && <p role="status">Loading applications…</p>}
 
@@ -92,25 +102,62 @@ export function ApplicationsPage() {
       )}
 
       {applicationsQuery.isSuccess && (
-        <section>
+        <section className="stack-lg" style={{ gap: "1rem" }}>
+          {applicationsQuery.data.length > 0 && (
+            <div className="toolbar">
+              <select
+                className="filter-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as ApplicationStatus | "")}
+              >
+                <option value="">All statuses</option>
+                {APPLICATION_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="filter-select"
+                value={jobFilter}
+                onChange={(e) => setJobFilter(e.target.value)}
+              >
+                <option value="">All jobs</option>
+                {jobsQuery.data?.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {applicationsQuery.data.length === 0 ? (
             <p className="muted">No applications yet — link a candidate to a job below.</p>
+          ) : filteredApplications.length === 0 ? (
+            <div className="empty-state">
+              <p className="empty-state-title">No applications match these filters</p>
+              <p>Try clearing the status or job filter.</p>
+            </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Job</th>
-                  <th>Status</th>
-                  <th>Applied</th>
-                  <th>Move to</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applicationsQuery.data.map((application) => {
-                  const nextStatuses = APPLICATION_TRANSITIONS[application.status];
-                  return (
-                    <tr key={application.id}>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Job</th>
+                    <th>Status</th>
+                    <th>Applied</th>
+                    <th>Resume</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredApplications.map((application) => (
+                    <tr
+                      key={application.id}
+                      className="clickable-row"
+                      onClick={() => navigate(`/recruiter/applications/${application.id}`)}
+                    >
                       <td>{application.candidate_full_name}</td>
                       <td>{application.job_title}</td>
                       <td>
@@ -121,34 +168,12 @@ export function ApplicationsPage() {
                         </span>
                       </td>
                       <td>{new Date(application.applied_at).toLocaleDateString()}</td>
-                      <td>
-                        {nextStatuses.length === 0 ? (
-                          <span className="muted">Final</span>
-                        ) : (
-                          <select
-                            value=""
-                            disabled={statusMutation.isPending}
-                            onChange={(e) => {
-                              const next = e.target.value as ApplicationStatus;
-                              if (next) {
-                                statusMutation.mutate({ id: application.id, status: next });
-                              }
-                            }}
-                          >
-                            <option value="">Change status…</option>
-                            {nextStatuses.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </td>
+                      <td>{application.resume_id ? "Yes" : "—"}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}
@@ -156,6 +181,10 @@ export function ApplicationsPage() {
       {canManageApplications && (
         <section className="card">
           <h2>Link a candidate to a job</h2>
+          <p className="muted">
+            Most applications arrive through your career site automatically — use this to add one
+            by hand.
+          </p>
           <form onSubmit={handleSubmit} noValidate>
             <label className="field">
               <span>Candidate</span>

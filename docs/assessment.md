@@ -1,7 +1,19 @@
 # Assessment Platform
 
-Status: Phase 0 design. Implemented in Phase 7, reused (not re-implemented)
-by campus hiring in Phase 8.
+**Implementation status:** MCQ assessments are implemented end-to-end —
+recruiter builds an assessment with single/multi-select questions
+(`app/models/assessment.py`), invites a candidate from the application
+detail page (only legal while the application is in `SCREENING`, per
+`docs/recruitment-workflow.md`), and the candidate answers via an opaque
+token link with no login (`app/api/v1/public/assessments.py`), auto-scored
+on submit. Real simplifications from the design below, noted in
+`app/models/assessment.py`'s docstring: no `AssessmentEvaluation` as a
+separate row (the scoring process and its result are one `AssessmentResult`
+row), no `DELIVERED`/`OPENED` webhook states, no `max_attempts` bound (one
+attempt per invitation), and email delivery is best-effort — if
+`RESEND_API_KEY` isn't set, the invitation is still created and its link is
+returned directly in the recruiter's API response so it can be copied
+manually (see `app/api/v1/recruiter/assessments.py`).
 
 ## 1. Design goal
 

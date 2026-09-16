@@ -66,7 +66,7 @@ async def transition(
     application: Application,
     *,
     to_status: ApplicationStatus,
-    actor_user_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
     reason: str | None = None,
 ) -> Application:
     from_status = application.status
@@ -90,7 +90,7 @@ async def transition(
 
 
 async def record_initial_status(
-    db: AsyncSession, application: Application, *, actor_user_id: uuid.UUID
+    db: AsyncSession, application: Application, *, actor_user_id: uuid.UUID | None
 ) -> None:
     """Called once, right after an Application row is inserted. This is not
     a `transition()` — there is no prior state to validate against, matching

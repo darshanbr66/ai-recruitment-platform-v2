@@ -73,10 +73,56 @@ async function request<T>(path: string, method: string, options?: RequestOptions
   return response.json() as Promise<T>;
 }
 
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let code = "unknown_error";
+    let message = "Request failed.";
+    try {
+      const body = (await response.json()) as ErrorEnvelope;
+      code = body.error?.code ?? code;
+      message = body.error?.message ?? message;
+    } catch {
+      // Non-JSON error body — fall back to the defaults above.
+    }
+    throw new ApiError(message, response.status, code);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function requestBlob(
+  path: string,
+  accessToken: string,
+): Promise<{ blob: Blob; filename: string | null }> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new ApiError("Could not download the file.", response.status, "download_failed");
+  }
+
+  const disposition = response.headers.get("content-disposition");
+  const match = disposition ? /filename="([^"]+)"/.exec(disposition) : null;
+  return { blob: await response.blob(), filename: match?.[1] ?? null };
+}
+
 export const apiClient = {
   get: <T>(path: string, accessToken?: string) => request<T>(path, "GET", { accessToken }),
   post: <T>(path: string, body?: unknown, accessToken?: string) =>
     request<T>(path, "POST", { body, accessToken }),
   patch: <T>(path: string, body?: unknown, accessToken?: string) =>
     request<T>(path, "PATCH", { body, accessToken }),
+  /** For multipart/form-data submissions (e.g. a resume upload) — the
+   * browser sets the Content-Type boundary itself, so this deliberately
+   * skips the JSON headers/serialization `request()` always applies. */
+  postForm: <T>(path: string, formData: FormData) => requestForm<T>(path, formData),
+  getBlob: (path: string, accessToken: string) => requestBlob(path, accessToken),
 };

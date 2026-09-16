@@ -1,22 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { listUsers } from "../../auth/api";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
 import { listApplications } from "../applications/api";
 
-const UPCOMING_MODULES = [
-  { title: "AI Screening", phase: "Phase 5–6" },
-  { title: "Assessments", phase: "Phase 7" },
-  { title: "Campus Drives", phase: "Phase 8" },
-  { title: "Reports", phase: "Phase 10" },
+const QUICK_LINKS = [
+  { to: "/recruiter/jobs", title: "Post a job", description: "Create and publish a new requisition." },
+  { to: "/recruiter/applications", title: "Review applications", description: "Move candidates through your pipeline." },
+  { to: "/recruiter/assessments", title: "Assessments", description: "Send skills tests to candidates." },
+  { to: "/recruiter/campus-drives", title: "Campus Drives", description: "Run a mass-hiring event for a college." },
 ];
 
 /**
- * Platform Overview. Every number here is computed from real data — the
+ * Recruiter dashboard. Every number here is computed from real data — the
  * team-member count is a live query — rather than hardcoded
- * (CLAUDE.md § 2: "Reports != hardcoded numbers"). Modules not yet built
- * are shown as labeled placeholders, not populated with fake data.
+ * (CLAUDE.md § 2: "Reports != hardcoded numbers").
+ *
+ * Deliberately shows no tenancy/architecture details (organization id,
+ * phase numbers, etc.) — this is a normal recruiter's home screen, not a
+ * developer view (CLAUDE.md § 4/§ 21). Platform-level detail belongs on
+ * the SUPER_ADMIN-only /admin surface instead.
  */
 export function OverviewPage() {
   const { user, accessToken } = useAuth();
@@ -46,9 +51,7 @@ export function OverviewPage() {
     <div className="stack-lg">
       <section>
         <h1>Welcome back, {user?.full_name.split(" ")[0]}</h1>
-        <p className="muted">
-          Organization ID <code>{user?.organization_id}</code>
-        </p>
+        <p className="muted">Here's what's happening with your hiring pipeline.</p>
       </section>
 
       <section className="card-grid">
@@ -87,17 +90,13 @@ export function OverviewPage() {
       </section>
 
       <section>
-        <h2>Recruitment lifecycle</h2>
-        <p className="muted">
-          Identity/tenancy (Phase 2) and Jobs/Candidates/Applications (Phase 3) are live. The rest
-          of the hiring workflow ships in the phases below.
-        </p>
+        <h2>Quick actions</h2>
         <div className="card-grid">
-          {UPCOMING_MODULES.map((module) => (
-            <div key={module.title} className="module-card module-card-upcoming">
-              <span className="module-title">{module.title}</span>
-              <span className="module-phase">{module.phase}</span>
-            </div>
+          {QUICK_LINKS.map((link) => (
+            <Link key={link.to} to={link.to} className="module-card" style={{ textDecoration: "none", color: "inherit" }}>
+              <span className="module-title">{link.title}</span>
+              <span className="module-phase">{link.description}</span>
+            </Link>
           ))}
         </div>
       </section>

@@ -1,7 +1,16 @@
 # Campus / Mass Hiring
 
-Status: Phase 0 design. Implemented in Phase 8, reusing the Application and
-Assessment domains built in earlier phases.
+**Implementation status:** The core model is implemented as designed —
+`CampusDrive` (`app/models/campus_drive.py`) composes an existing `Job`,
+and participation is exactly `Application.campus_drive_id` with no separate
+membership table, per § 2 below. A public applicant to a job with an
+`ACTIVE` drive is auto-associated (`app/services/public_application_service.py`).
+Not implemented: `eligibility_criteria` (jsonb filtering), `candidate_limit`
+enforcement, and bulk/CSV recruiter import — candidates currently enter a
+drive only via the public portal or the existing one-at-a-time
+candidate/application creation endpoints. Campus reporting (§ 5) is real:
+`GET /api/v1/recruiter/reports/overview` includes a per-drive application
+breakdown, computed from live data.
 
 ## 1. Model
 

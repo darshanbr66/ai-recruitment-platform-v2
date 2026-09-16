@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { useAuth } from "../../auth/AuthContext";
@@ -10,6 +11,7 @@ const CANDIDATES_QUERY_KEY = ["recruiter", "candidates"];
 export function CandidatesPage() {
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const candidatesQuery = useQuery({
     queryKey: CANDIDATES_QUERY_KEY,
@@ -17,6 +19,7 @@ export function CandidatesPage() {
     enabled: accessToken !== null,
   });
 
+  const [search, setSearch] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -62,11 +65,24 @@ export function CandidatesPage() {
     candidatesQuery.error instanceof ApiError && candidatesQuery.error.status === 403
   );
 
+  const filteredCandidates = useMemo(() => {
+    if (!candidatesQuery.data) return [];
+    const term = search.trim().toLowerCase();
+    if (!term) return candidatesQuery.data;
+    return candidatesQuery.data.filter(
+      (candidate) =>
+        candidate.full_name.toLowerCase().includes(term) ||
+        candidate.email.toLowerCase().includes(term) ||
+        (candidate.current_title ?? "").toLowerCase().includes(term) ||
+        (candidate.location ?? "").toLowerCase().includes(term),
+    );
+  }, [candidatesQuery.data, search]);
+
   return (
     <div className="stack-lg">
       <section>
         <h1>Candidates</h1>
-        <p className="muted">People who have been added into your pipeline.</p>
+        <p className="muted">Everyone in your talent pipeline.</p>
       </section>
 
       {candidatesQuery.isPending && <p role="status">Loading candidates…</p>}
@@ -83,38 +99,57 @@ export function CandidatesPage() {
       )}
 
       {candidatesQuery.isSuccess && (
-        <section>
+        <section className="stack-lg" style={{ gap: "1rem" }}>
           {candidatesQuery.data.length === 0 ? (
-            <p className="muted">No candidates yet — add the first one below.</p>
+            <div className="empty-state">
+              <p className="empty-state-title">No candidates yet</p>
+              <p>They'll show up here automatically once your career site starts receiving applications.</p>
+            </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Current title</th>
-                  <th>Location</th>
-                  <th>Experience</th>
-                  <th>Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidatesQuery.data.map((candidate) => (
-                  <tr key={candidate.id}>
-                    <td>{candidate.full_name}</td>
-                    <td>{candidate.email}</td>
-                    <td>{candidate.current_title ?? "—"}</td>
-                    <td>{candidate.location ?? "—"}</td>
-                    <td>
-                      {candidate.years_experience !== null
-                        ? `${candidate.years_experience} yrs`
-                        : "—"}
-                    </td>
-                    <td>{candidate.source}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <div className="toolbar">
+                <input
+                  className="search-input"
+                  placeholder="Search by name, email, title, or location…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Current title</th>
+                      <th>Location</th>
+                      <th>Experience</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCandidates.map((candidate) => (
+                      <tr
+                        key={candidate.id}
+                        className="clickable-row"
+                        onClick={() => navigate(`/recruiter/candidates/${candidate.id}`)}
+                      >
+                        <td>{candidate.full_name}</td>
+                        <td>{candidate.email}</td>
+                        <td>{candidate.current_title ?? "—"}</td>
+                        <td>{candidate.location ?? "—"}</td>
+                        <td>
+                          {candidate.years_experience !== null
+                            ? `${candidate.years_experience} yrs`
+                            : "—"}
+                        </td>
+                        <td>{candidate.source}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </section>
       )}

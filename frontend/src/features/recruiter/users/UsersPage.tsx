@@ -56,8 +56,8 @@ export function UsersPage() {
   return (
     <div className="stack-lg">
       <section>
-        <h1>Users</h1>
-        <p className="muted">Staff accounts within your organization.</p>
+        <h1>Team</h1>
+        <p className="muted">Recruiters and admins who work in your organization.</p>
       </section>
 
       {usersQuery.isPending && <p role="status">Loading team members…</p>}
@@ -77,34 +77,39 @@ export function UsersPage() {
       {usersQuery.isSuccess && (
         <section>
           {usersQuery.data.length === 0 ? (
-            <p className="muted">No team members yet.</p>
+            <div className="empty-state">
+              <p className="empty-state-title">No team members yet</p>
+              <p>Add your first teammate below.</p>
+            </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Roles</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usersQuery.data.map((teamUser) => (
-                  <tr key={teamUser.id}>
-                    <td>{teamUser.full_name}</td>
-                    <td>{teamUser.email}</td>
-                    <td>{teamUser.roles.join(", ") || "—"}</td>
-                    <td>
-                      <span
-                        className={`badge ${teamUser.is_active ? "badge-active" : "badge-inactive"}`}
-                      >
-                        {teamUser.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Roles</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {usersQuery.data.map((teamUser) => (
+                    <tr key={teamUser.id}>
+                      <td>{teamUser.full_name}</td>
+                      <td>{teamUser.email}</td>
+                      <td>{teamUser.roles.join(", ") || "—"}</td>
+                      <td>
+                        <span
+                          className={`badge ${teamUser.is_active ? "badge-active" : "badge-inactive"}`}
+                        >
+                          {teamUser.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}

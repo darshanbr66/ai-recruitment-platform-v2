@@ -7,21 +7,29 @@ docs/recruitment-workflow.md."""
 import uuid
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
+from app.integrations.storage import LocalResumeStorage, ResumeStorage, StorageError
 from app.models.application import Application, ApplicationStatus
+from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.application import (
     ApplicationCreateRequest,
     ApplicationResponse,
     ApplicationStatusChangeRequest,
 )
-from app.services import application_service
+from app.schemas.assessment import AssessmentInvitationResponse, AssessmentResultResponse
+from app.services import application_service, assessment_service, notification_service
 
 router = APIRouter(prefix="/applications", tags=["recruiter-applications"])
+
+
+def _get_resume_storage() -> ResumeStorage:
+    return LocalResumeStorage()
 
 
 def _to_response(application: Application) -> ApplicationResponse:
@@ -32,11 +40,14 @@ def _to_response(application: Application) -> ApplicationResponse:
         candidate_full_name=application.candidate.full_name,
         job_id=application.job_id,
         job_title=application.job.title,
+        campus_drive_id=application.campus_drive_id,
         status=application.status,
         source=application.source,
         applied_at=application.applied_at,
         created_at=application.created_at,
         updated_at=application.updated_at,
+        resume_id=application.resume.id if application.resume else None,
+        resume_filename=application.resume.original_filename if application.resume else None,
     )
 
 
@@ -63,6 +74,7 @@ async def list_applications(
     job_id: uuid.UUID | None = Query(default=None),
     candidate_id: uuid.UUID | None = Query(default=None),
     application_status: ApplicationStatus | None = Query(default=None, alias="status"),
+    campus_drive_id: uuid.UUID | None = Query(default=None),
     current_user: User = Depends(require_permission("application.read")),
     db: AsyncSession = Depends(get_db),
 ) -> list[ApplicationResponse]:
@@ -73,6 +85,7 @@ async def list_applications(
         job_id=job_id,
         candidate_id=candidate_id,
         status=application_status,
+        campus_drive_id=campus_drive_id,
     )
     return [_to_response(application) for application in applications]
 
@@ -87,6 +100,56 @@ async def get_application(
     if application is None:
         raise NotFoundError("Application not found.")
     return _to_response(application)
+
+
+@router.get("/{application_id}/resume")
+async def download_resume(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("application.read")),
+    db: AsyncSession = Depends(get_db),
+    storage: ResumeStorage = Depends(_get_resume_storage),
+) -> Response:
+    application = await application_service.get_application(db, application_id)
+    if application is None or application.resume is None:
+        raise NotFoundError("No resume found for this application.")
+
+    resume = application.resume
+    try:
+        content = await storage.read(resume.storage_path)
+    except StorageError as exc:
+        raise NotFoundError("The resume file could not be found in storage.") from exc
+
+    safe_name = resume.original_filename.replace('"', "")
+    return Response(
+        content=content,
+        media_type=resume.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
+@router.get("/{application_id}/assessment", response_model=AssessmentInvitationResponse | None)
+async def get_application_assessment(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("assessment.read")),
+    db: AsyncSession = Depends(get_db),
+) -> AssessmentInvitationResponse | None:
+    invitation = await assessment_service.get_invitation_for_application(db, application_id)
+    if invitation is None:
+        return None
+
+    application = await application_service.get_application(db, application_id)
+    return AssessmentInvitationResponse(
+        id=invitation.id,
+        assessment_id=invitation.assessment_id,
+        assessment_title=invitation.assessment.title,
+        application_id=invitation.application_id,
+        candidate_full_name=application.candidate.full_name if application else "",
+        status=invitation.status,
+        expires_at=invitation.expires_at,
+        started_at=invitation.started_at,
+        submitted_at=invitation.submitted_at,
+        result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,
+    )
 
 
 @router.post("/{application_id}/status", response_model=ApplicationResponse)
@@ -106,4 +169,17 @@ async def change_application_status(
         actor_user_id=current_user.id,
         reason=payload.reason,
     )
+
+    # Best-effort candidate notification — must never fail the status
+    # change itself (CLAUDE.md § 2: "Email provider != business logic").
+    organization = await db.get(Organization, current_user.organization_id)
+    if organization is not None:
+        await notification_service.send_status_update(
+            to=updated.candidate.email,
+            candidate_name=updated.candidate.full_name,
+            job_title=updated.job.title,
+            organization_name=organization.name,
+            status=updated.status.value,
+        )
+
     return _to_response(updated)

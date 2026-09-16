@@ -32,6 +32,17 @@ async def create_candidate(
     return candidate
 
 
+async def get_candidate_by_email(
+    db: AsyncSession, *, organization_id: uuid.UUID, email: str
+) -> Candidate | None:
+    result = await db.execute(
+        select(Candidate).where(
+            Candidate.organization_id == organization_id, Candidate.email == email
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_candidates(db: AsyncSession, organization_id: uuid.UUID) -> list[Candidate]:
     result = await db.execute(
         select(Candidate)

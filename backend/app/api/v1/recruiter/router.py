@@ -1,9 +1,14 @@
 from fastapi import APIRouter
 
 from app.api.v1.recruiter.applications import router as applications_router
+from app.api.v1.recruiter.assessments import router as assessments_router
 from app.api.v1.recruiter.auth import router as auth_router
+from app.api.v1.recruiter.campus_drives import router as campus_drives_router
 from app.api.v1.recruiter.candidates import router as candidates_router
 from app.api.v1.recruiter.jobs import router as jobs_router
+from app.api.v1.recruiter.notes import router as notes_router
+from app.api.v1.recruiter.reports import router as reports_router
+from app.api.v1.recruiter.screening import router as screening_router
 from app.api.v1.recruiter.users import router as users_router
 
 router = APIRouter(prefix="/recruiter")
@@ -12,3 +17,8 @@ router.include_router(users_router)
 router.include_router(jobs_router)
 router.include_router(candidates_router)
 router.include_router(applications_router)
+router.include_router(reports_router)
+router.include_router(screening_router)
+router.include_router(assessments_router)
+router.include_router(campus_drives_router)
+router.include_router(notes_router)

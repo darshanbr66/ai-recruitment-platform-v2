@@ -11,7 +11,7 @@ to scope a query.
 
 import uuid
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,9 +89,15 @@ async def test_tenant_cannot_write_into_another_tenant(db_session: AsyncSession)
 
 
 async def test_bypass_sees_all_tenants(db_session: AsyncSession) -> None:
-    await _create_org_with_user(db_session, "org-a-bypass")
-    await _create_org_with_user(db_session, "org-b-bypass")
+    """Bypass must see across tenant boundaries — checked by presence, not
+    an exact total, since the real dev database this test's transaction
+    rolls back against (see db_connection in conftest.py) may already have
+    other committed rows (seeded demo/test-login accounts) that a plain
+    row count would otherwise pick up."""
+    _, user_a_id = await _create_org_with_user(db_session, "org-a-bypass")
+    _, user_b_id = await _create_org_with_user(db_session, "org-b-bypass")
 
     await set_rls_bypass(db_session, enabled=True)
-    count = (await db_session.execute(text("SELECT count(*) FROM users"))).scalar_one()
-    assert count == 2
+    visible_ids = (await db_session.execute(select(User.id))).scalars().all()
+    assert user_a_id in visible_ids
+    assert user_b_id in visible_ids

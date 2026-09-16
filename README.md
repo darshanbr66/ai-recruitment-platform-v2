@@ -1,13 +1,24 @@
 # AI Recruitment Platform
 
-A production-grade, multi-tenant recruitment intelligence platform covering
-recruiter-side hiring workflows (sourcing, screening, assessments, campus
-hiring, reporting) and candidate-side job applications (public career
-portal, profile, resume, applications, assessments).
+A multi-tenant recruitment intelligence platform covering recruiter-side
+hiring workflows (jobs, candidates, applications, AI screening, assessments,
+campus hiring, reporting) and a public candidate-facing career site/apply
+flow.
 
-**Status:** Phase 0 — architecture design complete, no application code has
-been implemented yet. See `docs/architecture.md` for the full design and
-phase plan.
+**Status:** Local development demo. Working end-to-end: staff auth (with
+org/tenant isolation via Postgres RLS), Jobs/Candidates/Applications CRUD
+and pipeline, a public career site with resume upload, AI-assisted resume
+screening, MCQ assessments with token-based candidate access (no login
+required), campus drives, application notes, live reports, and outbound
+email (Resend) for application/status/assessment notifications.
+
+Local test accounts are in [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md).
+No candidate portal (self-service login/profile) yet — candidates interact
+anonymously via the public apply flow and assessment invitation links.
+See `docs/architecture.md` for the original full design and phase plan, and
+the "Implementation status" note at the top of each of the docs below for
+how the current build compares to that original design (some domains were
+intentionally simplified for the local MVP — see each doc for specifics).
 
 ## Repository layout
 
@@ -39,6 +50,8 @@ phase plan.
   secure invitation mechanics, evaluation.
 - [`docs/ai-screening.md`](docs/ai-screening.md) — resume intelligence and
   AI screening pipeline, provider abstraction.
+- [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md) — local test/demo
+  login credentials for every role.
 
 ## Running locally
 
@@ -68,6 +81,16 @@ async mode and the greenlet bridge Alembic uses to run its (synchronous)
 migration operations, not an application bug. Running with
 `PYTHONFAULTHANDLER=1` set reliably avoids it; harmless to leave set for
 every Alembic invocation on Windows.
+
+Optional environment variables (`backend/.env`, see `.env.example` for the
+full list) enable outbound email and AI screening; the app runs fully
+without them — both features fail with a clear "not configured" message
+rather than faking success/results:
+
+| Variable | Enables |
+|---|---|
+| `RESEND_API_KEY`, `EMAIL_FROM` | Application confirmation, status update, and assessment invitation emails (via [Resend](https://resend.com)) |
+| `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening (Anthropic preferred if both are set) |
 
 Backend checks:
 

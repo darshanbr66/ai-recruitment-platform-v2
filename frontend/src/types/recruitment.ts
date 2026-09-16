@@ -73,6 +73,20 @@ export type ApplicationStatus =
   | "REJECTED"
   | "WITHDRAWN";
 
+export const APPLICATION_STATUSES: ApplicationStatus[] = [
+  "APPLIED",
+  "UNDER_REVIEW",
+  "SCREENING",
+  "ASSESSMENT_INVITED",
+  "ASSESSMENT_STARTED",
+  "ASSESSMENT_COMPLETED",
+  "SHORTLISTED",
+  "INTERVIEW",
+  "SELECTED",
+  "REJECTED",
+  "WITHDRAWN",
+];
+
 /** Mirrors app/workflows/application_workflow.py's TRANSITIONS table. */
 export const APPLICATION_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
   APPLIED: ["UNDER_REVIEW", "WITHDRAWN"],
@@ -95,11 +109,14 @@ export interface ApplicationResponse {
   candidate_full_name: string;
   job_id: string;
   job_title: string;
+  campus_drive_id: string | null;
   status: ApplicationStatus;
   source: string;
   applied_at: string;
   created_at: string;
   updated_at: string;
+  resume_id: string | null;
+  resume_filename: string | null;
 }
 
 export interface ApplicationCreateRequest {

@@ -19,7 +19,16 @@ from app.models.user import User  # noqa: E402
 # Fixed test credentials for the one platform account that can't be created
 # through the HTTP API (see app/cli.py) — seeded directly here the same way
 # the CLI does it, so tests can log in as a real SUPER_ADMIN.
-SUPER_ADMIN_EMAIL = "super.admin@platform.dev"
+#
+# Deliberately distinct from the demo super admin documented in
+# docs/TEST_CREDENTIALS.md (super.admin@platform.dev): every test's outer
+# transaction is rolled back (see db_connection below), but that rollback
+# can only undo what happened inside the test's own transaction — it can't
+# make a row that was already committed to the real dev database (by
+# seeding demo/test-login data) stop existing. A fixture using the same
+# email as a real committed row would hit a unique-constraint violation on
+# every run.
+SUPER_ADMIN_EMAIL = "pytest.super.admin@platform.dev"
 SUPER_ADMIN_PASSWORD = "SuperSecretPass1"
 
 
@@ -101,6 +110,38 @@ async def super_admin(db_session: AsyncSession) -> User:
         await db_session.flush()
 
     return user
+
+
+def make_minimal_pdf(text: str) -> bytes:
+    """A hand-built, structurally valid single-page PDF containing `text` —
+    used wherever a test needs a resume upload that real extraction
+    (app/integrations/ai/extraction.py, pypdf-backed) can actually read.
+    Not a fixture-library dependency; PDF's object/xref format is simple
+    enough to construct directly for this one test need.
+    """
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
+        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    stream = f"BT /F1 18 Tf 72 720 Td ({text}) Tj ET".encode()
+    objects.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for i, obj in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + obj + b"\nendobj\n"
+    xref_offset = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for offset in offsets[1:]:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += b"trailer\n<< /Size " + str(len(objects) + 1).encode() + b" /Root 1 0 R >>\n"
+    out += b"startxref\n" + str(xref_offset).encode() + b"\n%%EOF"
+    return bytes(out)
 
 
 async def login(client: AsyncClient, *, email: str, password: str) -> dict:

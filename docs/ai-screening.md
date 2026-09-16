@@ -1,9 +1,21 @@
 # AI / RAG Screening
 
-Status: Phase 0 design. Resume intelligence (extraction/chunking/embeddings)
-is Phase 5; AI screening (evaluation/scoring) is Phase 6. No provider is
-chosen yet — this document specifies the interfaces and data model, not a
-vendor integration.
+**Implementation status:** A working, non-RAG MVP is implemented — real
+resume text extraction (pypdf/python-docx), a real LLM call (Anthropic or
+OpenAI, provider chosen via whichever `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
+is set — see `app/integrations/ai/`), and a structured result persisted to
+`ScreeningRun` (`app/models/screening.py`), triggered by an explicit
+recruiter action from the application detail page. What's *not* built from
+the design below: the `JobRequirement`/`ResumeChunk`/pgvector retrieval
+pipeline and the `AIRun`/`RequirementEvaluation`/`EvaluationEvidence`
+per-requirement normalization — § 5's embedding provider was never chosen
+(still true), so the whole RAG layer stayed out of scope rather than being
+half-built. The rest of this document describes that original, fuller
+design; `ScreeningRun` re-uses its re-run/traceability principles (§ 3-4)
+at a coarser grain — one row per run, with the model's full structured
+verdict, no per-requirement evidence citations. If a provider isn't
+configured, screening fails with a clear error rather than fabricating a
+result (`app/integrations/ai/base.py::AIProviderNotConfiguredError`).
 
 ## 1. Design goal
 

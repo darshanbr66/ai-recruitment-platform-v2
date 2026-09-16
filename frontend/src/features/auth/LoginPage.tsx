@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, type Location } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
+import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "./AuthContext";
 
 /**
@@ -41,9 +42,10 @@ export function LoginPage() {
 
   return (
     <div className="auth-shell">
+      <ThemeToggle />
       <div className="auth-card">
         <p className="eyebrow">AI Recruitment Platform</p>
-        <h1>Staff sign in</h1>
+        <h1>Sign in</h1>
         <p className="muted">Recruiters, hiring managers, and organization admins sign in here.</p>
 
         <form onSubmit={handleSubmit} noValidate>

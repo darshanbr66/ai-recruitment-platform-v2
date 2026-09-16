@@ -1,11 +1,20 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { CandidatePlaceholderPage } from "../features/candidate/CandidatePlaceholderPage";
+import { AssessmentTakingPage } from "../features/careers/AssessmentTakingPage";
+import { CareersPage } from "../features/careers/CareersPage";
+import { JobDetailPage } from "../features/careers/JobDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { OrganizationsPage } from "../features/admin/organizations/OrganizationsPage";
+import { ApplicationDetailPage } from "../features/recruiter/applications/ApplicationDetailPage";
 import { ApplicationsPage } from "../features/recruiter/applications/ApplicationsPage";
+import { AssessmentsPage } from "../features/recruiter/assessments/AssessmentsPage";
+import { CampusDriveDetailPage } from "../features/recruiter/campusDrives/CampusDriveDetailPage";
+import { CampusDrivesPage } from "../features/recruiter/campusDrives/CampusDrivesPage";
+import { CandidateDetailPage } from "../features/recruiter/candidates/CandidateDetailPage";
 import { CandidatesPage } from "../features/recruiter/candidates/CandidatesPage";
 import { JobsPage } from "../features/recruiter/jobs/JobsPage";
 import { OverviewPage } from "../features/recruiter/overview/OverviewPage";
+import { ReportsPage } from "../features/recruiter/reports/ReportsPage";
 import { PublicHomePage } from "../features/public/PublicHomePage";
 import { UsersPage } from "../features/recruiter/users/UsersPage";
 import { AdminLayout } from "./AdminLayout";
@@ -25,6 +34,9 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<PublicHomePage />} />
+      <Route path="/org/:slug" element={<CareersPage />} />
+      <Route path="/org/:slug/jobs/:jobId" element={<JobDetailPage />} />
+      <Route path="/assessment/:token" element={<AssessmentTakingPage />} />
       <Route path="/candidate/*" element={<CandidatePlaceholderPage />} />
 
       <Route path="/recruiter/login" element={<LoginPage />} />
@@ -39,7 +51,13 @@ export function AppRoutes() {
         <Route index element={<OverviewPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="candidates" element={<CandidatesPage />} />
+        <Route path="candidates/:candidateId" element={<CandidateDetailPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
+        <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
+        <Route path="assessments" element={<AssessmentsPage />} />
+        <Route path="campus-drives" element={<CampusDrivesPage />} />
+        <Route path="campus-drives/:driveId" element={<CampusDriveDetailPage />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="users" element={<UsersPage />} />
       </Route>
 

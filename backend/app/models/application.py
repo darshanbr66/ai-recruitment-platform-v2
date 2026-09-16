@@ -11,6 +11,7 @@ from app.db.base import Base
 from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.candidate import Candidate
 from app.models.job import Job
+from app.models.resume import Resume
 
 
 class ApplicationStatus(StrEnum):
@@ -42,10 +43,11 @@ class ApplicationSource(StrEnum):
 
 class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     """The relationship between one Candidate and one Job — carries all
-    workflow state (CLAUDE.md § 2: "Candidate != Application"). `Resume`
-    and `CampusDrive` linkage (docs/database.md § 3.5) are deferred: neither
-    domain exists yet in this codebase, so `resume_id`/`campus_drive_id`
-    are added when those domains are actually built, not speculatively now.
+    workflow state (CLAUDE.md § 2: "Candidate != Application"). `resume` is
+    reached via the Resume model's `application_id` FK (app/models/
+    resume.py); `campus_drive_id` links a campus-sourced application to its
+    CampusDrive (docs/campus-hiring.md § 2) and is null for ordinary
+    recruitment applications.
 
     Unique on `(candidate_id, job_id)`: one application per candidate per
     job. Re-applying after WITHDRAWN/REJECTED is explicitly an open product
@@ -66,6 +68,12 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    campus_drive_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("campus_drives.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     status: Mapped[ApplicationStatus] = mapped_column(
         Enum(ApplicationStatus, name="application_status", native_enum=True),
@@ -89,6 +97,7 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     # round trip per row.
     candidate: Mapped[Candidate] = relationship(Candidate, lazy="raise")
     job: Mapped[Job] = relationship(Job, lazy="raise")
+    resume: Mapped[Resume | None] = relationship(Resume, lazy="raise", uselist=False, viewonly=True)
 
 
 class ApplicationStatusHistory(UUIDPrimaryKeyMixin, Base):

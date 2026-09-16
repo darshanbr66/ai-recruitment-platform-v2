@@ -30,11 +30,14 @@ class ApplicationResponse(BaseModel):
     candidate_full_name: str
     job_id: uuid.UUID
     job_title: str
+    campus_drive_id: uuid.UUID | None = None
     status: ApplicationStatus
     source: ApplicationSource
     applied_at: datetime
     created_at: datetime
     updated_at: datetime
+    resume_id: uuid.UUID | None = None
+    resume_filename: str | None = None
 
 
 class ApplicationStatusHistoryEntry(BaseModel):

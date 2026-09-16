@@ -30,6 +30,16 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = Field(default_factory=list)
 
+    resume_storage_dir: str = "uploads/resumes"
+    max_resume_size_mb: int = 10
+    allowed_resume_extensions: tuple[str, ...] = (".pdf", ".doc", ".docx")
+
+    resend_api_key: str | None = None
+    email_from: str | None = None
+
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

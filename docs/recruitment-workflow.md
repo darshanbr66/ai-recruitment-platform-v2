@@ -1,24 +1,35 @@
 # Recruitment Workflow
 
-Status: Phase 0 design. Implemented starting Phase 3 (states/model) and
-completed through Phase 9 (recruiter-side transitions/UI).
+**Implementation status:** The `Application` status model below (§ 2) is
+implemented exactly as specified, in `backend/app/workflows/
+application_workflow.py`, and is what actually gates every status change in
+the app (recruiter-triggered and assessment-triggered alike — see
+`app/services/assessment_public_service.py`). `AssessmentInvitation.status`
+is a separate, simpler enum (`SENT/STARTED/SUBMITTED/EXPIRED/CANCELLED`)
+with its transitions handled directly in `app/services/assessment_service.py`
+and `assessment_public_service.py`, not by a dedicated
+`invitation_workflow.py` module (that split wasn't warranted at this size —
+see `app/models/assessment.py`'s docstring for the full list of
+simplifications from the original assessment design). § 5 ("Candidate
+portal flow") describes a self-service candidate account that does not
+exist yet — see `docs/ai-screening.md`/`docs/assessment.md`/
+`docs/campus-hiring.md` implementation-status notes for what candidates
+actually get today (an anonymous public apply flow and token-based
+assessment links, no login).
 
 ## 1. Why a workflow module, not scattered status checks
 
-`Application.status` and `AssessmentInvitation.status` are both finite-state
-values with rules about which transitions are legal and who/what can trigger
-them. Per `CLAUDE.md` § 2 ("Workflow state != ad hoc strings"), these rules
-live in one place per entity:
+`Application.status` is a finite-state value with rules about which
+transitions are legal and who/what can trigger them. Per `CLAUDE.md` § 2
+("Workflow state != ad hoc strings"), these rules live in one place:
 
 - `backend/app/workflows/application_workflow.py`
-- `backend/app/workflows/invitation_workflow.py`
 
-Each defines an explicit transition table (`{current_status: {allowed_next
+It defines an explicit transition table (`{current_status: {allowed_next
 statuses}}`) and a single `transition(application, to_status, actor, reason)`
 function that: validates the transition is legal, writes the new status,
-appends an `ApplicationStatusHistory` row, and emits the corresponding audit
-log entry — so no call site can move an application into an invalid state or
-skip the history/audit write.
+and appends an `ApplicationStatusHistory` row — so no call site can move an
+application into an invalid state or skip the history write.
 
 ## 2. Application status model
 

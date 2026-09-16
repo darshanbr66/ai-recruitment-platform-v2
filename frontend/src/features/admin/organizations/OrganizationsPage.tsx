@@ -85,32 +85,37 @@ export function OrganizationsPage() {
       {organizationsQuery.isSuccess && (
         <section>
           {organizationsQuery.data.length === 0 ? (
-            <p className="muted">No organizations yet — create the first one below.</p>
+            <div className="empty-state">
+              <p className="empty-state-title">No organizations yet</p>
+              <p>Create the first one below.</p>
+            </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Slug</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {organizationsQuery.data.map((org) => (
-                  <tr key={org.id}>
-                    <td>{org.name}</td>
-                    <td>
-                      <code>{org.slug}</code>
-                    </td>
-                    <td>
-                      <span className="badge badge-active">{org.status}</span>
-                    </td>
-                    <td>{new Date(org.created_at).toLocaleDateString()}</td>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Slug</th>
+                    <th>Status</th>
+                    <th>Created</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {organizationsQuery.data.map((org) => (
+                    <tr key={org.id}>
+                      <td>{org.name}</td>
+                      <td>
+                        <code>{org.slug}</code>
+                      </td>
+                      <td>
+                        <span className="badge badge-active">{org.status}</span>
+                      </td>
+                      <td>{new Date(org.created_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}
