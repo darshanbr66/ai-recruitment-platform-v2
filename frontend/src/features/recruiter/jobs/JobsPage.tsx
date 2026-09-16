@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { useToast } from "../../../shared/components/ToastContext";
 import type { JobResponse, JobStatus } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { createJob, listJobs, updateJob } from "./api";
@@ -16,63 +18,114 @@ const STATUS_BADGE_CLASS: Record<JobStatus, string> = {
   WITHDRAWN: "badge-inactive",
 };
 
-function jobActions(job: JobResponse): { label: string; status: JobStatus }[] {
+function jobActions(job: JobResponse): { label: string; status: JobStatus; confirm?: boolean }[] {
   switch (job.status) {
     case "DRAFT":
       return [{ label: "Publish", status: "OPEN" }];
     case "OPEN":
       return [
         { label: "Put on hold", status: "ON_HOLD" },
-        { label: "Close", status: "CLOSED" },
+        { label: "Close", status: "CLOSED", confirm: true },
       ];
     case "ON_HOLD":
       return [
         { label: "Reopen", status: "OPEN" },
-        { label: "Close", status: "CLOSED" },
+        { label: "Close", status: "CLOSED", confirm: true },
       ];
+    case "CLOSED":
+      return [{ label: "Reopen", status: "OPEN" }];
     default:
       return [];
   }
 }
 
+interface JobFormState {
+  title: string;
+  department: string;
+  location: string;
+  employmentType: string;
+  openingsCount: string;
+  description: string;
+}
+
+const EMPTY_FORM: JobFormState = {
+  title: "",
+  department: "",
+  location: "",
+  employmentType: "Full-time",
+  openingsCount: "1",
+  description: "",
+};
+
+function jobToFormState(job: JobResponse): JobFormState {
+  return {
+    title: job.title,
+    department: job.department ?? "",
+    location: job.location ?? "",
+    employmentType: job.employment_type ?? "",
+    openingsCount: String(job.openings_count),
+    description: job.description,
+  };
+}
+
 export function JobsPage() {
   const { accessToken } = useAuth();
+  const token = accessToken as string;
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const jobsQuery = useQuery({
     queryKey: JOBS_QUERY_KEY,
-    queryFn: () => listJobs(accessToken as string),
+    queryFn: () => listJobs(token),
     enabled: accessToken !== null,
   });
 
   const [search, setSearch] = useState("");
-  const [title, setTitle] = useState("");
-  const [department, setDepartment] = useState("");
-  const [location, setLocation] = useState("");
-  const [employmentType, setEmploymentType] = useState("Full-time");
-  const [description, setDescription] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingJob, setEditingJob] = useState<JobResponse | null>(null);
+  const [form, setForm] = useState<JobFormState>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [openingsError, setOpeningsError] = useState<string | null>(null);
+  const [pendingClose, setPendingClose] = useState<JobResponse | null>(null);
 
-  const createJobMutation = useMutation({
-    mutationFn: () =>
-      createJob(
-        {
-          title,
-          department: department || null,
-          location: location || null,
-          employment_type: employmentType || null,
-          description,
-        },
-        accessToken as string,
-      ),
+  function openCreateForm() {
+    setEditingJob(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setOpeningsError(null);
+    setShowForm(true);
+  }
+
+  function openEditForm(job: JobResponse) {
+    setEditingJob(job);
+    setForm(jobToFormState(job));
+    setFormError(null);
+    setOpeningsError(null);
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingJob(null);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload = {
+        title: form.title,
+        department: form.department || null,
+        location: form.location || null,
+        employment_type: form.employmentType || null,
+        description: form.description,
+        openings_count: Number(form.openingsCount),
+      };
+      return editingJob
+        ? updateJob(editingJob.id, payload, token)
+        : createJob(payload, token);
+    },
     onSuccess: () => {
-      setTitle("");
-      setDepartment("");
-      setLocation("");
-      setDescription("");
-      setFormError(null);
-      setShowForm(false);
+      showToast(editingJob ? "Job updated." : "Job created.", "success");
+      closeForm();
       void queryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY });
     },
     onError: (err) => {
@@ -81,14 +134,37 @@ export function JobsPage() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ jobId, status }: { jobId: string; status: JobStatus }) =>
-      updateJob(jobId, { status }, accessToken as string),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY }),
+    mutationFn: ({ jobId, status }: { jobId: string; status: JobStatus; label: string }) =>
+      updateJob(jobId, { status }, token),
+    onSuccess: (_data, variables) => {
+      showToast(`${variables.label} — done.`, "success");
+      setPendingClose(null);
+      void queryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY });
+    },
   });
+
+  function validateOpenings(value: string): boolean {
+    const num = Number(value);
+    if (!Number.isInteger(num) || num < 1) {
+      setOpeningsError("Number of openings must be a positive whole number.");
+      return false;
+    }
+    setOpeningsError(null);
+    return true;
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    createJobMutation.mutate();
+    if (!validateOpenings(form.openingsCount)) return;
+    saveMutation.mutate();
+  }
+
+  function handleAction(job: JobResponse, action: { label: string; status: JobStatus; confirm?: boolean }) {
+    if (action.confirm) {
+      setPendingClose(job);
+    } else {
+      statusMutation.mutate({ jobId: job.id, status: action.status, label: action.label });
+    }
   }
 
   const canManageJobs = !(jobsQuery.error instanceof ApiError && jobsQuery.error.status === 403);
@@ -114,7 +190,7 @@ export function JobsPage() {
         </div>
         {canManageJobs && (
           <div className="page-header-actions">
-            <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
+            <button type="button" className="btn btn-primary" onClick={openCreateForm}>
               + New job
             </button>
           </div>
@@ -176,22 +252,24 @@ export function JobsPage() {
                         {canManageJobs && (
                           <td>
                             <div className="btn-group">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => openEditForm(job)}
+                              >
+                                Edit
+                              </button>
                               {jobActions(job).map((action) => (
                                 <button
                                   key={action.status}
                                   type="button"
                                   className="btn btn-ghost btn-sm"
                                   disabled={statusMutation.isPending}
-                                  onClick={() =>
-                                    statusMutation.mutate({ jobId: job.id, status: action.status })
-                                  }
+                                  onClick={() => handleAction(job, action)}
                                 >
                                   {action.label}
                                 </button>
                               ))}
-                              {jobActions(job).length === 0 && (
-                                <span className="muted">No actions</span>
-                              )}
                             </div>
                           </td>
                         )}
@@ -208,8 +286,8 @@ export function JobsPage() {
       {canManageJobs && showForm && (
         <section className="card">
           <div className="page-header">
-            <h2>Create a job</h2>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>
+            <h2>{editingJob ? `Edit ${editingJob.title}` : "Create a job"}</h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={closeForm}>
               Cancel
             </button>
           </div>
@@ -218,9 +296,9 @@ export function JobsPage() {
               <span>Title</span>
               <input
                 required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                disabled={createJobMutation.isPending}
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                disabled={saveMutation.isPending}
               />
             </label>
 
@@ -228,49 +306,95 @@ export function JobsPage() {
               <label className="field">
                 <span>Department</span>
                 <input
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  disabled={createJobMutation.isPending}
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  disabled={saveMutation.isPending}
                 />
               </label>
 
               <label className="field">
                 <span>Location</span>
                 <input
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  disabled={createJobMutation.isPending}
+                  value={form.location}
+                  onChange={(e) => setForm({ ...form, location: e.target.value })}
+                  disabled={saveMutation.isPending}
                 />
               </label>
             </div>
 
-            <label className="field">
-              <span>Employment type</span>
-              <input
-                value={employmentType}
-                onChange={(e) => setEmploymentType(e.target.value)}
-                disabled={createJobMutation.isPending}
-              />
-            </label>
+            <div className="field-row">
+              <label className="field">
+                <span>Employment type</span>
+                <input
+                  value={form.employmentType}
+                  onChange={(e) => setForm({ ...form, employmentType: e.target.value })}
+                  disabled={saveMutation.isPending}
+                />
+              </label>
+
+              <label className="field">
+                <span>Number of openings</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  required
+                  value={form.openingsCount}
+                  onChange={(e) => {
+                    setForm({ ...form, openingsCount: e.target.value });
+                    if (openingsError) validateOpenings(e.target.value);
+                  }}
+                  onBlur={(e) => validateOpenings(e.target.value)}
+                  disabled={saveMutation.isPending}
+                  aria-invalid={openingsError ? "true" : undefined}
+                />
+                {openingsError ? (
+                  <span className="field-hint" style={{ color: "var(--color-danger)" }}>
+                    {openingsError}
+                  </span>
+                ) : (
+                  <span className="field-hint">How many positions are you hiring for this role?</span>
+                )}
+              </label>
+            </div>
 
             <label className="field">
               <span>Description</span>
               <textarea
                 required
                 rows={4}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                disabled={createJobMutation.isPending}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                disabled={saveMutation.isPending}
               />
             </label>
 
             {formError && <Alert>{formError}</Alert>}
 
-            <button type="submit" className="btn btn-primary" disabled={createJobMutation.isPending}>
-              {createJobMutation.isPending ? "Creating…" : "Create job"}
+            <button type="submit" className="btn btn-primary" disabled={saveMutation.isPending}>
+              {saveMutation.isPending
+                ? editingJob
+                  ? "Saving…"
+                  : "Creating…"
+                : editingJob
+                  ? "Save changes"
+                  : "Create job"}
             </button>
           </form>
         </section>
+      )}
+
+      {pendingClose && (
+        <ConfirmDialog
+          title="Close this job?"
+          message={`This closes "${pendingClose.title}". It stays in your job history and any existing applications are unaffected — you can reopen it at any time.`}
+          confirmLabel="Close job"
+          isConfirming={statusMutation.isPending}
+          onCancel={() => setPendingClose(null)}
+          onConfirm={() =>
+            statusMutation.mutate({ jobId: pendingClose.id, status: "CLOSED", label: "Close" })
+          }
+        />
       )}
     </div>
   );

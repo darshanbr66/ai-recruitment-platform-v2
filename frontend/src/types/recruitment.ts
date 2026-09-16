@@ -31,6 +31,12 @@ export interface JobCreateRequest {
 }
 
 export interface JobUpdateRequest {
+  title?: string;
+  department?: string | null;
+  location?: string | null;
+  employment_type?: string | null;
+  description?: string;
+  openings_count?: number;
   status?: JobStatus;
 }
 

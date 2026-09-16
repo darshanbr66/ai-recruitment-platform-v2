@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { CandidatePlaceholderPage } from "../features/candidate/CandidatePlaceholderPage";
 import { AssessmentTakingPage } from "../features/careers/AssessmentTakingPage";
+import { CampusDriveApplyPage } from "../features/careers/CampusDriveApplyPage";
 import { CareersPage } from "../features/careers/CareersPage";
 import { JobDetailPage } from "../features/careers/JobDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -37,6 +38,7 @@ export function AppRoutes() {
       <Route path="/org/:slug" element={<CareersPage />} />
       <Route path="/org/:slug/jobs/:jobId" element={<JobDetailPage />} />
       <Route path="/assessment/:token" element={<AssessmentTakingPage />} />
+      <Route path="/campus-drive/:token" element={<CampusDriveApplyPage />} />
       <Route path="/candidate/*" element={<CandidatePlaceholderPage />} />
 
       <Route path="/recruiter/login" element={<LoginPage />} />

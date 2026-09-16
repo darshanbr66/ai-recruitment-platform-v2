@@ -1,6 +1,6 @@
-"""Campus drives: composing an existing Job with scheduling metadata, and
-automatic Application.campus_drive_id association for public applicants
-(docs/campus-hiring.md)."""
+"""Campus drives: recruiter management (including inline "new job"
+creation), the DRAFT/ACTIVE/PAUSED/CLOSED lifecycle, and the dedicated
+public application link (docs/campus-hiring.md)."""
 
 from httpx import AsyncClient
 
@@ -41,114 +41,317 @@ async def _bootstrap_org_with_job(client: AsyncClient, slug: str) -> dict:
     return {"headers": headers, "job": job, "slug": slug}
 
 
-async def test_create_and_list_campus_drive(client: AsyncClient, super_admin: User) -> None:
-    ctx = await _bootstrap_org_with_job(client, "campus-create")
+async def _create_drive(client: AsyncClient, ctx: dict, **overrides) -> dict:
+    payload = {
+        "name": "Fall 2026 Drive",
+        "job_id": ctx["job"]["id"],
+        "college_name": "MIT",
+        **overrides,
+    }
+    response = await client.post(
+        "/api/v1/recruiter/campus-drives", json=payload, headers=ctx["headers"]
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
+
+async def test_create_drive_with_existing_job(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-existing-job")
+    drive = await _create_drive(client, ctx)
+
+    assert drive["status"] == "DRAFT"
+    assert drive["job_title"] == "Graduate Engineer"
+    assert drive["application_link"] is not None
+    assert "/campus-drive/" in drive["application_link"]
+
+    listing = await client.get("/api/v1/recruiter/campus-drives", headers=ctx["headers"])
+    assert len(listing.json()) == 1
+    # the list endpoint never re-exposes the one-time link
+    assert listing.json()[0]["application_link"] is None
+
+
+async def test_create_drive_with_inline_new_job(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-new-job")
     response = await client.post(
         "/api/v1/recruiter/campus-drives",
-        json={"name": "Fall 2026 Drive", "job_id": ctx["job"]["id"], "college_name": "MIT", "batch_year": 2026},
+        json={
+            "name": "Spring Drive",
+            "college_name": "Stanford",
+            "new_job_title": "Campus Hire — Backend",
+            "new_job_description": "For students graduating this year.",
+        },
         headers=ctx["headers"],
     )
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["status"] == "PLANNED"
-    assert body["job_title"] == "Graduate Engineer"
-    assert body["application_count"] == 0
+    assert body["job_title"] == "Campus Hire — Backend"
 
-    listing = await client.get("/api/v1/recruiter/campus-drives", headers=ctx["headers"])
-    assert listing.status_code == 200
-    assert len(listing.json()) == 1
+    jobs = (await client.get("/api/v1/recruiter/jobs", headers=ctx["headers"])).json()
+    assert any(j["title"] == "Campus Hire — Backend" for j in jobs)
 
 
-async def test_update_drive_status(client: AsyncClient, super_admin: User) -> None:
-    ctx = await _bootstrap_org_with_job(client, "campus-update")
-    drive = (
-        await client.post(
-            "/api/v1/recruiter/campus-drives",
-            json={"name": "Drive", "job_id": ctx["job"]["id"], "college_name": "MIT"},
-            headers=ctx["headers"],
-        )
-    ).json()
+async def test_create_drive_rejects_both_or_neither_job_source(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-bad-job-source")
 
-    response = await client.patch(
+    neither = await client.post(
+        "/api/v1/recruiter/campus-drives",
+        json={"name": "Drive", "college_name": "MIT"},
+        headers=ctx["headers"],
+    )
+    assert neither.status_code == 422
+
+    both = await client.post(
+        "/api/v1/recruiter/campus-drives",
+        json={
+            "name": "Drive",
+            "college_name": "MIT",
+            "job_id": ctx["job"]["id"],
+            "new_job_title": "Other Role",
+            "new_job_description": "...",
+        },
+        headers=ctx["headers"],
+    )
+    assert both.status_code == 422
+
+
+async def test_drive_status_lifecycle(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-lifecycle")
+    drive = await _create_drive(client, ctx)
+
+    activate = await client.patch(
         f"/api/v1/recruiter/campus-drives/{drive['id']}",
         json={"status": "ACTIVE"},
         headers=ctx["headers"],
     )
-    assert response.status_code == 200
-    assert response.json()["status"] == "ACTIVE"
+    assert activate.status_code == 200
+    assert activate.json()["status"] == "ACTIVE"
+
+    pause = await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "PAUSED"},
+        headers=ctx["headers"],
+    )
+    assert pause.status_code == 200
+
+    resume = await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    assert resume.status_code == 200
+
+    close = await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "CLOSED"},
+        headers=ctx["headers"],
+    )
+    assert close.status_code == 200
+
+    reopen = await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    assert reopen.status_code == 200
+    assert reopen.json()["status"] == "ACTIVE"
 
 
-async def test_public_applicant_is_auto_associated_with_active_drive(
+async def test_illegal_status_transition_is_rejected(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-illegal-transition")
+    drive = await _create_drive(client, ctx)  # DRAFT
+
+    response = await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "PAUSED"},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 409
+
+
+def _extract_token(link: str) -> str:
+    return link.rsplit("/", 1)[-1]
+
+
+async def test_public_link_rejects_draft_drive(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-draft-link")
+    drive = await _create_drive(client, ctx)
+    token = _extract_token(drive["application_link"])
+
+    response = await client.get(f"/api/v1/public/campus-drive/{token}")
+    assert response.status_code == 404
+
+
+async def test_public_candidate_can_view_and_apply_to_active_drive(
     client: AsyncClient, super_admin: User
 ) -> None:
-    ctx = await _bootstrap_org_with_job(client, "campus-auto-assoc")
-    drive = (
+    ctx = await _bootstrap_org_with_job(client, "campus-apply-flow")
+    drive = await _create_drive(client, ctx)
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    token = _extract_token(drive["application_link"])
+
+    view = await client.get(f"/api/v1/public/campus-drive/{token}")
+    assert view.status_code == 200
+    view_body = view.json()
+    assert view_body["job_title"] == "Graduate Engineer"
+    assert view_body["status"] == "ACTIVE"
+    assert view_body["has_assessment"] is False
+
+    resume_bytes = make_minimal_pdf("Priya Candidate")
+    apply_response = await client.post(
+        f"/api/v1/public/campus-drive/{token}/apply",
+        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
+        files={"resume": ("resume.pdf", resume_bytes, "application/pdf")},
+    )
+    assert apply_response.status_code == 201, apply_response.text
+    body = apply_response.json()
+    assert body["job_title"] == "Graduate Engineer"
+    assert body["assessment_invitation_link"] is None
+
+    applications = (
+        await client.get(
+            f"/api/v1/recruiter/applications?campus_drive_id={drive['id']}", headers=ctx["headers"]
+        )
+    ).json()
+    assert len(applications) == 1
+    assert applications[0]["candidate_full_name"] == "Priya Candidate"
+    assert applications[0]["source"] == "CAMPUS_IMPORT"
+
+
+async def test_apply_to_paused_drive_is_rejected(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-paused")
+    drive = await _create_drive(client, ctx)
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "PAUSED"},
+        headers=ctx["headers"],
+    )
+    token = _extract_token(drive["application_link"])
+
+    response = await client.post(
+        f"/api/v1/public/campus-drive/{token}/apply",
+        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
+        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "drive_not_active"
+
+
+async def test_apply_with_default_assessment_auto_invites(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-auto-assessment")
+    assessment = (
         await client.post(
-            "/api/v1/recruiter/campus-drives",
-            json={"name": "Drive", "job_id": ctx["job"]["id"], "college_name": "MIT"},
+            "/api/v1/recruiter/assessments",
+            json={
+                "title": "Aptitude",
+                "instructions": "Answer all.",
+                "duration_minutes": 20,
+                "pass_score": 50,
+                "questions": [
+                    {
+                        "prompt": "2 + 2 = ?",
+                        "type": "MCQ_SINGLE",
+                        "points": 1,
+                        "options": [
+                            {"label": "3", "is_correct": False},
+                            {"label": "4", "is_correct": True},
+                        ],
+                    }
+                ],
+            },
             headers=ctx["headers"],
         )
     ).json()
+
+    drive = await _create_drive(client, ctx, default_assessment_id=assessment["id"])
     await client.patch(
-        f"/api/v1/recruiter/campus-drives/{drive['id']}", json={"status": "ACTIVE"}, headers=ctx["headers"]
-    )
-
-    resume = make_minimal_pdf("Cara Candidate")
-    apply_response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job']['id']}/apply",
-        data={"full_name": "Cara Candidate", "email": "cara@example.com"},
-        files={"resume": ("resume.pdf", resume, "application/pdf")},
-    )
-    assert apply_response.status_code == 201
-    application_id = apply_response.json()["id"]
-
-    application = (
-        await client.get(f"/api/v1/recruiter/applications/{application_id}", headers=ctx["headers"])
-    ).json()
-    assert application["campus_drive_id"] == drive["id"]
-
-    filtered = await client.get(
-        f"/api/v1/recruiter/applications?campus_drive_id={drive['id']}", headers=ctx["headers"]
-    )
-    assert len(filtered.json()) == 1
-
-    drive_after = (
-        await client.get(f"/api/v1/recruiter/campus-drives/{drive['id']}", headers=ctx["headers"])
-    ).json()
-    assert drive_after["application_count"] == 1
-
-
-async def test_planned_drive_does_not_auto_associate(client: AsyncClient, super_admin: User) -> None:
-    ctx = await _bootstrap_org_with_job(client, "campus-planned-no-assoc")
-    await client.post(
-        "/api/v1/recruiter/campus-drives",
-        json={"name": "Drive", "job_id": ctx["job"]["id"], "college_name": "MIT"},
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
         headers=ctx["headers"],
     )
+    token = _extract_token(drive["application_link"])
 
-    resume = make_minimal_pdf("Dana Candidate")
     apply_response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job']['id']}/apply",
-        data={"full_name": "Dana Candidate", "email": "dana@example.com"},
-        files={"resume": ("resume.pdf", resume, "application/pdf")},
+        f"/api/v1/public/campus-drive/{token}/apply",
+        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
+        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
     )
-    application_id = apply_response.json()["id"]
-    application = (
-        await client.get(f"/api/v1/recruiter/applications/{application_id}", headers=ctx["headers"])
+    assert apply_response.status_code == 201, apply_response.text
+    body = apply_response.json()
+    assert body["assessment_invitation_link"] is not None
+    assert body["status"] == "ASSESSMENT_INVITED"
+
+
+async def test_funnel_counts_reflect_real_applications(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-funnel")
+    drive = await _create_drive(client, ctx)
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    token = _extract_token(drive["application_link"])
+
+    empty_funnel = (
+        await client.get(f"/api/v1/recruiter/campus-drives/{drive['id']}/funnel", headers=ctx["headers"])
     ).json()
-    assert application["campus_drive_id"] is None
+    assert empty_funnel["registered"] == 0
+
+    await client.post(
+        f"/api/v1/public/campus-drive/{token}/apply",
+        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
+        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
+    )
+
+    funnel = (
+        await client.get(f"/api/v1/recruiter/campus-drives/{drive['id']}/funnel", headers=ctx["headers"])
+    ).json()
+    assert funnel["registered"] == 1
+
+
+async def test_regenerate_link_produces_a_new_working_token(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-regen-link")
+    drive = await _create_drive(client, ctx)
+    old_token = _extract_token(drive["application_link"])
+
+    regenerate = await client.post(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}/regenerate-link", headers=ctx["headers"]
+    )
+    assert regenerate.status_code == 200
+    new_token = _extract_token(regenerate.json()["application_link"])
+    assert new_token != old_token
+
+    # activate so the view endpoint would otherwise succeed
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    old_link_response = await client.get(f"/api/v1/public/campus-drive/{old_token}")
+    assert old_link_response.status_code == 404
+    new_link_response = await client.get(f"/api/v1/public/campus-drive/{new_token}")
+    assert new_link_response.status_code == 200
 
 
 async def test_campus_drives_are_tenant_scoped(client: AsyncClient, super_admin: User) -> None:
     ctx_a = await _bootstrap_org_with_job(client, "campus-tenant-a")
     ctx_b = await _bootstrap_org_with_job(client, "campus-tenant-b")
 
-    await client.post(
-        "/api/v1/recruiter/campus-drives",
-        json={"name": "Org A Drive", "job_id": ctx_a["job"]["id"], "college_name": "MIT"},
-        headers=ctx_a["headers"],
-    )
+    await _create_drive(client, ctx_a, name="Org A Drive")
 
     listing_b = await client.get("/api/v1/recruiter/campus-drives", headers=ctx_b["headers"])
     assert listing_b.json() == []

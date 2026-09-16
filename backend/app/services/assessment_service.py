@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import generate_opaque_token, hash_opaque_token
+from app.integrations.documents.question_import import parse_questions as _parse_questions
 from app.models.application import ApplicationStatus
 from app.models.assessment import (
     Assessment,
@@ -17,10 +18,34 @@ from app.models.assessment import (
     QuestionOption,
 )
 from app.models.organization import Organization
-from app.schemas.assessment import AssessmentCreateRequest
+from app.schemas.assessment import AssessmentCreateRequest, ParsedQuestionsResponse, QuestionCreate
+from app.schemas.assessment import QuestionOptionCreate as QuestionOptionCreateSchema
 from app.services import application_service, notification_service
 
 _INVITATION_EXPIRY_DAYS = 7
+
+
+def parse_import_file(*, content: bytes, filename: str) -> ParsedQuestionsResponse:
+    """Extracts candidate questions from an uploaded PDF/DOCX/XLSX/CSV for
+    the "Import Questions" preview step — never persists anything (see
+    app/integrations/documents/question_import.py for the parsing rules).
+    """
+    result = _parse_questions(content=content, filename=filename)
+    return ParsedQuestionsResponse(
+        questions=[
+            QuestionCreate(
+                prompt=q.prompt,
+                type=q.type,
+                points=q.points,
+                options=[
+                    QuestionOptionCreateSchema(label=o.label, is_correct=o.is_correct)
+                    for o in q.options
+                ],
+            )
+            for q in result.questions
+        ],
+        warnings=result.warnings,
+    )
 
 
 async def create_assessment(

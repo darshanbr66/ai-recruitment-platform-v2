@@ -139,3 +139,33 @@ The invitation email is sent through the Notification Service (see
 a template and hands off to whatever `EmailProvider` is configured. The
 assessment/campus/recruitment services never import an email provider SDK
 directly (`CLAUDE.md` § 2).
+
+## 9. Importing questions from a file
+
+`POST /api/v1/recruiter/assessments/parse-questions` (multipart file
+upload) extracts candidate questions from a PDF, DOCX, XLSX, or CSV file
+and returns them shaped exactly like `AssessmentCreateRequest.questions` —
+**nothing is persisted by this endpoint.** The frontend shows the result as
+an editable preview (select which questions to keep, edit/delete/reorder,
+add more by hand) and only calls the existing
+`POST /api/v1/recruiter/assessments` once the recruiter clicks "Create
+assessment," so import and manual entry share one persistence path.
+
+Parsing (`app/integrations/documents/question_import.py`) is deliberately
+**rule-based, not AI** — free/local/open-source libraries only (`pypdf`,
+`python-docx`, `openpyxl`, stdlib `csv`), consistent with "no paid API
+dependency for convenience." It never guesses at a correct answer it can't
+find explicitly in the document: a row/question with no resolvable correct
+option is skipped and surfaced as a warning, not silently included with a
+fabricated answer.
+
+- **CSV/XLSX**: a header row with a `question` column, `option_1`/
+  `option_2`/… (or `a`/`b`/`c`/…) columns, and a `correct` column naming the
+  right option(s) by 1-based index, letter, or exact text — comma-separated
+  for multi-select. Optional `type` and `points` columns.
+- **PDF/DOCX**: numbered questions ("1. ...") with lettered options
+  ("A) ..."), where the correct option is marked either with a trailing `*`
+  or an explicit `Answer: B` / `Correct: B, C` line.
+
+Malformed files (wrong type, missing required columns/structure) raise a
+clear `QuestionImportError` rather than returning empty or guessed data.

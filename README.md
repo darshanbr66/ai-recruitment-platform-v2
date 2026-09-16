@@ -90,7 +90,8 @@ rather than faking success/results:
 | Variable | Enables |
 |---|---|
 | `RESEND_API_KEY`, `EMAIL_FROM` | Application confirmation, status update, and assessment invitation emails (via [Resend](https://resend.com)) |
-| `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening (Anthropic preferred if both are set) |
+| `OLLAMA_BASE_URL` (+ `OLLAMA_MODEL`) | AI-assisted resume screening via a **free, local** [Ollama](https://ollama.com) model — no API key, nothing leaves your machine. Preferred over the paid options below when set. |
+| `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening via a paid cloud provider, if you'd rather not run Ollama. Only used when `OLLAMA_BASE_URL` isn't set. |
 
 Backend checks:
 

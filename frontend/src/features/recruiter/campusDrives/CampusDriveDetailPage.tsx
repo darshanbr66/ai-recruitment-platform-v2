@@ -4,20 +4,42 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
-import type { CampusDriveStatus } from "../../../types/campusDrive";
+import { useToast } from "../../../shared/components/ToastContext";
+import type { CampusDriveFunnelCounts, CampusDriveStatus } from "../../../types/campusDrive";
 import { useAuth } from "../../auth/AuthContext";
 import { listApplicationsForDrive } from "../applications/api";
-import { getCampusDrive, updateCampusDrive } from "./api";
+import { getCampusDrive, getCampusDriveFunnel, regenerateCampusDriveLink, updateCampusDrive } from "./api";
 
-const NEXT_ACTIONS: Record<CampusDriveStatus, { label: string; status: CampusDriveStatus }[]> = {
-  PLANNED: [
-    { label: "Activate", status: "ACTIVE" },
-    { label: "Cancel", status: "CANCELLED" },
+const NEXT_ACTIONS: Record<CampusDriveStatus, { label: string; status: CampusDriveStatus; confirm?: boolean }[]> = {
+  DRAFT: [{ label: "Activate", status: "ACTIVE" }],
+  ACTIVE: [
+    { label: "Pause", status: "PAUSED" },
+    { label: "Close", status: "CLOSED", confirm: true },
   ],
-  ACTIVE: [{ label: "Close", status: "CLOSED" }],
-  CLOSED: [],
-  CANCELLED: [],
+  PAUSED: [
+    { label: "Resume", status: "ACTIVE" },
+    { label: "Close", status: "CLOSED", confirm: true },
+  ],
+  CLOSED: [{ label: "Reopen", status: "ACTIVE" }],
 };
+
+const STATUS_BADGE: Record<CampusDriveStatus, string> = {
+  DRAFT: "badge-inactive",
+  ACTIVE: "badge-active",
+  PAUSED: "badge-warn",
+  CLOSED: "badge-inactive",
+};
+
+const FUNNEL_STAGES: { key: keyof CampusDriveFunnelCounts; label: string }[] = [
+  { key: "registered", label: "Registered" },
+  { key: "screening", label: "Screened" },
+  { key: "assessment_invited", label: "Assessment invited" },
+  { key: "assessment_completed", label: "Assessment completed" },
+  { key: "shortlisted", label: "Shortlisted" },
+  { key: "interview", label: "Interview" },
+  { key: "selected", label: "Selected" },
+  { key: "rejected", label: "Rejected" },
+];
 
 export function CampusDriveDetailPage() {
   const { driveId = "" } = useParams<{ driveId: string }>();
@@ -25,11 +47,21 @@ export function CampusDriveDetailPage() {
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const { showToast } = useToast();
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [regeneratedLink, setRegeneratedLink] = useState<string | null>(null);
+
+  const driveQueryKey = ["recruiter", "campus-drives", driveId];
 
   const driveQuery = useQuery({
-    queryKey: ["recruiter", "campus-drives", driveId],
+    queryKey: driveQueryKey,
     queryFn: () => getCampusDrive(driveId, token),
+    enabled: accessToken !== null,
+  });
+
+  const funnelQuery = useQuery({
+    queryKey: ["recruiter", "campus-drives", driveId, "funnel"],
+    queryFn: () => getCampusDriveFunnel(driveId, token),
     enabled: accessToken !== null,
   });
 
@@ -41,9 +73,36 @@ export function CampusDriveDetailPage() {
 
   const statusMutation = useMutation({
     mutationFn: (status: CampusDriveStatus) => updateCampusDrive(driveId, { status }, token),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: ["recruiter", "campus-drives", driveId] }),
+    onSuccess: (_data, status) => {
+      showToast(`Drive status updated to ${status}.`, "success");
+      setConfirmingClose(false);
+      void queryClient.invalidateQueries({ queryKey: driveQueryKey });
+    },
+    onError: (err) => {
+      showToast(err instanceof ApiError ? err.message : "Could not update the drive.", "error");
+    },
   });
+
+  const regenerateMutation = useMutation({
+    mutationFn: () => regenerateCampusDriveLink(driveId, token),
+    onSuccess: (drive) => {
+      showToast("A new application link was generated. The old link no longer works.", "success");
+      if (drive.application_link) setRegeneratedLink(drive.application_link);
+      void queryClient.invalidateQueries({ queryKey: driveQueryKey });
+    },
+    onError: (err) => {
+      showToast(err instanceof ApiError ? err.message : "Could not regenerate the link.", "error");
+    },
+  });
+
+  async function copyLink(link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast("Link copied to clipboard.", "success");
+    } catch {
+      showToast("Could not copy the link automatically — copy it manually.", "error");
+    }
+  }
 
   if (driveQuery.isPending) return <p role="status">Loading campus drive…</p>;
   if (driveQuery.isError || !driveQuery.data) {
@@ -67,10 +126,10 @@ export function CampusDriveDetailPage() {
           <h1>{drive.name}</h1>
           <p className="muted">
             {drive.job_title} · {drive.college_name}
-            {drive.batch_year ? ` · Batch ${drive.batch_year}` : ""}
           </p>
+          <span className={`badge ${STATUS_BADGE[drive.status]}`}>{drive.status}</span>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div className="btn-group">
           {NEXT_ACTIONS[drive.status].map((action) => (
             <button
               key={action.status}
@@ -78,9 +137,7 @@ export function CampusDriveDetailPage() {
               className="btn btn-ghost btn-sm"
               disabled={statusMutation.isPending}
               onClick={() =>
-                action.status === "CANCELLED"
-                  ? setConfirmingCancel(true)
-                  : statusMutation.mutate(action.status)
+                action.confirm ? setConfirmingClose(true) : statusMutation.mutate(action.status)
               }
             >
               {action.label}
@@ -89,13 +146,70 @@ export function CampusDriveDetailPage() {
         </div>
       </div>
 
+      {drive.description && (
+        <section className="card">
+          <h2>Description</h2>
+          <p>{drive.description}</p>
+        </section>
+      )}
+
+      <section className="card stack-sm">
+        <div className="page-header">
+          <h2>Candidate application link</h2>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={regenerateMutation.isPending}
+            onClick={() => regenerateMutation.mutate()}
+          >
+            {regenerateMutation.isPending ? "Generating…" : "Regenerate link"}
+          </button>
+        </div>
+        {regeneratedLink ? (
+          <div className="link-copy-row">
+            <code className="link-copy-value">{regeneratedLink}</code>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => copyLink(regeneratedLink)}>
+              Copy link
+            </button>
+            <a className="btn btn-ghost btn-sm" href={regeneratedLink} target="_blank" rel="noreferrer">
+              Open link
+            </a>
+          </div>
+        ) : (
+          <p className="muted">
+            The link was shown once when this drive was created. Use "Regenerate link" if it needs to
+            be re-shared — this invalidates the previous link.
+          </p>
+        )}
+        {drive.registration_deadline && (
+          <p className="muted">Registration deadline: {new Date(drive.registration_deadline).toLocaleDateString()}</p>
+        )}
+        {drive.default_assessment_title && (
+          <p className="muted">Candidates are auto-invited to: {drive.default_assessment_title}</p>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>Hiring funnel</h2>
+        {funnelQuery.isPending && <p role="status">Loading funnel…</p>}
+        {funnelQuery.isSuccess && (
+          <div className="funnel-grid">
+            {FUNNEL_STAGES.map((stage) => (
+              <div key={stage.key} className="funnel-stat">
+                <span className="funnel-stat-value">{funnelQuery.data[stage.key]}</span>
+                <span className="funnel-stat-label">{stage.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="card">
         <h2>Candidates in this drive</h2>
         {applicationsQuery.isPending && <p role="status">Loading…</p>}
         {applicationsQuery.isSuccess && applicationsQuery.data.length === 0 && (
           <p className="muted">
-            No applications yet. Candidates who apply to {drive.job_title} while this drive is
-            active are added here automatically.
+            No applications yet. Candidates who apply via this drive's link appear here automatically.
           </p>
         )}
         {applicationsQuery.isSuccess && applicationsQuery.data.length > 0 && (
@@ -128,16 +242,14 @@ export function CampusDriveDetailPage() {
         )}
       </section>
 
-      {confirmingCancel && (
+      {confirmingClose && (
         <ConfirmDialog
-          title="Cancel this campus drive?"
-          message={`This cancels "${drive.name}" at ${drive.college_name}. Existing applications are unaffected, but the drive will no longer accept new candidates.`}
-          confirmLabel="Cancel drive"
+          title="Close this campus drive?"
+          message={`This closes "${drive.name}" at ${drive.college_name}. Existing applications are unaffected, and the drive stays in your history — you can reopen it at any time.`}
+          confirmLabel="Close drive"
           isConfirming={statusMutation.isPending}
-          onCancel={() => setConfirmingCancel(false)}
-          onConfirm={() =>
-            statusMutation.mutate("CANCELLED", { onSuccess: () => setConfirmingCancel(false) })
-          }
+          onCancel={() => setConfirmingClose(false)}
+          onConfirm={() => statusMutation.mutate("CLOSED")}
         />
       )}
     </div>

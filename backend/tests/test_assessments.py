@@ -345,3 +345,83 @@ async def test_invite_fails_when_application_not_in_screening(
         headers=headers,
     )
     assert response.status_code == 409
+
+
+def _csv_upload(content: bytes, filename: str = "questions.csv"):
+    return {"file": (filename, content, "text/csv")}
+
+
+async def test_parse_questions_from_csv_returns_preview_without_persisting(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-import-csv")
+    csv_bytes = (
+        b"question,option_1,option_2,option_3,correct\n"
+        b"What is 2+2?,3,4,5,2\n"
+        b"Unanswerable row,A,B,C,\n"
+    )
+
+    response = await client.post(
+        "/api/v1/recruiter/assessments/parse-questions",
+        files=_csv_upload(csv_bytes),
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["questions"]) == 1
+    assert body["questions"][0]["prompt"] == "What is 2+2?"
+    assert len(body["warnings"]) == 1
+
+    # Nothing was persisted — parsing is preview-only.
+    listing = await client.get("/api/v1/recruiter/assessments", headers=ctx["headers"])
+    assert listing.json() == []
+
+
+async def test_parse_questions_preview_can_be_submitted_as_a_real_assessment(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-import-then-create")
+    csv_bytes = b"question,option_1,option_2,correct\nCapital of France?,Berlin,Paris,2\n"
+
+    parsed = (
+        await client.post(
+            "/api/v1/recruiter/assessments/parse-questions",
+            files=_csv_upload(csv_bytes),
+            headers=ctx["headers"],
+        )
+    ).json()
+
+    create_response = await client.post(
+        "/api/v1/recruiter/assessments",
+        json={
+            "title": "Imported Assessment",
+            "instructions": "Answer everything.",
+            "duration_minutes": 20,
+            "pass_score": 50,
+            "questions": parsed["questions"],
+        },
+        headers=ctx["headers"],
+    )
+    assert create_response.status_code == 201, create_response.text
+    assert len(create_response.json()["questions"]) == 1
+
+
+async def test_parse_questions_rejects_unsupported_file_type(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-import-badtype")
+    response = await client.post(
+        "/api/v1/recruiter/assessments/parse-questions",
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "question_import_failed"
+
+
+async def test_parse_questions_requires_assessment_manage_permission(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/recruiter/assessments/parse-questions",
+        files=_csv_upload(b"question,option_1,option_2,correct\nQ?,A,B,1\n"),
+    )
+    assert response.status_code == 401

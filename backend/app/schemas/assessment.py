@@ -26,6 +26,17 @@ class AssessmentCreateRequest(BaseModel):
     questions: list[QuestionCreate] = Field(min_length=1)
 
 
+class ParsedQuestionsResponse(BaseModel):
+    """Response for the "Import Questions" preview step — nothing here has
+    been persisted yet. `questions` is shaped exactly like
+    `AssessmentCreateRequest.questions` so the frontend can preview, edit,
+    reorder, and select before sending the final create request unchanged.
+    """
+
+    questions: list[QuestionCreate]
+    warnings: list[str]
+
+
 class QuestionOptionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

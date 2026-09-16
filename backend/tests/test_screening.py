@@ -147,7 +147,8 @@ async def test_screening_without_a_configured_provider_fails_honestly(
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["status"] == "FAILED"
-    assert "No AI provider is configured" in body["error_message"]
+    assert "AI screening is currently unavailable" in body["error_message"]
+    assert "no AI provider is configured" in body["error_message"]
 
 
 async def test_screening_requires_an_existing_resume(

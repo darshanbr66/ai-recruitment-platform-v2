@@ -73,10 +73,16 @@ async function request<T>(path: string, method: string, options?: RequestOptions
   return response.json() as Promise<T>;
 }
 
-async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+async function requestForm<T>(path: string, formData: FormData, accessToken?: string): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     credentials: "include",
+    headers,
     body: formData,
   });
 
@@ -122,7 +128,10 @@ export const apiClient = {
     request<T>(path, "PATCH", { body, accessToken }),
   /** For multipart/form-data submissions (e.g. a resume upload) — the
    * browser sets the Content-Type boundary itself, so this deliberately
-   * skips the JSON headers/serialization `request()` always applies. */
-  postForm: <T>(path: string, formData: FormData) => requestForm<T>(path, formData),
+   * skips the JSON headers/serialization `request()` always applies.
+   * `accessToken` is optional since public (unauthenticated) endpoints use
+   * this too. */
+  postForm: <T>(path: string, formData: FormData, accessToken?: string) =>
+    requestForm<T>(path, formData, accessToken),
   getBlob: (path: string, accessToken: string) => requestBlob(path, accessToken),
 };

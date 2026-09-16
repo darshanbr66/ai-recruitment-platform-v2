@@ -4,7 +4,7 @@ caller, never the request."""
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
@@ -19,6 +19,7 @@ from app.schemas.assessment import (
     AssessmentResultResponse,
     AssessmentSummary,
     InviteCandidateRequest,
+    ParsedQuestionsResponse,
 )
 from app.services import application_service, assessment_service
 
@@ -42,6 +43,15 @@ async def _invitation_response(
         result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,
         invitation_link=invitation_link,
     )
+
+
+@router.post("/parse-questions", response_model=ParsedQuestionsResponse)
+async def parse_import_questions(
+    file: UploadFile = File(...),
+    _: User = Depends(require_permission("assessment.manage")),
+) -> ParsedQuestionsResponse:
+    content = await file.read()
+    return assessment_service.parse_import_file(content=content, filename=file.filename or "")
 
 
 @router.post("", response_model=AssessmentResponse, status_code=status.HTTP_201_CREATED)

@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
+import { ApiError } from "../../../lib/apiClient";
+import { Alert } from "../../../shared/components/Alert";
+import { BarList } from "../../../shared/components/BarList";
 import { useAuth } from "../../auth/AuthContext";
-import { listUsers } from "../../auth/api";
-import { listCandidates } from "../candidates/api";
-import { listJobs } from "../jobs/api";
 import { listApplications } from "../applications/api";
+import { getReportOverview } from "../reports/api";
 
 const QUICK_LINKS = [
   { to: "/recruiter/jobs", title: "Post a job", description: "Create and publish a new requisition." },
@@ -14,38 +16,37 @@ const QUICK_LINKS = [
 ];
 
 /**
- * Recruiter dashboard. Every number here is computed from real data — the
- * team-member count is a live query — rather than hardcoded
- * (CLAUDE.md § 2: "Reports != hardcoded numbers").
+ * Recruiter dashboard. Every number here comes from
+ * `GET /api/v1/recruiter/reports/overview` (real, tenant-scoped, computed
+ * at request time — CLAUDE.md § 2: "Reports != hardcoded numbers"), the
+ * same source of truth the Reports page uses, so the two never disagree.
  *
  * Deliberately shows no tenancy/architecture details (organization id,
  * phase numbers, etc.) — this is a normal recruiter's home screen, not a
- * developer view (CLAUDE.md § 4/§ 21). Platform-level detail belongs on
- * the SUPER_ADMIN-only /admin surface instead.
+ * developer view. Platform-level detail belongs on the SUPER_ADMIN-only
+ * /admin surface instead.
  */
 export function OverviewPage() {
   const { user, accessToken } = useAuth();
 
-  const teamQuery = useQuery({
-    queryKey: ["recruiter", "users", "count"],
-    queryFn: () => listUsers(accessToken as string),
+  const reportQuery = useQuery({
+    queryKey: ["recruiter", "reports", "overview"],
+    queryFn: () => getReportOverview(accessToken as string),
     enabled: accessToken !== null,
   });
-  const jobsQuery = useQuery({
-    queryKey: ["recruiter", "jobs", "count"],
-    queryFn: () => listJobs(accessToken as string),
-    enabled: accessToken !== null,
-  });
-  const candidatesQuery = useQuery({
-    queryKey: ["recruiter", "candidates", "count"],
-    queryFn: () => listCandidates(accessToken as string),
-    enabled: accessToken !== null,
-  });
+
   const applicationsQuery = useQuery({
-    queryKey: ["recruiter", "applications", "count"],
+    queryKey: ["recruiter", "applications", "all"],
     queryFn: () => listApplications(accessToken as string),
     enabled: accessToken !== null,
   });
+
+  const recentApplications = useMemo(() => {
+    if (!applicationsQuery.data) return [];
+    return [...applicationsQuery.data]
+      .sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime())
+      .slice(0, 6);
+  }, [applicationsQuery.data]);
 
   return (
     <div className="stack-lg">
@@ -54,40 +55,88 @@ export function OverviewPage() {
         <p className="muted">Here's what's happening with your hiring pipeline.</p>
       </section>
 
+      {reportQuery.isError && (
+        <Alert>
+          {reportQuery.error instanceof ApiError ? reportQuery.error.message : "Could not load your overview."}
+        </Alert>
+      )}
+
       <section className="card-grid">
         <div className="stat-card">
           <span className="stat-label">Open jobs</span>
-          {jobsQuery.isPending && <span className="stat-value muted">Loading…</span>}
-          {jobsQuery.isError && <span className="stat-value muted">Unavailable</span>}
-          {jobsQuery.isSuccess && (
-            <span className="stat-value">
-              {jobsQuery.data.filter((job) => job.status === "OPEN").length}
-            </span>
-          )}
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.open_jobs}</span>}
         </div>
         <div className="stat-card">
           <span className="stat-label">Candidates</span>
-          {candidatesQuery.isPending && <span className="stat-value muted">Loading…</span>}
-          {candidatesQuery.isError && <span className="stat-value muted">Unavailable</span>}
-          {candidatesQuery.isSuccess && (
-            <span className="stat-value">{candidatesQuery.data.length}</span>
-          )}
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.total_candidates}</span>}
         </div>
         <div className="stat-card">
           <span className="stat-label">Applications</span>
-          {applicationsQuery.isPending && <span className="stat-value muted">Loading…</span>}
-          {applicationsQuery.isError && <span className="stat-value muted">Unavailable</span>}
-          {applicationsQuery.isSuccess && (
-            <span className="stat-value">{applicationsQuery.data.length}</span>
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.total_applications}</span>}
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Assessment invitations</span>
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && (
+            <span className="stat-value">{reportQuery.data.assessments.total_invitations}</span>
           )}
         </div>
         <div className="stat-card">
-          <span className="stat-label">Team members</span>
-          {teamQuery.isPending && <span className="stat-value muted">Loading…</span>}
-          {teamQuery.isError && <span className="stat-value muted">Unavailable</span>}
-          {teamQuery.isSuccess && <span className="stat-value">{teamQuery.data.length}</span>}
+          <span className="stat-label">Campus drives</span>
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.campus_drives.length}</span>}
         </div>
       </section>
+
+      <div className="detail-grid">
+        <section className="card">
+          <h2>Pipeline by stage</h2>
+          {reportQuery.isPending && <p role="status">Loading…</p>}
+          {reportQuery.isSuccess &&
+            (reportQuery.data.applications_by_status.length === 0 ? (
+              <p className="muted">No applications yet — once candidates apply, their stages show up here.</p>
+            ) : (
+              <BarList
+                rows={reportQuery.data.applications_by_status.map((row) => ({
+                  id: row.status,
+                  label: row.status,
+                  count: row.count,
+                }))}
+                total={reportQuery.data.total_applications}
+              />
+            ))}
+        </section>
+
+        <section className="card">
+          <h2>Recent activity</h2>
+          {applicationsQuery.isPending && <p role="status">Loading…</p>}
+          {applicationsQuery.isSuccess &&
+            (recentApplications.length === 0 ? (
+              <p className="muted">No applications yet.</p>
+            ) : (
+              <div className="timeline">
+                {recentApplications.map((application) => (
+                  <div key={application.id} className="timeline-item">
+                    <span className="timeline-dot" />
+                    <div>
+                      <Link to={`/recruiter/applications/${application.id}`}>
+                        {application.candidate_full_name}
+                      </Link>{" "}
+                      applied to <strong>{application.job_title}</strong>
+                      <div className="muted">
+                        {new Date(application.applied_at).toLocaleString()} ·{" "}
+                        <span className="badge badge-active">{application.status}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+        </section>
+      </div>
 
       <section>
         <h2>Quick actions</h2>

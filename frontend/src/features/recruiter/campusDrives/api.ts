@@ -1,6 +1,7 @@
 import { apiClient } from "../../../lib/apiClient";
 import type {
   CampusDriveCreateRequest,
+  CampusDriveFunnelCounts,
   CampusDriveResponse,
   CampusDriveUpdateRequest,
 } from "../../../types/campusDrive";
@@ -25,6 +26,21 @@ export function updateCampusDrive(
   return apiClient.patch<CampusDriveResponse>(
     `/api/v1/recruiter/campus-drives/${driveId}`,
     payload,
+    accessToken,
+  );
+}
+
+export function getCampusDriveFunnel(driveId: string, accessToken: string) {
+  return apiClient.get<CampusDriveFunnelCounts>(
+    `/api/v1/recruiter/campus-drives/${driveId}/funnel`,
+    accessToken,
+  );
+}
+
+export function regenerateCampusDriveLink(driveId: string, accessToken: string) {
+  return apiClient.post<CampusDriveResponse>(
+    `/api/v1/recruiter/campus-drives/${driveId}/regenerate-link`,
+    undefined,
     accessToken,
   );
 }

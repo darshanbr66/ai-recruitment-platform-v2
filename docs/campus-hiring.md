@@ -1,38 +1,66 @@
 # Campus / Mass Hiring
 
-**Implementation status:** The core model is implemented as designed —
-`CampusDrive` (`app/models/campus_drive.py`) composes an existing `Job`,
-and participation is exactly `Application.campus_drive_id` with no separate
-membership table, per § 2 below. A public applicant to a job with an
-`ACTIVE` drive is auto-associated (`app/services/public_application_service.py`).
+**Implementation status:** `CampusDrive` (`app/models/campus_drive.py`)
+composes an existing `Job` (or creates one inline), and participation is
+exactly `Application.campus_drive_id` with no separate membership table,
+per § 2 below. Each drive has its own public, no-login application link
+(§ 3). Campus reporting (§ 5) is real, computed from live data — both the
+per-drive funnel endpoint and the reports overview breakdown.
+
 Not implemented: `eligibility_criteria` (jsonb filtering), `candidate_limit`
-enforcement, and bulk/CSV recruiter import — candidates currently enter a
-drive only via the public portal or the existing one-at-a-time
-candidate/application creation endpoints. Campus reporting (§ 5) is real:
-`GET /api/v1/recruiter/reports/overview` includes a per-drive application
-breakdown, computed from live data.
+enforcement, and recruiter-side bulk/CSV candidate import — candidates
+currently enter a drive only via its public application link, the general
+career portal (if attached to the same job), or the one-at-a-time
+candidate/application creation endpoints.
 
 ## 1. Model
 
 ```
 CampusDrive
   organization_id
-  job_id                  -- the opportunity being hired for
-  college_id              -- which institution
-  batch_year
-  eligibility_criteria    -- jsonb (e.g. min CGPA, allowed branches — structured
-                             enough to filter on, flexible enough not to need a
-                             schema change per new criterion type)
-  default_assessment_id   -- optional; recruiter can still send a different
-                             assessment per invitation if needed
-  start_date / end_date
-  candidate_limit         -- optional cap
-  status                  -- PLANNED / ACTIVE / CLOSED / CANCELLED
+  job_id                  -- the opportunity being hired for (existing job,
+                             or one created inline at drive-creation time —
+                             see "job source" below)
+  college_name
+  description
+  batch_year / start_date / end_date / registration_deadline
+  default_assessment_id   -- optional; if set, a candidate who applies is
+                             automatically invited to it
+  link_token_hash         -- SHA-256 hash of the opaque public application
+                             token; the raw token is only ever returned once,
+                             by create/regenerate-link (same pattern as
+                             assessment invitations, docs/assessment.md § 4)
+  status                  -- DRAFT / ACTIVE / PAUSED / CLOSED
 ```
 
 A `CampusDrive` does not duplicate anything `Job` or `Assessment` already
-model — it composes them with campus-specific scheduling/eligibility
-metadata.
+model — it composes them with campus-specific scheduling metadata.
+
+**Job source.** Creating a drive takes either an existing `job_id`, or
+`new_job_title` + `new_job_description` to create the job inline in the
+same request (`app/services/campus_drive_service.py::_resolve_job_id`) —
+never both, never neither. This avoids the recruiter having to leave the
+campus-drive flow to first create a job, without ever creating a duplicate
+job behind the scenes.
+
+**Status lifecycle** (`CAMPUS_DRIVE_TRANSITIONS` in
+`app/models/campus_drive.py`, enforced server-side, not just hidden in the
+UI):
+
+```
+DRAFT   --Activate-->  ACTIVE
+ACTIVE  --Pause-->     PAUSED
+ACTIVE  --Close-->     CLOSED
+PAUSED  --Resume-->    ACTIVE
+PAUSED  --Close-->     CLOSED
+CLOSED  --Reopen-->    ACTIVE
+```
+
+A drive is never deleted by a status change — `Close` and `Reopen` are
+just further transitions, so closed drives stay in the recruiter's history
+and their applications remain intact. Only `ACTIVE` drives accept new
+public applications (§ 3); `DRAFT` drives 404 on their public link so an
+unfinished drive can't be applied to before it's ready.
 
 ## 2. Candidates in a drive
 
@@ -46,7 +74,9 @@ Application {
   job_id = campus_drive.job_id
   campus_drive_id = campus_drive.id
   source = CAMPUS_IMPORT | PORTAL | RECRUITER_ADDED
-  status = APPLIED (initial, regardless of how the candidate entered)
+  status = APPLIED (initial, regardless of how the candidate entered) —
+           or fast-tracked straight to ASSESSMENT_INVITED if the drive has
+           a default_assessment_id (see § 3)
 }
 ```
 
@@ -57,60 +87,59 @@ assessment invitation, status reporting) would have to reconcile two
 records for the same relationship. Per `CLAUDE.md` § 2, Candidate/Application
 modeling rules apply identically inside campus hiring — no special case.
 
-Candidates can enter a drive via:
+## 3. The public application link (no candidate login)
 
-- **Recruiter import** (bulk, e.g. CSV) → creates `Candidate` rows (if not
-  already existing for that org/email) + `Application` rows with
-  `source=CAMPUS_IMPORT`.
-- **Manual add** (one at a time) → same, single record.
-- **Public portal association** → a candidate who applies through the
-  career portal to a job that happens to be attached to an active drive gets
-  `campus_drive_id` set automatically on their `Application`.
-
-**Import/add never sends an assessment invitation.** Creating the
-`Application` only ever results in `status=APPLIED`. Sending an invitation
-is always a distinct, explicit recruiter action — this is a hard requirement,
-not a default-off setting.
-
-## 3. Sending assessment invitations
+Each drive gets one shareable link, `https://<frontend>/campus-drive/<token>`
+(`app/api/v1/public/campus_drives.py`, `app/services/public_campus_drive_service.py`).
+Same opaque-bearer-token pattern as assessment invitations
+(`docs/architecture.md` § 4): the raw token is shown to the recruiter once
+(on create, or again via "Regenerate link," which invalidates the previous
+one), only its SHA-256 hash is persisted.
 
 ```
-Recruiter reviews applications for a drive (Application Review, filtered by campus_drive_id)
-  → selects one or many eligible applications
-  → "Send Assessment Invitation" (single or bulk)
-    → for each selected application: create AssessmentInvitation
-      (assessment_id = chosen assessment, application_id = the application,
-       status=NOT_SENT → generate token → send email → status=SENT)
-    → Application.status transitions APPLIED/UNDER_REVIEW/SCREENING → ASSESSMENT_INVITED
+GET  /api/v1/public/campus-drive/{token}         -- drive/job/college details, no auth
+POST /api/v1/public/campus-drive/{token}/apply    -- name, email, phone, resume — no account
 ```
 
-Bulk send is a loop over the same single-invitation service call (not a
-separate code path) so behavior (audit logging, email templating, failure
-handling per recipient) is identical whether sent one at a time or in bulk.
-A partial failure (e.g. one bad email address) does not roll back the
-successful sends — each invitation's outcome is independent and reported
-back to the recruiter per-recipient.
+`apply` upserts the `Candidate` by (organization, email), creates the
+`Application` with `source=CAMPUS_IMPORT`, saves the resume, and — only if
+the drive has a `default_assessment_id` — fast-tracks the application
+through `UNDER_REVIEW → SCREENING` and creates an `AssessmentInvitation`
+immediately, returning its link in the response so the candidate can take
+the assessment right after applying. If no assessment is attached, the
+application simply stays at `APPLIED` for a recruiter to review.
 
-Resend uses the same `AssessmentInvitation` row (new token generated,
-`expires_at` refreshed) if the invitation hasn't been submitted; a fresh
-`AssessmentInvitation` row is not created for a resend, so invitation history
-stays attributable to one link's lifecycle. (If a candidate needs an entirely
-new attempt after submission, that is a recruiter decision handled as an
-explicit "issue new invitation," which is a new row, not a resend.)
+**Import/add never sends an assessment invitation** unless the drive was
+explicitly configured with one — this is a hard requirement, not a
+default-off setting: a recruiter adding a candidate one at a time never
+gets a surprise auto-invite.
 
-## 4. Downstream flow
+## 4. Recruiter-side management
 
-Once submitted, the assessment domain (`docs/assessment.md`) evaluates the
-attempt, writes `AssessmentResult`, and the application workflow moves the
-`Application` to `ASSESSMENT_COMPLETED`. From there, campus applications flow
-through the same `SHORTLISTED → INTERVIEW → SELECTED/REJECTED` states as any
-other application — there is no separate "campus status" vocabulary.
+```
+POST   /api/v1/recruiter/campus-drives                    -- create (§ 1 job source)
+GET    /api/v1/recruiter/campus-drives                    -- list (org-scoped)
+GET    /api/v1/recruiter/campus-drives/{id}                -- detail
+PATCH  /api/v1/recruiter/campus-drives/{id}                -- edit fields and/or status
+GET    /api/v1/recruiter/campus-drives/{id}/funnel          -- real counts, see § 5
+POST   /api/v1/recruiter/campus-drives/{id}/regenerate-link -- invalidates the old link
+```
 
 ## 5. Campus reporting
 
-Because campus participation is just `Application.campus_drive_id`, campus
-reports (drive-wise, college-wise, batch-wise funnel/conversion) are the same
-reporting service as general recruitment reports, filtered/grouped by
-`campus_drive_id` / `college_id` / `batch_year` — not a separate reporting
-subsystem (see `docs/database.md` § 3.10 and the Reporting module in
-`docs/architecture.md` § 10).
+Because campus participation is just `Application.campus_drive_id`, two
+real (never hardcoded) views are available:
+
+- **Per-drive funnel** (`GET /campus-drives/{id}/funnel`,
+  `campus_drive_service.get_funnel_counts`): a `GROUP BY status` count over
+  that drive's applications, keyed to the same `ApplicationStatus` values
+  used everywhere else in the product — registered, screening,
+  assessment_invited, assessment_completed, shortlisted, interview,
+  selected, rejected, withdrawn.
+- **Cross-drive comparison** (`GET /api/v1/recruiter/reports/overview`,
+  `campus_drives` field): total application count per drive, for the
+  Reports page's "Campus drives" chart.
+
+Downstream of `apply`, campus applications flow through the exact same
+application workflow (`docs/recruitment-workflow.md`) as any other
+application — there is no separate "campus status" vocabulary.

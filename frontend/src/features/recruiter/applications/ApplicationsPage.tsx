@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { useToast } from "../../../shared/components/ToastContext";
 import { APPLICATION_STATUSES, type ApplicationStatus } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { listCandidates } from "../candidates/api";
@@ -22,6 +23,9 @@ export function ApplicationsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const token = accessToken as string;
+  const { showToast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState("");
 
   const applicationsQuery = useQuery({
     queryKey: APPLICATIONS_QUERY_KEY,
@@ -51,9 +55,11 @@ export function ApplicationsPage() {
   const createApplicationMutation = useMutation({
     mutationFn: () => createApplication({ candidate_id: candidateId, job_id: jobId }, token),
     onSuccess: () => {
+      showToast("Application created.", "success");
       setCandidateId("");
       setJobId("");
       setFormError(null);
+      setShowForm(false);
       void queryClient.invalidateQueries({ queryKey: APPLICATIONS_QUERY_KEY });
     },
     onError: (err) => {
@@ -72,12 +78,20 @@ export function ApplicationsPage() {
 
   const filteredApplications = useMemo(() => {
     if (!applicationsQuery.data) return [];
+    const term = search.trim().toLowerCase();
     return applicationsQuery.data.filter((application) => {
       if (statusFilter && application.status !== statusFilter) return false;
       if (jobFilter && application.job_id !== jobFilter) return false;
+      if (
+        term &&
+        !application.candidate_full_name.toLowerCase().includes(term) &&
+        !application.job_title.toLowerCase().includes(term)
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [applicationsQuery.data, statusFilter, jobFilter]);
+  }, [applicationsQuery.data, statusFilter, jobFilter, search]);
 
   return (
     <div className="stack-lg">
@@ -86,6 +100,11 @@ export function ApplicationsPage() {
           <h1>Applications</h1>
           <p className="muted">Every candidate's progress through your hiring pipeline.</p>
         </div>
+        {canManageApplications && (
+          <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
+            + Link candidate to job
+          </button>
+        )}
       </div>
 
       {applicationsQuery.isPending && <p role="status">Loading applications…</p>}
@@ -105,6 +124,12 @@ export function ApplicationsPage() {
         <section className="stack-lg" style={{ gap: "1rem" }}>
           {applicationsQuery.data.length > 0 && (
             <div className="toolbar">
+              <input
+                className="search-input"
+                placeholder="Search by candidate or job…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
               <select
                 className="filter-select"
                 value={statusFilter}
@@ -133,11 +158,14 @@ export function ApplicationsPage() {
           )}
 
           {applicationsQuery.data.length === 0 ? (
-            <p className="muted">No applications yet — link a candidate to a job below.</p>
+            <div className="empty-state">
+              <p className="empty-state-title">No applications yet</p>
+              <p>Use "+ Link candidate to job" above to add one, or wait for candidates to apply.</p>
+            </div>
           ) : filteredApplications.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No applications match these filters</p>
-              <p>Try clearing the status or job filter.</p>
+              <p>Try clearing the search, status, or job filter.</p>
             </div>
           ) : (
             <div className="table-scroll">
@@ -147,6 +175,7 @@ export function ApplicationsPage() {
                     <th>Candidate</th>
                     <th>Job</th>
                     <th>Status</th>
+                    <th>Source</th>
                     <th>Applied</th>
                     <th>Resume</th>
                   </tr>
@@ -167,6 +196,9 @@ export function ApplicationsPage() {
                           {application.status}
                         </span>
                       </td>
+                      <td>
+                        <span className="badge badge-inactive">{application.source}</span>
+                      </td>
                       <td>{new Date(application.applied_at).toLocaleDateString()}</td>
                       <td>{application.resume_id ? "Yes" : "—"}</td>
                     </tr>
@@ -178,9 +210,14 @@ export function ApplicationsPage() {
         </section>
       )}
 
-      {canManageApplications && (
+      {canManageApplications && showForm && (
         <section className="card">
-          <h2>Link a candidate to a job</h2>
+          <div className="page-header">
+            <h2>Link a candidate to a job</h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+          </div>
           <p className="muted">
             Most applications arrive through your career site automatically — use this to add one
             by hand.

@@ -17,13 +17,18 @@ describe("PublicHomePage", () => {
     renderWithProviders(<PublicHomePage />);
 
     expect(screen.getByRole("heading", { name: /ai recruitment platform/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /browse open roles/i })).toHaveAttribute(
-      "href",
-      "/org/acme-corp",
-    );
-    expect(screen.getByRole("link", { name: /staff sign in/i })).toHaveAttribute(
-      "href",
-      "/recruiter/login",
-    );
+
+    // The hero, final CTA, and footer each repeat these calls to action by
+    // design (docs section "Final CTA" / "Footer" are distinct from Hero) —
+    // every occurrence must point at the same destination.
+    for (const link of screen.getAllByRole("link", { name: /browse open roles/i })) {
+      expect(link).toHaveAttribute("href", "/org/acme-corp");
+    }
+    for (const link of screen.getAllByRole("link", { name: /staff sign in/i })) {
+      expect(link).toHaveAttribute("href", "/recruiter/login");
+    }
+    for (const link of screen.getAllByRole("link", { name: /get started/i })) {
+      expect(link).toHaveAttribute("href", "/recruiter/login");
+    }
   });
 });

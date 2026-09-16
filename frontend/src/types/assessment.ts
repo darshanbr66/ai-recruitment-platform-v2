@@ -23,6 +23,15 @@ export interface AssessmentCreateRequest {
   questions: QuestionCreate[];
 }
 
+/** Response for the "Import Questions" preview step (POST
+ * /recruiter/assessments/parse-questions) — nothing has been persisted
+ * yet. `questions` is shaped exactly like AssessmentCreateRequest.questions
+ * so it can be edited and submitted unchanged. */
+export interface ParsedQuestionsResponse {
+  questions: QuestionCreate[];
+  warnings: string[];
+}
+
 export interface QuestionOptionResponse {
   id: string;
   label: string;

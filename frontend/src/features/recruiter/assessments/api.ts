@@ -4,10 +4,21 @@ import type {
   AssessmentInvitationResponse,
   AssessmentResponse,
   AssessmentSummary,
+  ParsedQuestionsResponse,
 } from "../../../types/assessment";
 
 export function listAssessments(accessToken: string) {
   return apiClient.get<AssessmentSummary[]>("/api/v1/recruiter/assessments", accessToken);
+}
+
+export function parseImportQuestions(file: File, accessToken: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.postForm<ParsedQuestionsResponse>(
+    "/api/v1/recruiter/assessments/parse-questions",
+    formData,
+    accessToken,
+  );
 }
 
 export function getAssessment(assessmentId: string, accessToken: string) {

@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
 
+    # Free/local AI screening via Ollama (https://ollama.com) — preferred
+    # over the paid providers above when explicitly enabled. Unset by
+    # default: an unset base URL means "not opted in", not "try
+    # localhost and fail" — the base URL is only ever meaningful once
+    # someone has actually installed and started Ollama locally.
+    ollama_base_url: str | None = None
+    ollama_model: str = "llama3.1"
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

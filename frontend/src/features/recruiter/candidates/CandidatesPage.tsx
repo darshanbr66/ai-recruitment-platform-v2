@@ -3,15 +3,27 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { useToast } from "../../../shared/components/ToastContext";
+import type { CandidateSource } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { createCandidate, listCandidates } from "./api";
 
 const CANDIDATES_QUERY_KEY = ["recruiter", "candidates"];
 
+const SOURCE_BADGE: Record<CandidateSource, string> = {
+  PORTAL: "badge-active",
+  RECRUITER_ADDED: "badge-inactive",
+  CAMPUS_IMPORT: "badge-warn",
+  REFERRAL: "badge-inactive",
+  OTHER: "badge-inactive",
+};
+
 export function CandidatesPage() {
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const [showForm, setShowForm] = useState(false);
 
   const candidatesQuery = useQuery({
     queryKey: CANDIDATES_QUERY_KEY,
@@ -42,6 +54,7 @@ export function CandidatesPage() {
         accessToken as string,
       ),
     onSuccess: () => {
+      showToast("Candidate added.", "success");
       setFullName("");
       setEmail("");
       setPhone("");
@@ -49,6 +62,7 @@ export function CandidatesPage() {
       setCurrentTitle("");
       setYearsExperience("");
       setFormError(null);
+      setShowForm(false);
       void queryClient.invalidateQueries({ queryKey: CANDIDATES_QUERY_KEY });
     },
     onError: (err) => {
@@ -80,10 +94,17 @@ export function CandidatesPage() {
 
   return (
     <div className="stack-lg">
-      <section>
-        <h1>Candidates</h1>
-        <p className="muted">Everyone in your talent pipeline.</p>
-      </section>
+      <div className="page-header">
+        <div>
+          <h1>Candidates</h1>
+          <p className="muted">Everyone in your talent pipeline.</p>
+        </div>
+        {canManageCandidates && (
+          <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
+            + Add candidate
+          </button>
+        )}
+      </div>
 
       {candidatesQuery.isPending && <p role="status">Loading candidates…</p>}
 
@@ -143,7 +164,11 @@ export function CandidatesPage() {
                             ? `${candidate.years_experience} yrs`
                             : "—"}
                         </td>
-                        <td>{candidate.source}</td>
+                        <td>
+                          <span className={`badge ${SOURCE_BADGE[candidate.source]}`}>
+                            {candidate.source}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -154,9 +179,14 @@ export function CandidatesPage() {
         </section>
       )}
 
-      {canManageCandidates && (
+      {canManageCandidates && showForm && (
         <section className="card">
-          <h2>Add a candidate</h2>
+          <div className="page-header">
+            <h2>Add a candidate</h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+          </div>
           <form onSubmit={handleSubmit} noValidate>
             <label className="field">
               <span>Full name</span>

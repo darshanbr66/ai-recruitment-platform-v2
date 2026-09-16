@@ -10,6 +10,11 @@ import type {
   PublicInvitationView,
   PublicSubmissionResult,
 } from "../../types/assessment";
+import type {
+  CampusDriveApplicationFormValues,
+  PublicCampusDriveApplicationResult,
+  PublicCampusDriveView,
+} from "../../types/publicCampusDrive";
 
 export function listOpenJobs(slug: string) {
   return apiClient.get<PublicJobSummary[]>(`/api/v1/public/organizations/${slug}/jobs`);
@@ -49,4 +54,25 @@ export function submitAssessment(token: string, answers: AnswerSubmission[]) {
   return apiClient.post<PublicSubmissionResult>(`/api/v1/public/assessment/${token}/submit`, {
     answers,
   });
+}
+
+export function getCampusDriveByToken(token: string) {
+  return apiClient.get<PublicCampusDriveView>(`/api/v1/public/campus-drive/${token}`);
+}
+
+export function applyToCampusDrive(
+  token: string,
+  values: CampusDriveApplicationFormValues,
+  resume: File,
+) {
+  const formData = new FormData();
+  formData.append("full_name", values.full_name);
+  formData.append("email", values.email);
+  if (values.phone) formData.append("phone", values.phone);
+  formData.append("resume", resume);
+
+  return apiClient.postForm<PublicCampusDriveApplicationResult>(
+    `/api/v1/public/campus-drive/${token}/apply`,
+    formData,
+  );
 }
