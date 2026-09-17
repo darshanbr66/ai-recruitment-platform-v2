@@ -5,6 +5,7 @@ import type {
   TokenResponse,
   UserCreateRequest,
   UserResponse,
+  UserUpdateRequest,
 } from "../../types/auth";
 
 /**
@@ -37,6 +38,10 @@ export function listUsers(accessToken: string) {
 
 export function createUser(payload: UserCreateRequest, accessToken: string) {
   return apiClient.post<UserResponse>("/api/v1/recruiter/users", payload, accessToken);
+}
+
+export function updateUser(userId: string, payload: UserUpdateRequest, accessToken: string) {
+  return apiClient.patch<UserResponse>(`/api/v1/recruiter/users/${userId}`, payload, accessToken);
 }
 
 export function listOrganizations(accessToken: string) {

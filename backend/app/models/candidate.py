@@ -1,6 +1,9 @@
+import uuid
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Enum, Index, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -53,3 +56,18 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+
+    # Soft delete (CLAUDE.md § "Reports != hardcoded numbers" sibling rule:
+    # never silently destroy recruitment history). A hard DELETE would also
+    # be blocked by applications.candidate_id's ON DELETE RESTRICT the
+    # moment the candidate has any application — this makes that the
+    # deliberate behavior everywhere, not just where the FK happens to
+    # enforce it. Deleted candidates are excluded from
+    # `candidate_service.list_candidates` but remain reachable by id (e.g.
+    # from an Activities log entry) and keep every Application/Note/
+    # AssessmentInvitation pointing at them intact.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

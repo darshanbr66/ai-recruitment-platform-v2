@@ -3,10 +3,13 @@ import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { Modal } from "../../../shared/components/Modal";
+import { SkeletonTable } from "../../../shared/components/Skeleton";
+import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import type { JobResponse, JobStatus } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
-import { createJob, listJobs, updateJob } from "./api";
+import { createJob, deleteJob, listJobs, updateJob } from "./api";
 
 const JOBS_QUERY_KEY = ["recruiter", "jobs"];
 
@@ -87,6 +90,9 @@ export function JobsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [openingsError, setOpeningsError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<JobResponse | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<JobResponse | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function openCreateForm() {
     setEditingJob(null);
@@ -167,6 +173,42 @@ export function JobsPage() {
     }
   }
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteJob(pendingDelete!.id, { reason: deleteReason.trim() }, token),
+    onSuccess: () => {
+      showToast(`${pendingDelete?.title} was deleted.`, "success");
+      setPendingDelete(null);
+      setDeleteReason("");
+      setDeleteError(null);
+      void queryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY });
+    },
+    onError: (err) => {
+      setDeleteError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openDeleteModal(job: JobResponse) {
+    setPendingDelete(job);
+    setDeleteReason("");
+    setDeleteError(null);
+  }
+
+  function closeDeleteModal() {
+    if (deleteMutation.isPending) return;
+    setPendingDelete(null);
+    setDeleteReason("");
+    setDeleteError(null);
+  }
+
+  function handleDeleteSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (deleteReason.trim().length === 0) {
+      setDeleteError("A reason for deletion is required.");
+      return;
+    }
+    deleteMutation.mutate();
+  }
+
   const canManageJobs = !(jobsQuery.error instanceof ApiError && jobsQuery.error.status === 403);
 
   const filteredJobs = useMemo(() => {
@@ -197,7 +239,7 @@ export function JobsPage() {
         )}
       </div>
 
-      {jobsQuery.isPending && <p role="status">Loading jobs…</p>}
+      {jobsQuery.isPending && <SkeletonTable columns={7} />}
 
       {jobsQuery.isError && !canManageJobs && (
         <Alert>You do not have permission to view jobs.</Alert>
@@ -229,6 +271,7 @@ export function JobsPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
+                      <th>#</th>
                       <th>Title</th>
                       <th>Department</th>
                       <th>Location</th>
@@ -238,8 +281,9 @@ export function JobsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredJobs.map((job) => (
+                    {filteredJobs.map((job, index) => (
                       <tr key={job.id}>
+                        <td>{index + 1}</td>
                         <td>{job.title}</td>
                         <td>{job.department ?? "—"}</td>
                         <td>{job.location ?? "—"}</td>
@@ -270,6 +314,13 @@ export function JobsPage() {
                                   {action.label}
                                 </button>
                               ))}
+                              <button
+                                type="button"
+                                className="btn btn-danger btn-sm"
+                                onClick={() => openDeleteModal(job)}
+                              >
+                                Delete
+                              </button>
                             </div>
                           </td>
                         )}
@@ -284,14 +335,8 @@ export function JobsPage() {
       )}
 
       {canManageJobs && showForm && (
-        <section className="card">
-          <div className="page-header">
-            <h2>{editingJob ? `Edit ${editingJob.title}` : "Create a job"}</h2>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={closeForm}>
-              Cancel
-            </button>
-          </div>
-          <form onSubmit={handleSubmit} noValidate>
+        <Modal title={editingJob ? `Edit ${editingJob.title}` : "Create a job"} onClose={closeForm}>
+          <form onSubmit={handleSubmit}>
             <label className="field">
               <span>Title</span>
               <input
@@ -371,17 +416,27 @@ export function JobsPage() {
 
             {formError && <Alert>{formError}</Alert>}
 
-            <button type="submit" className="btn btn-primary" disabled={saveMutation.isPending}>
-              {saveMutation.isPending
-                ? editingJob
-                  ? "Saving…"
-                  : "Creating…"
-                : editingJob
-                  ? "Save changes"
-                  : "Create job"}
-            </button>
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button type="submit" className="btn btn-primary" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? (
+                  <Spinner label={editingJob ? "Saving…" : "Creating…"} />
+                ) : editingJob ? (
+                  "Save changes"
+                ) : (
+                  "Create job"
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeForm}
+                disabled={saveMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
           </form>
-        </section>
+        </Modal>
       )}
 
       {pendingClose && (
@@ -395,6 +450,50 @@ export function JobsPage() {
             statusMutation.mutate({ jobId: pendingClose.id, status: "CLOSED", label: "Close" })
           }
         />
+      )}
+
+      {pendingDelete && (
+        <Modal title="Delete job" onClose={closeDeleteModal}>
+          <form onSubmit={handleDeleteSubmit}>
+            <p>
+              <strong>Job:</strong> {pendingDelete.title}
+            </p>
+            <p className="muted">
+              This removes "{pendingDelete.title}" from your active job list. Any applications
+              against it are preserved, and this action is recorded in Activities.
+            </p>
+            <label className="field">
+              <span>Reason for deletion</span>
+              <textarea
+                required
+                rows={3}
+                value={deleteReason}
+                onChange={(e) => {
+                  setDeleteReason(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                disabled={deleteMutation.isPending}
+                placeholder="e.g. Requisition cancelled"
+              />
+            </label>
+
+            {deleteError && <Alert>{deleteError}</Alert>}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button type="submit" className="btn btn-danger" disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? <Spinner label="Deleting…" /> : "Delete job"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeDeleteModal}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

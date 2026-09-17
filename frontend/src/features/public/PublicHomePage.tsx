@@ -92,7 +92,7 @@ export function PublicHomePage() {
             <Link to="/recruiter/login" className="btn btn-primary btn-lg">
               Get started
             </Link>
-            <Link to="/org/acme-corp" className="btn btn-ghost btn-lg">
+            <Link to="/org/sigvitas" className="btn btn-ghost btn-lg">
               Browse open roles
             </Link>
           </div>
@@ -247,7 +247,7 @@ export function PublicHomePage() {
             <Link to="/recruiter/login" className="btn btn-primary btn-lg">
               Get started
             </Link>
-            <Link to="/org/acme-corp" className="btn btn-ghost btn-lg">
+            <Link to="/org/sigvitas" className="btn btn-ghost btn-lg">
               Browse open roles
             </Link>
           </div>
@@ -257,7 +257,7 @@ export function PublicHomePage() {
       <footer className="landing-footer">
         <span>AI Recruitment Platform</span>
         <nav className="landing-footer-links">
-          <Link to="/org/acme-corp">Browse open roles</Link>
+          <Link to="/org/sigvitas">Browse open roles</Link>
           <Link to="/recruiter/login">Staff sign in</Link>
         </nav>
         <span className="muted">&copy; {new Date().getFullYear()} AI Recruitment Platform</span>

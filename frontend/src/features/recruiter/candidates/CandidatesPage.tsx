@@ -3,10 +3,13 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { Modal } from "../../../shared/components/Modal";
+import { SkeletonTable } from "../../../shared/components/Skeleton";
+import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { CandidateSource } from "../../../types/recruitment";
+import type { CandidateResponse, CandidateSource } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
-import { createCandidate, listCandidates } from "./api";
+import { createCandidate, deleteCandidate, listCandidates } from "./api";
 
 const CANDIDATES_QUERY_KEY = ["recruiter", "candidates"];
 
@@ -39,6 +42,9 @@ export function CandidatesPage() {
   const [currentTitle, setCurrentTitle] = useState("");
   const [yearsExperience, setYearsExperience] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<CandidateResponse | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const createCandidateMutation = useMutation({
     mutationFn: () =>
@@ -75,6 +81,42 @@ export function CandidatesPage() {
     createCandidateMutation.mutate();
   }
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteCandidate(pendingDelete!.id, deleteReason.trim(), accessToken as string),
+    onSuccess: (_data, _vars) => {
+      showToast(`${pendingDelete?.full_name} was deleted.`, "success");
+      setPendingDelete(null);
+      setDeleteReason("");
+      setDeleteError(null);
+      void queryClient.invalidateQueries({ queryKey: CANDIDATES_QUERY_KEY });
+    },
+    onError: (err) => {
+      setDeleteError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openDeleteModal(candidate: CandidateResponse) {
+    setPendingDelete(candidate);
+    setDeleteReason("");
+    setDeleteError(null);
+  }
+
+  function closeDeleteModal() {
+    if (deleteMutation.isPending) return;
+    setPendingDelete(null);
+    setDeleteReason("");
+    setDeleteError(null);
+  }
+
+  function handleDeleteSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (deleteReason.trim().length === 0) {
+      setDeleteError("A reason for deletion is required.");
+      return;
+    }
+    deleteMutation.mutate();
+  }
+
   const canManageCandidates = !(
     candidatesQuery.error instanceof ApiError && candidatesQuery.error.status === 403
   );
@@ -106,7 +148,7 @@ export function CandidatesPage() {
         )}
       </div>
 
-      {candidatesQuery.isPending && <p role="status">Loading candidates…</p>}
+      {candidatesQuery.isPending && <SkeletonTable columns={8} />}
 
       {candidatesQuery.isError && !canManageCandidates && (
         <Alert>You do not have permission to view candidates.</Alert>
@@ -140,21 +182,24 @@ export function CandidatesPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
+                      <th>#</th>
                       <th>Name</th>
                       <th>Email</th>
                       <th>Current title</th>
                       <th>Location</th>
                       <th>Experience</th>
                       <th>Source</th>
+                      {canManageCandidates && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCandidates.map((candidate) => (
+                    {filteredCandidates.map((candidate, index) => (
                       <tr
                         key={candidate.id}
                         className="clickable-row"
                         onClick={() => navigate(`/recruiter/candidates/${candidate.id}`)}
                       >
+                        <td>{index + 1}</td>
                         <td>{candidate.full_name}</td>
                         <td>{candidate.email}</td>
                         <td>{candidate.current_title ?? "—"}</td>
@@ -169,6 +214,17 @@ export function CandidatesPage() {
                             {candidate.source}
                           </span>
                         </td>
+                        {canManageCandidates && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => openDeleteModal(candidate)}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -180,14 +236,8 @@ export function CandidatesPage() {
       )}
 
       {canManageCandidates && showForm && (
-        <section className="card">
-          <div className="page-header">
-            <h2>Add a candidate</h2>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>
-              Cancel
-            </button>
-          </div>
-          <form onSubmit={handleSubmit} noValidate>
+        <Modal title="Add a candidate" onClose={() => setShowForm(false)}>
+          <form onSubmit={handleSubmit}>
             <label className="field">
               <span>Full name</span>
               <input
@@ -250,15 +300,71 @@ export function CandidatesPage() {
 
             {formError && <Alert>{formError}</Alert>}
 
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={createCandidateMutation.isPending}
-            >
-              {createCandidateMutation.isPending ? "Adding…" : "Add candidate"}
-            </button>
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={createCandidateMutation.isPending}
+              >
+                {createCandidateMutation.isPending ? <Spinner label="Adding…" /> : "Add candidate"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowForm(false)}
+                disabled={createCandidateMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
           </form>
-        </section>
+        </Modal>
+      )}
+
+      {pendingDelete && (
+        <Modal title="Delete candidate" onClose={closeDeleteModal}>
+          <form onSubmit={handleDeleteSubmit}>
+            <p>
+              <strong>Candidate:</strong> {pendingDelete.full_name}
+              <br />
+              <strong>Email:</strong> {pendingDelete.email}
+            </p>
+            <p className="muted">
+              This removes {pendingDelete.full_name} from your active candidate list. Their
+              applications and history are preserved, and this action is recorded in Activities.
+            </p>
+            <label className="field">
+              <span>Reason for deletion</span>
+              <textarea
+                required
+                rows={3}
+                value={deleteReason}
+                onChange={(e) => {
+                  setDeleteReason(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                disabled={deleteMutation.isPending}
+                placeholder="e.g. Duplicate candidate record"
+              />
+            </label>
+
+            {deleteError && <Alert>{deleteError}</Alert>}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button type="submit" className="btn btn-danger" disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? <Spinner label="Deleting…" /> : "Delete Candidate"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeDeleteModal}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

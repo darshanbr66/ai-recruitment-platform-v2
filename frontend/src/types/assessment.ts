@@ -52,6 +52,7 @@ export interface AssessmentResponse {
   instructions: string;
   duration_minutes: number;
   pass_score: number;
+  deleted_at: string | null;
   created_at: string;
   questions: QuestionResponse[];
 }
@@ -63,6 +64,10 @@ export interface AssessmentSummary {
   pass_score: number;
   question_count: number;
   created_at: string;
+}
+
+export interface AssessmentDeleteRequest {
+  reason: string;
 }
 
 export interface AssessmentResultResponse {
@@ -83,8 +88,20 @@ export interface AssessmentInvitationResponse {
   expires_at: string;
   started_at: string | null;
   submitted_at: string | null;
+  attempt_number: number;
+  retest_reason: string | null;
   result: AssessmentResultResponse | null;
   invitation_link: string | null;
+}
+
+export type RetestAssessmentChoice = "SAME" | "EXISTING" | "NEW";
+
+export interface RetestRequest {
+  application_id: string;
+  reason: string;
+  assessment_choice: RetestAssessmentChoice;
+  assessment_id?: string | null;
+  new_assessment?: AssessmentCreateRequest | null;
 }
 
 // --- Public (candidate-facing, token-based) ---

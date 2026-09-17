@@ -86,7 +86,7 @@ export function JobDetailPage() {
             ) : (
               <section className="card">
                 <h2>Apply for this role</h2>
-                <form onSubmit={handleSubmit} noValidate>
+                <form onSubmit={handleSubmit}>
                   <label className="field">
                     <span>Full name</span>
                     <input

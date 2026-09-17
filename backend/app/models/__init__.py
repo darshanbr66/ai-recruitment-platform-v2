@@ -2,6 +2,7 @@
 Alembic autogenerate and for `Base.metadata.create_all()` in tests.
 """
 
+from app.models.activity import Activity
 from app.models.application import (
     Application,
     ApplicationSource,
@@ -29,6 +30,7 @@ from app.models.screening import ScreeningRun, ScreeningStatus
 from app.models.user import User, UserRefreshToken
 
 __all__ = [
+    "Activity",
     "Organization",
     "User",
     "UserRefreshToken",

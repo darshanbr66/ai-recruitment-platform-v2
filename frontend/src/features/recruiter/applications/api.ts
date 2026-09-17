@@ -1,6 +1,7 @@
 import { apiClient } from "../../../lib/apiClient";
 import type {
   ApplicationCreateRequest,
+  ApplicationDeleteRequest,
   ApplicationResponse,
   ApplicationStatus,
 } from "../../../types/recruitment";
@@ -49,6 +50,18 @@ export function changeApplicationStatus(
 export function downloadResume(applicationId: string, accessToken: string) {
   return apiClient.getBlob(
     `/api/v1/recruiter/applications/${applicationId}/resume`,
+    accessToken,
+  );
+}
+
+export function deleteApplication(
+  applicationId: string,
+  payload: ApplicationDeleteRequest,
+  accessToken: string,
+) {
+  return apiClient.post<ApplicationResponse>(
+    `/api/v1/recruiter/applications/${applicationId}/delete`,
+    payload,
     accessToken,
   );
 }

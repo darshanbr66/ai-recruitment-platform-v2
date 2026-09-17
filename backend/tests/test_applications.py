@@ -241,3 +241,80 @@ async def test_application_for_a_candidate_from_another_org_is_rejected(
         headers=headers_a,
     )
     assert response.status_code == 404
+
+
+async def test_delete_application_soft_deletes_and_records_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "applications-delete-happy")
+    headers = await _org_admin_headers(client, org)
+    job_id = await _create_job(client, headers)
+    candidate_id = await _create_candidate(
+        client, headers, "cara@applications-delete-happy-candidate.dev"
+    )
+    application = (
+        await client.post(
+            "/api/v1/recruiter/applications",
+            json={"candidate_id": candidate_id, "job_id": job_id},
+            headers=headers,
+        )
+    ).json()
+
+    delete_response = await client.post(
+        f"/api/v1/recruiter/applications/{application['id']}/delete",
+        json={"reason": "Duplicate application."},
+        headers=headers,
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    assert delete_response.json()["deleted_at"] is not None
+
+    listing = await client.get("/api/v1/recruiter/applications", headers=headers)
+    assert application["id"] not in [a["id"] for a in listing.json()]
+
+    # Still reachable by id — the candidate/job link and status history
+    # (not exercised directly here) are never destroyed by this delete.
+    detail = await client.get(
+        f"/api/v1/recruiter/applications/{application['id']}", headers=headers
+    )
+    assert detail.status_code == 200
+    assert detail.json()["deleted_at"] is not None
+
+    second_delete = await client.post(
+        f"/api/v1/recruiter/applications/{application['id']}/delete",
+        json={"reason": "Again."},
+        headers=headers,
+    )
+    assert second_delete.status_code == 409
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=headers)
+    delete_entries = [a for a in activities.json() if a["action"] == "APPLICATION_DELETED"]
+    assert len(delete_entries) == 1
+    assert delete_entries[0]["entity_id"] == application["id"]
+
+
+async def test_application_status_change_is_recorded_as_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "applications-status-activity")
+    headers = await _org_admin_headers(client, org)
+    job_id = await _create_job(client, headers)
+    candidate_id = await _create_candidate(
+        client, headers, "cara@applications-status-activity-candidate.dev"
+    )
+    application = (
+        await client.post(
+            "/api/v1/recruiter/applications",
+            json={"candidate_id": candidate_id, "job_id": job_id},
+            headers=headers,
+        )
+    ).json()
+
+    await client.post(
+        f"/api/v1/recruiter/applications/{application['id']}/status",
+        json={"to_status": "UNDER_REVIEW"},
+        headers=headers,
+    )
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=headers)
+    entries = [a for a in activities.json() if a["action"] == "APPLICATION_STATUS_CHANGED"]
+    assert any(e["entity_id"] == application["id"] for e in entries)

@@ -6,6 +6,7 @@ import { CareersPage } from "../features/careers/CareersPage";
 import { JobDetailPage } from "../features/careers/JobDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { OrganizationsPage } from "../features/admin/organizations/OrganizationsPage";
+import { ActivitiesPage } from "../features/recruiter/activities/ActivitiesPage";
 import { ApplicationDetailPage } from "../features/recruiter/applications/ApplicationDetailPage";
 import { ApplicationsPage } from "../features/recruiter/applications/ApplicationsPage";
 import { AssessmentsPage } from "../features/recruiter/assessments/AssessmentsPage";
@@ -61,6 +62,7 @@ export function AppRoutes() {
         <Route path="campus-drives/:driveId" element={<CampusDriveDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="activities" element={<ActivitiesPage />} />
       </Route>
 
       <Route

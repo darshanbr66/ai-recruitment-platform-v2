@@ -14,12 +14,14 @@ from app.models.assessment import Assessment, AssessmentInvitation
 from app.models.user import User
 from app.schemas.assessment import (
     AssessmentCreateRequest,
+    AssessmentDeleteRequest,
     AssessmentInvitationResponse,
     AssessmentResponse,
     AssessmentResultResponse,
     AssessmentSummary,
     InviteCandidateRequest,
     ParsedQuestionsResponse,
+    RetestRequest,
 )
 from app.services import application_service, assessment_service
 
@@ -40,6 +42,8 @@ async def _invitation_response(
         expires_at=invitation.expires_at,
         started_at=invitation.started_at,
         submitted_at=invitation.submitted_at,
+        attempt_number=invitation.attempt_number,
+        retest_reason=invitation.retest_reason,
         result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,
         invitation_link=invitation_link,
     )
@@ -62,9 +66,29 @@ async def create_assessment(
 ) -> AssessmentResponse:
     assert current_user.organization_id is not None
     assessment = await assessment_service.create_assessment(
-        db, organization_id=current_user.organization_id, created_by=current_user.id, payload=payload
+        db,
+        organization_id=current_user.organization_id,
+        created_by=current_user.id,
+        payload=payload,
+        actor=current_user,
     )
     return AssessmentResponse.model_validate(assessment)
+
+
+@router.post("/{assessment_id}/delete", response_model=AssessmentResponse)
+async def delete_assessment(
+    assessment_id: uuid.UUID,
+    payload: AssessmentDeleteRequest,
+    current_user: User = Depends(require_permission("assessment.delete")),
+    db: AsyncSession = Depends(get_db),
+) -> AssessmentResponse:
+    assessment = await assessment_service.get_assessment(db, assessment_id)
+    if assessment is None:
+        raise NotFoundError("Assessment not found.")
+    deleted = await assessment_service.delete_assessment(
+        db, assessment, actor=current_user, reason=payload.reason
+    )
+    return AssessmentResponse.model_validate(deleted)
 
 
 @router.get("", response_model=list[AssessmentSummary])
@@ -117,5 +141,26 @@ async def invite_candidate(
     # provider is configured locally (see app/integrations/email) — this is
     # the one response that ever carries it, matching the "shown once"
     # handling of the underlying raw token.
+    link = f"http://localhost:5173/assessment/{raw_token}"
+    return await _invitation_response(db, invitation, invitation_link=link)
+
+
+@router.post("/retest", response_model=AssessmentInvitationResponse, status_code=status.HTTP_201_CREATED)
+async def retest_candidate(
+    payload: RetestRequest,
+    current_user: User = Depends(require_permission("assessment.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> AssessmentInvitationResponse:
+    assert current_user.organization_id is not None
+    invitation, raw_token = await assessment_service.create_retest(
+        db,
+        organization_id=current_user.organization_id,
+        application_id=payload.application_id,
+        authorized_by=current_user,
+        reason=payload.reason,
+        assessment_choice=payload.assessment_choice,
+        assessment_id=payload.assessment_id,
+        new_assessment=payload.new_assessment,
+    )
     link = f"http://localhost:5173/assessment/{raw_token}"
     return await _invitation_response(db, invitation, invitation_link=link)

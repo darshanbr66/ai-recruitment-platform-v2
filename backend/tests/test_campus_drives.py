@@ -355,3 +355,57 @@ async def test_campus_drives_are_tenant_scoped(client: AsyncClient, super_admin:
 
     listing_b = await client.get("/api/v1/recruiter/campus-drives", headers=ctx_b["headers"])
     assert listing_b.json() == []
+
+
+async def test_delete_campus_drive_soft_deletes_and_records_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-delete-happy")
+    drive = await _create_drive(client, ctx)
+
+    delete_response = await client.post(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}/delete",
+        json={"reason": "Drive cancelled."},
+        headers=ctx["headers"],
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    assert delete_response.json()["deleted_at"] is not None
+
+    listing = await client.get("/api/v1/recruiter/campus-drives", headers=ctx["headers"])
+    assert drive["id"] not in [d["id"] for d in listing.json()]
+
+    second_delete = await client.post(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}/delete",
+        json={"reason": "Again."},
+        headers=ctx["headers"],
+    )
+    assert second_delete.status_code == 409
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=ctx["headers"])
+    delete_entries = [a for a in activities.json() if a["action"] == "CAMPUS_DRIVE_DELETED"]
+    assert len(delete_entries) == 1
+    assert delete_entries[0]["entity_id"] == drive["id"]
+
+
+async def test_campus_drive_lifecycle_changes_are_recorded_as_activities(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-lifecycle-activity")
+    drive = await _create_drive(client, ctx)
+
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "PAUSED"},
+        headers=ctx["headers"],
+    )
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=ctx["headers"])
+    actions = [a["action"] for a in activities.json()]
+    assert "CAMPUS_DRIVE_CREATED" in actions
+    assert "CAMPUS_DRIVE_ACTIVATED" in actions
+    assert "CAMPUS_DRIVE_PAUSED" in actions

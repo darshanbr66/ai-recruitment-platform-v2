@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.recruiter.activities import router as activities_router
 from app.api.v1.recruiter.applications import router as applications_router
 from app.api.v1.recruiter.assessments import router as assessments_router
 from app.api.v1.recruiter.auth import router as auth_router
@@ -22,3 +23,4 @@ router.include_router(screening_router)
 router.include_router(assessments_router)
 router.include_router(campus_drives_router)
 router.include_router(notes_router)
+router.include_router(activities_router)

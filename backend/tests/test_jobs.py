@@ -128,3 +128,76 @@ async def test_interviewer_cannot_create_a_job(client: AsyncClient, super_admin:
 async def test_create_job_requires_authentication(client: AsyncClient) -> None:
     response = await client.post("/api/v1/recruiter/jobs", json=_JOB_PAYLOAD)
     assert response.status_code == 401
+
+
+async def test_delete_job_soft_deletes_and_records_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "jobs-delete-happy")
+    headers = await _org_admin_headers(client, org)
+
+    created = (
+        await client.post("/api/v1/recruiter/jobs", json=_JOB_PAYLOAD, headers=headers)
+    ).json()
+
+    delete_response = await client.post(
+        f"/api/v1/recruiter/jobs/{created['id']}/delete",
+        json={"reason": "Requisition cancelled."},
+        headers=headers,
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    assert delete_response.json()["deleted_at"] is not None
+
+    # Gone from the active list, but every application against it (if any)
+    # would remain intact — this job has none, so we only check the list.
+    listing = await client.get("/api/v1/recruiter/jobs", headers=headers)
+    assert created["id"] not in [job["id"] for job in listing.json()]
+
+    second_delete = await client.post(
+        f"/api/v1/recruiter/jobs/{created['id']}/delete",
+        json={"reason": "Again."},
+        headers=headers,
+    )
+    assert second_delete.status_code == 409
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=headers)
+    delete_entries = [a for a in activities.json() if a["action"] == "JOB_DELETED"]
+    assert len(delete_entries) == 1
+    assert delete_entries[0]["entity_id"] == created["id"]
+    assert delete_entries[0]["reason"] == "Requisition cancelled."
+
+
+async def test_delete_job_requires_a_reason(client: AsyncClient, super_admin: User) -> None:
+    org = await _bootstrap_org(client, "jobs-delete-reason")
+    headers = await _org_admin_headers(client, org)
+
+    created = (
+        await client.post("/api/v1/recruiter/jobs", json=_JOB_PAYLOAD, headers=headers)
+    ).json()
+
+    response = await client.post(
+        f"/api/v1/recruiter/jobs/{created['id']}/delete", json={"reason": ""}, headers=headers
+    )
+    assert response.status_code == 422
+
+
+async def test_job_status_change_is_recorded_as_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "jobs-status-activity")
+    headers = await _org_admin_headers(client, org)
+
+    created = (
+        await client.post("/api/v1/recruiter/jobs", json=_JOB_PAYLOAD, headers=headers)
+    ).json()
+    await client.patch(
+        f"/api/v1/recruiter/jobs/{created['id']}", json={"status": "OPEN"}, headers=headers
+    )
+    await client.patch(
+        f"/api/v1/recruiter/jobs/{created['id']}", json={"status": "CLOSED"}, headers=headers
+    )
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=headers)
+    actions = [a["action"] for a in activities.json()]
+    assert "JOB_CREATED" in actions
+    assert "JOB_CLOSED" in actions

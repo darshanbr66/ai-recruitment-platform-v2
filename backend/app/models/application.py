@@ -91,6 +91,18 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    # Soft delete — same rationale/shape as Candidate's (app/models/candidate.py).
+    # A hard DELETE here would CASCADE away AssessmentInvitation/
+    # ApplicationStatusHistory/Note rows, destroying exactly the recruitment/
+    # audit history CLAUDE.md says must never silently disappear. Deleted
+    # applications are excluded from `application_service.list_applications`
+    # but remain reachable by id with every linked record intact.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Read-only convenience relationships — populated via eager loading in
     # app/services/application_service.py so list/detail responses can
     # include the candidate's name and the job's title without a separate

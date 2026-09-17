@@ -17,6 +17,7 @@ from app.core.security import (
 )
 from app.db.rls import rls_bypass
 from app.models.user import User, UserRefreshToken
+from app.services import activity_service
 
 logger = get_logger(__name__)
 
@@ -66,6 +67,28 @@ async def authenticate(db: AsyncSession, *, email: str, password: str) -> User:
 
     user = candidates[0]
     if not user.is_active or not verify_password(password, user.hashed_password):
+        # A single account matched but the password (or active flag) was
+        # wrong — safe to attribute to that account's own tenant without
+        # revealing anything to the caller (the response is identical
+        # either way). Zero-match attempts have no tenant to scope to and
+        # are deliberately not logged here.
+        if user.organization_id is not None:
+            async with rls_bypass(db):
+                await activity_service.record_activity(
+                    db,
+                    organization_id=user.organization_id,
+                    actor=None,
+                    action="LOGIN_FAILED",
+                    entity_type="user",
+                    entity_id=user.id,
+                    entity_label=user.email,
+                    description=f"Failed login attempt for {user.email}.",
+                )
+            # Commit immediately — this function raises right after, and
+            # get_db rolls back the whole transaction on any exception
+            # (see rotate_refresh_token's identical breach-containment
+            # commit above for the same reason).
+            await db.commit()
         raise UnauthorizedError(_INVALID_CREDENTIALS)
 
     return user

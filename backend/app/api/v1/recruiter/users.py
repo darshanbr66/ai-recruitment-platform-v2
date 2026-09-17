@@ -13,7 +13,7 @@ from app.api.deps import require_permission
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import UserCreateRequest, UserResponse
+from app.schemas.user import UserCreateRequest, UserResponse, UserUpdateRequest
 from app.services import user_service
 
 router = APIRouter(prefix="/users", tags=["recruiter-users"])
@@ -49,6 +49,7 @@ async def create_user(
         password=payload.password,
         full_name=payload.full_name,
         role_name=payload.role.value,
+        actor=current_user,
     )
     return await _to_response(db, created)
 
@@ -73,3 +74,22 @@ async def get_user(
     if user is None:
         raise NotFoundError("User not found.")
     return await _to_response(db, user)
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: uuid.UUID,
+    payload: UserUpdateRequest,
+    current_user: User = Depends(require_permission("user.update")),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    """Deactivate/reactivate a team member or change their role
+    (app/services/user_service.py::update_team_member owns every guard —
+    self-deactivation and last-admin protection — and the audit trail)."""
+    target = await user_service.get_organization_user(db, user_id)
+    if target is None:
+        raise NotFoundError("User not found.")
+    updated = await user_service.update_team_member(
+        db, actor=current_user, target=target, payload=payload
+    )
+    return await _to_response(db, updated)

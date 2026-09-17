@@ -35,6 +35,12 @@ export interface UserCreateRequest {
   role: AssignableRole;
 }
 
+export interface UserUpdateRequest {
+  is_active?: boolean;
+  role?: AssignableRole;
+  reason?: string | null;
+}
+
 export interface OrganizationResponse {
   id: string;
   name: string;

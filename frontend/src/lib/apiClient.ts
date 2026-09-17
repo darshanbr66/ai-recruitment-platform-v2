@@ -15,12 +15,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: { field: string; message: string }[];
 
-  constructor(message: string, status: number, code: string) {
+  constructor(message: string, status: number, code: string, details: { field: string; message: string }[] = []) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -29,6 +31,7 @@ interface ErrorEnvelope {
     code: string;
     message: string;
     request_id: string | null;
+    details?: { field: string; message: string }[];
   };
 }
 
@@ -56,14 +59,16 @@ async function request<T>(path: string, method: string, options?: RequestOptions
   if (!response.ok) {
     let code = "unknown_error";
     let message = "Request failed.";
+    let details: { field: string; message: string }[] = [];
     try {
       const body = (await response.json()) as ErrorEnvelope;
       code = body.error?.code ?? code;
       message = body.error?.message ?? message;
+      details = body.error?.details ?? [];
     } catch {
       // Non-JSON error body — fall back to the defaults above.
     }
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(message, response.status, code, details);
   }
 
   if (response.status === 204) {
@@ -89,14 +94,16 @@ async function requestForm<T>(path: string, formData: FormData, accessToken?: st
   if (!response.ok) {
     let code = "unknown_error";
     let message = "Request failed.";
+    let details: { field: string; message: string }[] = [];
     try {
       const body = (await response.json()) as ErrorEnvelope;
       code = body.error?.code ?? code;
       message = body.error?.message ?? message;
+      details = body.error?.details ?? [];
     } catch {
       // Non-JSON error body — fall back to the defaults above.
     }
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(message, response.status, code, details);
   }
 
   return response.json() as Promise<T>;

@@ -12,3 +12,11 @@ export function createCandidate(payload: CandidateCreateRequest, accessToken: st
 export function getCandidate(candidateId: string, accessToken: string) {
   return apiClient.get<CandidateResponse>(`/api/v1/recruiter/candidates/${candidateId}`, accessToken);
 }
+
+export function deleteCandidate(candidateId: string, reason: string, accessToken: string) {
+  return apiClient.post<CandidateResponse>(
+    `/api/v1/recruiter/candidates/${candidateId}/delete`,
+    { reason },
+    accessToken,
+  );
+}

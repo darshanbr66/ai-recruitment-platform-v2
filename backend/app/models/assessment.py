@@ -39,6 +39,20 @@ class Assessment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
 
+    # Soft delete/archive — same rationale/shape as Candidate's (app/models/
+    # candidate.py). AssessmentInvitation.assessment_id is ON DELETE
+    # RESTRICT, so a hard DELETE is already impossible once any invitation
+    # exists; this makes "archive, never destroy" the deliberate behavior
+    # everywhere rather than only where the FK happens to enforce it.
+    # Deleted assessments drop out of `assessment_service.list_assessments`
+    # and out of the assessment picker, but every AssessmentInvitation/
+    # AssessmentResult that already used them stays intact and readable.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     questions: Mapped[list["Question"]] = relationship(
         "Question", lazy="raise", order_by="Question.order_index", viewonly=True
     )
@@ -88,11 +102,17 @@ class AssessmentInvitation(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixi
     plaintext (CLAUDE.md § 4).
 
     Simplified from docs/assessment.md's full lifecycle: no
-    DELIVERED/OPENED webhook states and no `max_attempts` bound (one
-    CandidateAttempt per invitation, implicit) — both are real gaps noted
-    here rather than silently designed around, not silently dropped.
-    One invitation per application (unique on application_id); resending
-    reuses this row (new token/expiry), matching docs/campus-hiring.md § 3.
+    DELIVERED/OPENED webhook states — a real gap noted here rather than
+    silently designed around, not silently dropped.
+
+    Multiple rows per application are allowed (`application_id` is
+    indexed, not unique) — each is one attempt, numbered by
+    `attempt_number`. Attempt 1 is created by `invite_candidate`
+    (resending before it's ever started/submitted reuses that same row,
+    matching docs/campus-hiring.md § 3); attempt 2+ is created by
+    `create_retest` as a brand-new row so the prior attempt's row (and its
+    linked AssessmentResult/CandidateAnswers) is never mutated or deleted —
+    retest history must stay intact (CLAUDE.md § 3).
     """
 
     __tablename__ = "assessment_invitations"
@@ -105,7 +125,6 @@ class AssessmentInvitation(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixi
         UUID(as_uuid=True),
         ForeignKey("applications.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True,
     )
     invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -121,6 +140,8 @@ class AssessmentInvitation(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixi
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    retest_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     assessment: Mapped["Assessment"] = relationship("Assessment", lazy="raise", viewonly=True)
     result: Mapped["AssessmentResult | None"] = relationship(

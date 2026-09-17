@@ -14,6 +14,12 @@ const NAV_ITEMS = [
   { to: "/recruiter/users", label: "Team" },
 ];
 
+/** Admin-only nav entries — deliberately kept out of NAV_ITEMS so they
+ * never render for a plain RECRUITER, not just permission-gated once the
+ * page loads (CLAUDE.md: Activities must not appear in the normal
+ * recruiter navigation). */
+const ADMIN_NAV_ITEMS = [{ to: "/recruiter/activities", label: "Activities" }];
+
 /**
  * Sidebar shell for the recruiter surface. Everything above is real.
  * Sourcing isn't built yet — AI Screening and Notes live inline on the
@@ -26,6 +32,7 @@ export function RecruiterLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const isOrgAdmin = user?.roles.includes("ORG_ADMIN") ?? false;
 
   async function handleLogout() {
     await logout();
@@ -64,6 +71,17 @@ export function RecruiterLayout() {
               {item.label}
             </NavLink>
           ))}
+          {isOrgAdmin &&
+            ADMIN_NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+                onClick={() => setMenuOpen(false)}
+              >
+                {item.label}
+              </NavLink>
+            ))}
           <div className="sidebar-section-label">Coming soon</div>
           {UPCOMING_NAV_ITEMS.map((label) => (
             <span key={label} className="sidebar-link disabled" aria-disabled="true">

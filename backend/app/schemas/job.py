@@ -28,6 +28,10 @@ class JobUpdateRequest(BaseModel):
     openings_count: int | None = Field(default=None, ge=1)
 
 
+class JobDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,5 +45,6 @@ class JobResponse(BaseModel):
     status: JobStatus
     openings_count: int
     created_by: uuid.UUID
+    deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

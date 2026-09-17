@@ -1,6 +1,7 @@
 import { apiClient } from "../../../lib/apiClient";
 import type {
   CampusDriveCreateRequest,
+  CampusDriveDeleteRequest,
   CampusDriveFunnelCounts,
   CampusDriveResponse,
   CampusDriveUpdateRequest,
@@ -41,6 +42,18 @@ export function regenerateCampusDriveLink(driveId: string, accessToken: string) 
   return apiClient.post<CampusDriveResponse>(
     `/api/v1/recruiter/campus-drives/${driveId}/regenerate-link`,
     undefined,
+    accessToken,
+  );
+}
+
+export function deleteCampusDrive(
+  driveId: string,
+  payload: CampusDriveDeleteRequest,
+  accessToken: string,
+) {
+  return apiClient.post<CampusDriveResponse>(
+    `/api/v1/recruiter/campus-drives/${driveId}/delete`,
+    payload,
     accessToken,
   );
 }

@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
 import { Alert } from "../../../shared/components/Alert";
+import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModal";
 import { useAuth } from "../../auth/AuthContext";
 import { downloadResume, listApplicationsForCandidate } from "../applications/api";
 import { getCandidate } from "./api";
@@ -14,6 +15,7 @@ export function CandidateDetailPage() {
   const token = accessToken as string;
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState<{ applicationId: string; filename: string } | null>(null);
 
   const candidateQuery = useQuery({
     queryKey: ["recruiter", "candidates", candidateId],
@@ -95,19 +97,33 @@ export function CandidateDetailPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                       <span className="badge badge-active">{application.status}</span>
                       {application.resume_id && (
-                        <button
-                          type="button"
-                          className="link-button"
-                          disabled={downloadingId === application.id}
-                          onClick={() =>
-                            void handleDownload(
-                              application.id,
-                              application.resume_filename ?? "resume",
-                            )
-                          }
-                        >
-                          {downloadingId === application.id ? "Downloading…" : "Resume"}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() =>
+                              setPreviewing({
+                                applicationId: application.id,
+                                filename: application.resume_filename ?? "resume",
+                              })
+                            }
+                          >
+                            Preview Resume
+                          </button>
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={downloadingId === application.id}
+                            onClick={() =>
+                              void handleDownload(
+                                application.id,
+                                application.resume_filename ?? "resume",
+                              )
+                            }
+                          >
+                            {downloadingId === application.id ? "Downloading…" : "Download"}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -142,6 +158,14 @@ export function CandidateDetailPage() {
           </div>
         </section>
       </div>
+
+      {previewing && (
+        <ResumePreviewModal
+          filename={previewing.filename}
+          fetchResume={() => downloadResume(previewing.applicationId, token)}
+          onClose={() => setPreviewing(null)}
+        />
+      )}
     </div>
   );
 }

@@ -22,7 +22,7 @@ describe("PublicHomePage", () => {
     // design (docs section "Final CTA" / "Footer" are distinct from Hero) —
     // every occurrence must point at the same destination.
     for (const link of screen.getAllByRole("link", { name: /browse open roles/i })) {
-      expect(link).toHaveAttribute("href", "/org/acme-corp");
+      expect(link).toHaveAttribute("href", "/org/sigvitas");
     }
     for (const link of screen.getAllByRole("link", { name: /staff sign in/i })) {
       expect(link).toHaveAttribute("href", "/recruiter/login");

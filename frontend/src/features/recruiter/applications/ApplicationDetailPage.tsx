@@ -5,12 +5,20 @@ import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { Modal } from "../../../shared/components/Modal";
+import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModal";
+import { SkeletonLines } from "../../../shared/components/Skeleton";
+import { Spinner } from "../../../shared/components/Spinner";
 import { APPLICATION_TRANSITIONS, type ApplicationStatus } from "../../../types/recruitment";
+import type { AssessmentCreateRequest, RetestAssessmentChoice } from "../../../types/assessment";
 import { useAuth } from "../../auth/AuthContext";
+import { AssessmentForm, emptyAssessmentFormValue } from "../assessments/AssessmentForm";
 import {
   getApplicationAssessment,
   inviteCandidate,
+  listApplicationAssessmentAttempts,
   listAssessments,
+  retestCandidate,
 } from "../assessments/api";
 import { createNote, listNotes } from "../notes/api";
 import { listScreeningRuns, startScreening } from "../screening/api";
@@ -42,6 +50,15 @@ export function ApplicationDetailPage() {
   const [noteBody, setNoteBody] = useState("");
   const [selectedAssessmentId, setSelectedAssessmentId] = useState("");
   const [pendingStatus, setPendingStatus] = useState<ApplicationStatus | null>(null);
+  const [showRetestForm, setShowRetestForm] = useState(false);
+  const [retestReason, setRetestReason] = useState("");
+  const [retestError, setRetestError] = useState<string | null>(null);
+  const [retestChoice, setRetestChoice] = useState<RetestAssessmentChoice>("SAME");
+  const [retestAssessmentId, setRetestAssessmentId] = useState("");
+  const [retestNewAssessment, setRetestNewAssessment] = useState<AssessmentCreateRequest>(
+    emptyAssessmentFormValue(),
+  );
+  const [showResumePreview, setShowResumePreview] = useState(false);
 
   const applicationQuery = useQuery({
     queryKey: ["recruiter", "applications", applicationId],
@@ -64,6 +81,12 @@ export function ApplicationDetailPage() {
   const assessmentsQuery = useQuery({
     queryKey: ["recruiter", "assessments"],
     queryFn: () => listAssessments(token),
+    enabled: accessToken !== null,
+  });
+
+  const attemptsQuery = useQuery({
+    queryKey: ["recruiter", "assessment-attempts", applicationId],
+    queryFn: () => listApplicationAssessmentAttempts(applicationId, token),
     enabled: accessToken !== null,
   });
 
@@ -92,9 +115,67 @@ export function ApplicationDetailPage() {
     mutationFn: () => inviteCandidate({ assessment_id: selectedAssessmentId, application_id: applicationId }, token),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessment-invitation", applicationId] });
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessment-attempts", applicationId] });
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications", applicationId] });
     },
   });
+
+  const retestMutation = useMutation({
+    mutationFn: () =>
+      retestCandidate(
+        {
+          application_id: applicationId,
+          reason: retestReason.trim(),
+          assessment_choice: retestChoice,
+          assessment_id: retestChoice === "EXISTING" ? retestAssessmentId : undefined,
+          new_assessment: retestChoice === "NEW" ? retestNewAssessment : undefined,
+        },
+        token,
+      ),
+    onSuccess: () => {
+      closeRetestForm();
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessment-invitation", applicationId] });
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessment-attempts", applicationId] });
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications", applicationId] });
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessments"] });
+    },
+    onError: (err) => {
+      setRetestError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openRetestForm() {
+    setRetestReason("");
+    setRetestError(null);
+    setRetestChoice("SAME");
+    setRetestAssessmentId("");
+    setRetestNewAssessment(emptyAssessmentFormValue());
+    setShowRetestForm(true);
+  }
+
+  function closeRetestForm() {
+    if (retestMutation.isPending) return;
+    setShowRetestForm(false);
+    setRetestReason("");
+    setRetestError(null);
+  }
+
+  function handleRetestSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (retestReason.trim().length === 0) {
+      setRetestError("A reason for the retest is required.");
+      return;
+    }
+    if (retestChoice === "EXISTING" && !retestAssessmentId) {
+      setRetestError("Choose which existing assessment to use.");
+      return;
+    }
+    if (retestChoice === "NEW" && retestNewAssessment.questions.length === 0) {
+      setRetestError("Add at least one question to the new assessment.");
+      return;
+    }
+    retestMutation.mutate();
+  }
 
   const noteMutation = useMutation({
     mutationFn: () => createNote(applicationId, noteBody, token),
@@ -124,7 +205,11 @@ export function ApplicationDetailPage() {
   }
 
   if (applicationQuery.isPending) {
-    return <p role="status">Loading application…</p>;
+    return (
+      <div className="stack-lg">
+        <SkeletonLines count={6} />
+      </div>
+    );
   }
   if (applicationQuery.isError || !applicationQuery.data) {
     return (
@@ -192,9 +277,19 @@ export function ApplicationDetailPage() {
             <h2>Resume</h2>
             {downloadError && <Alert>{downloadError}</Alert>}
             {application.resume_id ? (
-              <button type="button" className="btn btn-ghost" onClick={() => void handleDownload()} disabled={downloading}>
-                {downloading ? "Downloading…" : `Download ${application.resume_filename ?? "resume"}`}
-              </button>
+              <div className="btn-group">
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowResumePreview(true)}>
+                  Preview Resume
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void handleDownload()}
+                  disabled={downloading}
+                >
+                  {downloading ? "Downloading…" : `Download ${application.resume_filename ?? "resume"}`}
+                </button>
+              </div>
             ) : (
               <p className="muted">No resume on file for this application.</p>
             )}
@@ -211,14 +306,14 @@ export function ApplicationDetailPage() {
                 onClick={() => screeningMutation.mutate()}
                 title={!application.resume_id ? "This application has no resume to screen" : undefined}
               >
-                {screeningMutation.isPending ? "Screening…" : "Run AI screening"}
+                {screeningMutation.isPending ? <Spinner label="Screening…" /> : "Run AI screening"}
               </button>
             </div>
             <p className="muted" style={{ fontSize: "0.85rem" }}>
               AI-assisted opinion for you to review — not an automatic decision.
             </p>
 
-            {screeningQuery.isPending && <p role="status">Loading…</p>}
+            {screeningQuery.isPending && <SkeletonLines count={2} />}
 
             {latestScreening && latestScreening.status === "FAILED" && (
               <Alert>{latestScreening.error_message ?? "Screening failed."}</Alert>
@@ -280,13 +375,13 @@ export function ApplicationDetailPage() {
           {/* Assessment */}
           <section className="card">
             <h2>Assessment</h2>
-            {assessmentInvitationQuery.isPending && <p role="status">Loading…</p>}
+            {assessmentInvitationQuery.isPending && <SkeletonLines count={2} />}
             {assessmentInvitationQuery.isSuccess && !assessmentInvitationQuery.data && (
               <div className="stack-lg" style={{ gap: "0.75rem" }}>
-                <p className="muted">No assessment assigned yet.</p>
+                <p className="muted">No assessment assigned yet. Reuse an existing assessment below.</p>
                 <div className="field-row" style={{ alignItems: "end" }}>
                   <label className="field" style={{ marginBottom: 0 }}>
-                    <span>Assessment</span>
+                    <span>Reuse existing assessment</span>
                     <select
                       value={selectedAssessmentId}
                       onChange={(e) => setSelectedAssessmentId(e.target.value)}
@@ -305,9 +400,16 @@ export function ApplicationDetailPage() {
                     disabled={!selectedAssessmentId || inviteMutation.isPending}
                     onClick={() => inviteMutation.mutate()}
                   >
-                    {inviteMutation.isPending ? "Sending…" : "Send invitation"}
+                    {inviteMutation.isPending ? <Spinner label="Sending…" /> : "Send invitation"}
                   </button>
                 </div>
+                <p className="field-hint">
+                  Don't have one yet?{" "}
+                  <a href="/recruiter/assessments" target="_blank" rel="noreferrer">
+                    + Create new assessment
+                  </a>{" "}
+                  in a new tab, then come back and select it above.
+                </p>
                 {inviteMutation.isError && (
                   <Alert>
                     {inviteMutation.error instanceof ApiError
@@ -318,24 +420,67 @@ export function ApplicationDetailPage() {
               </div>
             )}
             {assessmentInvitationQuery.data && (
-              <div className="stack-lg" style={{ gap: "0.5rem" }}>
+              <div className="stack-lg" style={{ gap: "0.75rem" }}>
                 <p>
                   <strong>{assessmentInvitationQuery.data.assessment_title}</strong> —{" "}
                   <span className="badge badge-active">{assessmentInvitationQuery.data.status}</span>
                 </p>
-                {inviteMutation.data?.invitation_link && (
+                {(inviteMutation.data?.invitation_link || retestMutation.data?.invitation_link) && (
                   <Alert variant="success">
                     Invitation link (copy this to send manually if email isn't configured):{" "}
-                    <code>{inviteMutation.data.invitation_link}</code>
+                    <code>
+                      {retestMutation.data?.invitation_link ?? inviteMutation.data?.invitation_link}
+                    </code>
                   </Alert>
                 )}
-                {assessmentInvitationQuery.data.result && (
-                  <p>
-                    Score: {assessmentInvitationQuery.data.result.score}/
-                    {assessmentInvitationQuery.data.result.max_score} (
-                    {assessmentInvitationQuery.data.result.percentage}%) —{" "}
-                    <strong>{assessmentInvitationQuery.data.result.passed ? "Passed" : "Not passed"}</strong>
-                  </p>
+
+                {attemptsQuery.data && attemptsQuery.data.length > 0 && (
+                  <div className="stack-sm">
+                    <strong style={{ fontSize: "0.85rem" }}>Assessment attempts</strong>
+                    {attemptsQuery.data.map((attempt) => (
+                      <div key={attempt.id} className="timeline-item">
+                        <span className="timeline-dot" />
+                        <div>
+                          <div>
+                            {attempt.attempt_number === 1 ? "Attempt #1" : `Retest #${attempt.attempt_number - 1}`}
+                            {attempt.result && (
+                              <>
+                                {" "}
+                                — Score: {attempt.result.percentage}% —{" "}
+                                <span
+                                  className={`badge ${attempt.result.passed ? "badge-active" : "badge-danger"}`}
+                                >
+                                  {attempt.result.passed ? "PASSED" : "FAILED"}
+                                </span>
+                              </>
+                            )}
+                            {!attempt.result && (
+                              <span className="badge badge-inactive" style={{ marginLeft: "0.5rem" }}>
+                                {attempt.status}
+                              </span>
+                            )}
+                          </div>
+                          <div className="muted" style={{ fontSize: "0.75rem" }}>
+                            {attempt.submitted_at
+                              ? new Date(attempt.submitted_at).toLocaleString()
+                              : new Date(attempt.expires_at).toLocaleDateString() + " (not yet submitted)"}
+                            {attempt.retest_reason && <> · Reason: {attempt.retest_reason}</>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {assessmentInvitationQuery.data.status === "SUBMITTED" && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ alignSelf: "flex-start" }}
+                    onClick={openRetestForm}
+                  >
+                    Give Retest
+                  </button>
                 )}
               </div>
             )}
@@ -364,7 +509,7 @@ export function ApplicationDetailPage() {
             </button>
           </form>
 
-          {notesQuery.isPending && <p role="status">Loading notes…</p>}
+          {notesQuery.isPending && <SkeletonLines count={2} />}
           {notesQuery.isSuccess && notesQuery.data.length === 0 && (
             <p className="muted">No notes yet.</p>
           )}
@@ -400,6 +545,152 @@ export function ApplicationDetailPage() {
           onConfirm={() =>
             statusMutation.mutate(pendingStatus, { onSuccess: () => setPendingStatus(null) })
           }
+        />
+      )}
+
+      {showRetestForm && assessmentInvitationQuery.data && (
+        <Modal title="Give a retest" onClose={closeRetestForm} wide={retestChoice === "NEW"}>
+          <form onSubmit={handleRetestSubmit}>
+            <div className="stack-sm" style={{ marginBottom: "1rem" }}>
+              <div className="detail-row">
+                <span className="detail-row-label">Candidate</span>
+                <span>{application.candidate_full_name}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-row-label">Application</span>
+                <span>{application.job_title}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-row-label">Previous assessment</span>
+                <span>{assessmentInvitationQuery.data.assessment_title}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-row-label">Previous attempt</span>
+                <span>#{assessmentInvitationQuery.data.attempt_number}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-row-label">Previous result</span>
+                <span>
+                  {assessmentInvitationQuery.data.result ? (
+                    <>
+                      {assessmentInvitationQuery.data.result.percentage}% —{" "}
+                      <span
+                        className={`badge ${assessmentInvitationQuery.data.result.passed ? "badge-active" : "badge-danger"}`}
+                      >
+                        {assessmentInvitationQuery.data.result.passed ? "PASSED" : "FAILED"}
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <label className="field">
+              <span>Reason for retest</span>
+              <textarea
+                required
+                rows={2}
+                value={retestReason}
+                onChange={(e) => {
+                  setRetestReason(e.target.value);
+                  if (retestError) setRetestError(null);
+                }}
+                disabled={retestMutation.isPending}
+                placeholder="e.g. Candidate experienced network interruption."
+              />
+            </label>
+
+            <fieldset className="field">
+              <legend>Assessment for this retest</legend>
+              <div className="stack-sm">
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <input
+                    type="radio"
+                    name="retest-choice"
+                    checked={retestChoice === "SAME"}
+                    onChange={() => setRetestChoice("SAME")}
+                    disabled={retestMutation.isPending}
+                    style={{ width: "auto" }}
+                  />
+                  Same assessment ({assessmentInvitationQuery.data.assessment_title})
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <input
+                    type="radio"
+                    name="retest-choice"
+                    checked={retestChoice === "EXISTING"}
+                    onChange={() => setRetestChoice("EXISTING")}
+                    disabled={retestMutation.isPending}
+                    style={{ width: "auto" }}
+                  />
+                  Another existing assessment
+                </label>
+                {retestChoice === "EXISTING" && (
+                  <select
+                    value={retestAssessmentId}
+                    onChange={(e) => setRetestAssessmentId(e.target.value)}
+                    disabled={retestMutation.isPending}
+                    style={{ marginLeft: "1.6rem" }}
+                  >
+                    <option value="">Select an assessment…</option>
+                    {assessmentsQuery.data?.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <input
+                    type="radio"
+                    name="retest-choice"
+                    checked={retestChoice === "NEW"}
+                    onChange={() => setRetestChoice("NEW")}
+                    disabled={retestMutation.isPending}
+                    style={{ width: "auto" }}
+                  />
+                  Create a new assessment
+                </label>
+              </div>
+            </fieldset>
+
+            {retestChoice === "NEW" && (
+              <section className="card" style={{ background: "var(--color-bg)", marginTop: "0.75rem" }}>
+                <AssessmentForm
+                  value={retestNewAssessment}
+                  onChange={setRetestNewAssessment}
+                  disabled={retestMutation.isPending}
+                  accessToken={token}
+                />
+              </section>
+            )}
+
+            {retestError && <Alert>{retestError}</Alert>}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button type="submit" className="btn btn-primary" disabled={retestMutation.isPending}>
+                {retestMutation.isPending ? <Spinner label="Sending…" /> : "Send Retest"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeRetestForm}
+                disabled={retestMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showResumePreview && (
+        <ResumePreviewModal
+          filename={application.resume_filename ?? "resume"}
+          fetchResume={() => downloadResume(applicationId, token)}
+          onClose={() => setShowResumePreview(false)}
         />
       )}
     </div>

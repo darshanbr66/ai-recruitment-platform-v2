@@ -123,3 +123,102 @@ async def test_create_candidate_requires_authentication(client: AsyncClient) -> 
         "/api/v1/recruiter/candidates", json=_candidate_payload("nobody@nowhere.dev")
     )
     assert response.status_code == 401
+
+
+async def test_delete_candidate_requires_a_reason(client: AsyncClient, super_admin: User) -> None:
+    org = await _bootstrap_org(client, "candidates-delete-no-reason")
+    headers = await _org_admin_headers(client, org)
+    candidate = (
+        await client.post(
+            "/api/v1/recruiter/candidates",
+            json=_candidate_payload("noreason@candidates-delete-no-reason-candidate.dev"),
+            headers=headers,
+        )
+    ).json()
+
+    response = await client.post(
+        f"/api/v1/recruiter/candidates/{candidate['id']}/delete", json={"reason": ""}, headers=headers
+    )
+    assert response.status_code == 422
+
+
+async def test_delete_candidate_soft_deletes_and_records_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "candidates-delete-happy")
+    headers = await _org_admin_headers(client, org)
+    candidate = (
+        await client.post(
+            "/api/v1/recruiter/candidates",
+            json=_candidate_payload("gone@candidates-delete-happy-candidate.dev"),
+            headers=headers,
+        )
+    ).json()
+
+    delete_response = await client.post(
+        f"/api/v1/recruiter/candidates/{candidate['id']}/delete",
+        json={"reason": "Duplicate candidate record."},
+        headers=headers,
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    assert delete_response.json()["deleted_at"] is not None
+
+    # Gone from the active list...
+    listing = await client.get("/api/v1/recruiter/candidates", headers=headers)
+    assert candidate["id"] not in [c["id"] for c in listing.json()]
+
+    # ...but still reachable by id (audit trail navigation), not hard-deleted.
+    detail = await client.get(f"/api/v1/recruiter/candidates/{candidate['id']}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["deleted_at"] is not None
+
+    # Deleting again is rejected rather than silently no-op-ing.
+    second_delete = await client.post(
+        f"/api/v1/recruiter/candidates/{candidate['id']}/delete",
+        json={"reason": "Trying again."},
+        headers=headers,
+    )
+    assert second_delete.status_code == 409
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=headers)
+    assert activities.status_code == 200
+    entries = activities.json()
+    # Login/organization-bootstrap actions are legitimately audited too now
+    # (QA § 5: "track every meaningful administrative action") — this test
+    # only asserts on the one entry it cares about.
+    delete_entries = [e for e in entries if e["action"] == "CANDIDATE_DELETED"]
+    assert len(delete_entries) == 1
+    entry = delete_entries[0]
+    assert entry["entity_type"] == "candidate"
+    assert entry["entity_id"] == candidate["id"]
+    assert entry["reason"] == "Duplicate candidate record."
+    assert entry["actor_name"] == "Acme Admin"
+
+
+async def test_activities_endpoint_requires_activity_read_permission(
+    client: AsyncClient, super_admin: User
+) -> None:
+    """RECRUITER can delete a candidate but cannot read the audit log —
+    Activities is an org-admin-only surface (CLAUDE.md's "hidden platform
+    role" sibling rule: never expose audit history to ordinary staff)."""
+    org = await _bootstrap_org(client, "candidates-activity-perm")
+    admin_headers = await _org_admin_headers(client, org)
+
+    recruiter_created = await client.post(
+        "/api/v1/recruiter/users",
+        json={
+            "email": f"recruiter@{org['slug']}.dev",
+            "full_name": "Riya Recruiter",
+            "password": "RecruiterPass1",
+            "role": "RECRUITER",
+        },
+        headers=admin_headers,
+    )
+    assert recruiter_created.status_code == 201, recruiter_created.text
+    recruiter_tokens = await login(
+        client, email=f"recruiter@{org['slug']}.dev", password="RecruiterPass1"
+    )
+    recruiter_headers = {"Authorization": f"Bearer {recruiter_tokens['access_token']}"}
+
+    response = await client.get("/api/v1/recruiter/activities", headers=recruiter_headers)
+    assert response.status_code == 403

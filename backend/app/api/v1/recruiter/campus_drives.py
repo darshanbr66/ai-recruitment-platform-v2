@@ -12,6 +12,7 @@ from app.models.campus_drive import CampusDrive
 from app.models.user import User
 from app.schemas.campus_drive import (
     CampusDriveCreateRequest,
+    CampusDriveDeleteRequest,
     CampusDriveFunnelCounts,
     CampusDriveResponse,
     CampusDriveUpdateRequest,
@@ -47,6 +48,7 @@ def _to_response(
         default_assessment_title=drive.default_assessment.title if drive.default_assessment else None,
         status=drive.status,
         application_count=application_count,
+        deleted_at=drive.deleted_at,
         created_at=drive.created_at,
         application_link=link,
     )
@@ -60,7 +62,7 @@ async def create_campus_drive(
 ) -> CampusDriveResponse:
     assert current_user.organization_id is not None
     drive, raw_token = await campus_drive_service.create_campus_drive(
-        db, organization_id=current_user.organization_id, created_by=current_user.id, payload=payload
+        db, actor=current_user, payload=payload
     )
     return _to_response(drive, 0, link=_application_link(raw_token))
 
@@ -111,9 +113,9 @@ async def update_campus_drive(
 ) -> CampusDriveResponse:
     assert current_user.organization_id is not None
     drive = await campus_drive_service.get_campus_drive(db, drive_id)
-    if drive is None:
+    if drive is None or drive.deleted_at is not None:
         raise NotFoundError("Campus drive not found.")
-    updated = await campus_drive_service.update_campus_drive(db, drive, payload)
+    updated = await campus_drive_service.update_campus_drive(db, drive, payload, actor=current_user)
     counts = await campus_drive_service.application_counts(db, current_user.organization_id)
     return _to_response(updated, counts.get(updated.id, 0))
 
@@ -126,8 +128,26 @@ async def regenerate_campus_drive_link(
 ) -> CampusDriveResponse:
     assert current_user.organization_id is not None
     drive = await campus_drive_service.get_campus_drive(db, drive_id)
-    if drive is None:
+    if drive is None or drive.deleted_at is not None:
         raise NotFoundError("Campus drive not found.")
-    raw_token = await campus_drive_service.regenerate_link(db, drive)
+    raw_token = await campus_drive_service.regenerate_link(db, drive, actor=current_user)
     counts = await campus_drive_service.application_counts(db, current_user.organization_id)
     return _to_response(drive, counts.get(drive.id, 0), link=_application_link(raw_token))
+
+
+@router.post("/{drive_id}/delete", response_model=CampusDriveResponse)
+async def delete_campus_drive(
+    drive_id: uuid.UUID,
+    payload: CampusDriveDeleteRequest,
+    current_user: User = Depends(require_permission("campus_drive.delete")),
+    db: AsyncSession = Depends(get_db),
+) -> CampusDriveResponse:
+    assert current_user.organization_id is not None
+    drive = await campus_drive_service.get_campus_drive(db, drive_id)
+    if drive is None:
+        raise NotFoundError("Campus drive not found.")
+    deleted = await campus_drive_service.delete_campus_drive(
+        db, drive, actor=current_user, reason=payload.reason
+    )
+    counts = await campus_drive_service.application_counts(db, current_user.organization_id)
+    return _to_response(deleted, counts.get(deleted.id, 0))

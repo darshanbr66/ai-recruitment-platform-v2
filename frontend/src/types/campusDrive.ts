@@ -48,9 +48,14 @@ export interface CampusDriveResponse {
   default_assessment_title: string | null;
   status: CampusDriveStatus;
   application_count: number;
+  deleted_at: string | null;
   created_at: string;
   /** Only populated once, on create/regenerate — never re-sent by list/get. */
   application_link: string | null;
+}
+
+export interface CampusDriveDeleteRequest {
+  reason: string;
 }
 
 export interface CampusDriveFunnelCounts {
@@ -58,6 +63,8 @@ export interface CampusDriveFunnelCounts {
   screening: number;
   assessment_invited: number;
   assessment_completed: number;
+  assessment_passed: number;
+  assessment_failed: number;
   shortlisted: number;
   interview: number;
   selected: number;

@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.assessment import InvitationStatus, QuestionType
 
@@ -63,6 +64,7 @@ class AssessmentResponse(BaseModel):
     instructions: str
     duration_minutes: int
     pass_score: int
+    deleted_at: datetime | None = None
     created_at: datetime
     questions: list[QuestionResponse] = []
 
@@ -78,9 +80,44 @@ class AssessmentSummary(BaseModel):
     created_at: datetime
 
 
+class AssessmentDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class InviteCandidateRequest(BaseModel):
     assessment_id: uuid.UUID
     application_id: uuid.UUID
+
+
+class RetestAssessmentChoice(StrEnum):
+    """How a retest picks the assessment for the new attempt (QA § 6) — the
+    previous attempt's own assessment/score/answers are never touched
+    regardless of which of these is chosen (app/services/
+    assessment_service.py::create_retest)."""
+
+    SAME = "SAME"
+    EXISTING = "EXISTING"
+    NEW = "NEW"
+
+
+class RetestRequest(BaseModel):
+    application_id: uuid.UUID
+    reason: str = Field(min_length=1, max_length=1000)
+    assessment_choice: RetestAssessmentChoice = RetestAssessmentChoice.SAME
+    # Required when assessment_choice == EXISTING.
+    assessment_id: uuid.UUID | None = None
+    # Required when assessment_choice == NEW — reuses the same
+    # create-assessment shape (and question-import workflow feeding it) as
+    # a normal assessment creation, per QA § 6 ("do not duplicate code").
+    new_assessment: AssessmentCreateRequest | None = None
+
+    @model_validator(mode="after")
+    def _validate_choice(self) -> "RetestRequest":
+        if self.assessment_choice == RetestAssessmentChoice.EXISTING and self.assessment_id is None:
+            raise ValueError("assessment_id is required when assessment_choice is EXISTING.")
+        if self.assessment_choice == RetestAssessmentChoice.NEW and self.new_assessment is None:
+            raise ValueError("new_assessment is required when assessment_choice is NEW.")
+        return self
 
 
 class AssessmentInvitationResponse(BaseModel):
@@ -95,6 +132,8 @@ class AssessmentInvitationResponse(BaseModel):
     expires_at: datetime
     started_at: datetime | None
     submitted_at: datetime | None
+    attempt_number: int
+    retest_reason: str | None
     result: "AssessmentResultResponse | None" = None
     invitation_link: str | None = None
 

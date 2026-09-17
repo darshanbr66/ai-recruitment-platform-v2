@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
 from app.models.application import Application, ApplicationStatus, ApplicationStatusHistory
+from app.models.user import User
+from app.services import activity_service
 
 TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
     ApplicationStatus.APPLIED: frozenset(
@@ -40,7 +42,15 @@ TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
         {ApplicationStatus.ASSESSMENT_COMPLETED, ApplicationStatus.WITHDRAWN}
     ),
     ApplicationStatus.ASSESSMENT_COMPLETED: frozenset(
-        {ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED}
+        {
+            ApplicationStatus.SHORTLISTED,
+            ApplicationStatus.REJECTED,
+            # A retest re-invites a candidate who already completed an
+            # attempt (app/services/assessment_service.py::create_retest) —
+            # the one explicit, audited exception to "no code path
+            # transitions out of ASSESSMENT_COMPLETED without it".
+            ApplicationStatus.ASSESSMENT_INVITED,
+        }
     ),
     ApplicationStatus.SHORTLISTED: frozenset(
         {ApplicationStatus.INTERVIEW, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN}
@@ -86,6 +96,22 @@ async def transition(
         )
     )
     await db.flush()
+
+    # Centralized here (not at each call site — screening, recruiter review,
+    # retest, campus auto-advance) so every status change is audited exactly
+    # once, in exactly one place (QA § 5: "avoid copy-pasting audit logic").
+    actor = await db.get(User, actor_user_id) if actor_user_id is not None else None
+    await activity_service.record_activity(
+        db,
+        organization_id=application.organization_id,
+        actor=actor,
+        action="APPLICATION_STATUS_CHANGED",
+        entity_type="application",
+        entity_id=application.id,
+        entity_label=f"Application #{str(application.id)[:8]}",
+        description=f"Status changed from {from_status.value} to {to_status.value}.",
+        reason=reason,
+    )
     return application
 
 

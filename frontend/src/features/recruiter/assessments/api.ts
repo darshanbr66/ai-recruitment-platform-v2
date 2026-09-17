@@ -1,10 +1,12 @@
 import { apiClient } from "../../../lib/apiClient";
 import type {
   AssessmentCreateRequest,
+  AssessmentDeleteRequest,
   AssessmentInvitationResponse,
   AssessmentResponse,
   AssessmentSummary,
   ParsedQuestionsResponse,
+  RetestRequest,
 } from "../../../types/assessment";
 
 export function listAssessments(accessToken: string) {
@@ -43,6 +45,33 @@ export function inviteCandidate(
 export function getApplicationAssessment(applicationId: string, accessToken: string) {
   return apiClient.get<AssessmentInvitationResponse | null>(
     `/api/v1/recruiter/applications/${applicationId}/assessment`,
+    accessToken,
+  );
+}
+
+export function listApplicationAssessmentAttempts(applicationId: string, accessToken: string) {
+  return apiClient.get<AssessmentInvitationResponse[]>(
+    `/api/v1/recruiter/applications/${applicationId}/assessment/attempts`,
+    accessToken,
+  );
+}
+
+export function retestCandidate(payload: RetestRequest, accessToken: string) {
+  return apiClient.post<AssessmentInvitationResponse>(
+    "/api/v1/recruiter/assessments/retest",
+    payload,
+    accessToken,
+  );
+}
+
+export function deleteAssessment(
+  assessmentId: string,
+  payload: AssessmentDeleteRequest,
+  accessToken: string,
+) {
+  return apiClient.post<AssessmentResponse>(
+    `/api/v1/recruiter/assessments/${assessmentId}/delete`,
+    payload,
     accessToken,
   );
 }

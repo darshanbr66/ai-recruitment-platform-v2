@@ -1,14 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { Modal } from "../../../shared/components/Modal";
+import { QrCode } from "../../../shared/components/QrCode";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { CampusDriveFunnelCounts, CampusDriveStatus } from "../../../types/campusDrive";
+import type {
+  CampusDriveFunnelCounts,
+  CampusDriveResponse,
+  CampusDriveStatus,
+} from "../../../types/campusDrive";
 import { useAuth } from "../../auth/AuthContext";
 import { listApplicationsForDrive } from "../applications/api";
 import { getCampusDrive, getCampusDriveFunnel, regenerateCampusDriveLink, updateCampusDrive } from "./api";
+
+const WORKFLOW_STAGES = ["Registration", "Assessment", "Submitted", "Screening", "Shortlisted"];
 
 const NEXT_ACTIONS: Record<CampusDriveStatus, { label: string; status: CampusDriveStatus; confirm?: boolean }[]> = {
   DRAFT: [{ label: "Activate", status: "ACTIVE" }],
@@ -35,11 +43,29 @@ const FUNNEL_STAGES: { key: keyof CampusDriveFunnelCounts; label: string }[] = [
   { key: "screening", label: "Screened" },
   { key: "assessment_invited", label: "Assessment invited" },
   { key: "assessment_completed", label: "Assessment completed" },
+  { key: "assessment_passed", label: "Assessment passed" },
+  { key: "assessment_failed", label: "Assessment failed" },
   { key: "shortlisted", label: "Shortlisted" },
   { key: "interview", label: "Interview" },
   { key: "selected", label: "Selected" },
   { key: "rejected", label: "Rejected" },
 ];
+
+interface EditFormState {
+  name: string;
+  collegeName: string;
+  description: string;
+  registrationDeadline: string;
+}
+
+function driveToEditForm(drive: CampusDriveResponse): EditFormState {
+  return {
+    name: drive.name,
+    collegeName: drive.college_name,
+    description: drive.description ?? "",
+    registrationDeadline: drive.registration_deadline ?? "",
+  };
+}
 
 export function CampusDriveDetailPage() {
   const { driveId = "" } = useParams<{ driveId: string }>();
@@ -50,6 +76,9 @@ export function CampusDriveDetailPage() {
   const { showToast } = useToast();
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [regeneratedLink, setRegeneratedLink] = useState<string | null>(null);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const driveQueryKey = ["recruiter", "campus-drives", driveId];
 
@@ -82,6 +111,43 @@ export function CampusDriveDetailPage() {
       showToast(err instanceof ApiError ? err.message : "Could not update the drive.", "error");
     },
   });
+
+  const editMutation = useMutation({
+    mutationFn: () => {
+      if (!editForm) throw new Error("No changes to save.");
+      return updateCampusDrive(
+        driveId,
+        {
+          name: editForm.name,
+          college_name: editForm.collegeName,
+          description: editForm.description || null,
+          registration_deadline: editForm.registrationDeadline || null,
+        },
+        token,
+      );
+    },
+    onSuccess: () => {
+      showToast("Campus drive updated.", "success");
+      setShowEditForm(false);
+      setEditError(null);
+      void queryClient.invalidateQueries({ queryKey: driveQueryKey });
+    },
+    onError: (err) => {
+      setEditError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openEditForm() {
+    if (!driveQuery.data) return;
+    setEditForm(driveToEditForm(driveQuery.data));
+    setEditError(null);
+    setShowEditForm(true);
+  }
+
+  function handleEditSubmit(event: FormEvent) {
+    event.preventDefault();
+    editMutation.mutate();
+  }
 
   const regenerateMutation = useMutation({
     mutationFn: () => regenerateCampusDriveLink(driveId, token),
@@ -130,6 +196,9 @@ export function CampusDriveDetailPage() {
           <span className={`badge ${STATUS_BADGE[drive.status]}`}>{drive.status}</span>
         </div>
         <div className="btn-group">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={openEditForm}>
+            Edit Drive
+          </button>
           {NEXT_ACTIONS[drive.status].map((action) => (
             <button
               key={action.status}
@@ -146,6 +215,23 @@ export function CampusDriveDetailPage() {
         </div>
       </div>
 
+      <section className="card">
+        <div className="workflow-stepper">
+          {WORKFLOW_STAGES.map((stage, index) => (
+            <div key={stage} className="workflow-step">
+              <span className="workflow-step-dot">{index + 1}</span>
+              <span className="workflow-step-label">{stage}</span>
+              {index < WORKFLOW_STAGES.length - 1 && <span className="workflow-step-arrow">&rarr;</span>}
+            </div>
+          ))}
+        </div>
+        <p className="field-hint" style={{ marginTop: "0.75rem" }}>
+          {drive.default_assessment_title
+            ? "Candidates register, then are automatically taken to the assessment before moving into screening."
+            : "This drive is registration-only — candidates go straight into screening after they register."}
+        </p>
+      </section>
+
       {drive.description && (
         <section className="card">
           <h2>Description</h2>
@@ -155,30 +241,35 @@ export function CampusDriveDetailPage() {
 
       <section className="card stack-sm">
         <div className="page-header">
-          <h2>Candidate application link</h2>
+          <h2>Candidate registration link</h2>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             disabled={regenerateMutation.isPending}
             onClick={() => regenerateMutation.mutate()}
           >
-            {regenerateMutation.isPending ? "Generating…" : "Regenerate link"}
+            {regenerateMutation.isPending ? "Generating…" : "Regenerate Link"}
           </button>
         </div>
         {regeneratedLink ? (
-          <div className="link-copy-row">
-            <code className="link-copy-value">{regeneratedLink}</code>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => copyLink(regeneratedLink)}>
-              Copy link
-            </button>
-            <a className="btn btn-ghost btn-sm" href={regeneratedLink} target="_blank" rel="noreferrer">
-              Open link
-            </a>
-          </div>
+          <>
+            <p className="muted">Share this link or scan the QR code to register candidates:</p>
+            <div className="link-copy-row">
+              <code className="link-copy-value">{regeneratedLink}</code>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => copyLink(regeneratedLink)}>
+                Copy Registration Link
+              </button>
+              <a className="btn btn-ghost btn-sm" href={regeneratedLink} target="_blank" rel="noreferrer">
+                Open link
+              </a>
+            </div>
+            <QrCode value={regeneratedLink} filename={`${drive.name}-registration-qr.png`} />
+          </>
         ) : (
           <p className="muted">
-            The link was shown once when this drive was created. Use "Regenerate link" if it needs to
-            be re-shared — this invalidates the previous link.
+            The link was shown once when this drive was created (or last regenerated). Use
+            "Regenerate Link" to get a fresh, shareable link and QR code — this invalidates the
+            previous one.
           </p>
         )}
         {drive.registration_deadline && (
@@ -251,6 +342,65 @@ export function CampusDriveDetailPage() {
           onCancel={() => setConfirmingClose(false)}
           onConfirm={() => statusMutation.mutate("CLOSED")}
         />
+      )}
+
+      {showEditForm && editForm && (
+        <Modal title={`Edit ${drive.name}`} onClose={() => setShowEditForm(false)}>
+          <form onSubmit={handleEditSubmit}>
+            <label className="field">
+              <span>Drive name</span>
+              <input
+                required
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                disabled={editMutation.isPending}
+              />
+            </label>
+            <label className="field">
+              <span>College / institution</span>
+              <input
+                required
+                value={editForm.collegeName}
+                onChange={(e) => setEditForm({ ...editForm, collegeName: e.target.value })}
+                disabled={editMutation.isPending}
+              />
+            </label>
+            <label className="field">
+              <span>Description</span>
+              <textarea
+                rows={3}
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                disabled={editMutation.isPending}
+              />
+            </label>
+            <label className="field">
+              <span>Registration deadline</span>
+              <input
+                type="date"
+                value={editForm.registrationDeadline}
+                onChange={(e) => setEditForm({ ...editForm, registrationDeadline: e.target.value })}
+                disabled={editMutation.isPending}
+              />
+            </label>
+
+            {editError && <Alert>{editError}</Alert>}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button type="submit" className="btn btn-primary" disabled={editMutation.isPending}>
+                {editMutation.isPending ? "Saving…" : "Save changes"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowEditForm(false)}
+                disabled={editMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

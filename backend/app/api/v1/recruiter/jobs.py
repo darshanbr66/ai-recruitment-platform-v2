@@ -11,7 +11,7 @@ from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.job import JobStatus
 from app.models.user import User
-from app.schemas.job import JobCreateRequest, JobResponse, JobUpdateRequest
+from app.schemas.job import JobCreateRequest, JobDeleteRequest, JobResponse, JobUpdateRequest
 from app.services import job_service
 
 router = APIRouter(prefix="/jobs", tags=["recruiter-jobs"])
@@ -24,12 +24,7 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
 ) -> JobResponse:
     assert current_user.organization_id is not None
-    job = await job_service.create_job(
-        db,
-        organization_id=current_user.organization_id,
-        created_by=current_user.id,
-        payload=payload,
-    )
+    job = await job_service.create_job(db, actor=current_user, payload=payload)
     return JobResponse.model_validate(job)
 
 
@@ -60,11 +55,25 @@ async def get_job(
 async def update_job(
     job_id: uuid.UUID,
     payload: JobUpdateRequest,
-    _: User = Depends(require_permission("job.update")),
+    current_user: User = Depends(require_permission("job.update")),
+    db: AsyncSession = Depends(get_db),
+) -> JobResponse:
+    job = await job_service.get_job(db, job_id)
+    if job is None or job.deleted_at is not None:
+        raise NotFoundError("Job not found.")
+    updated = await job_service.update_job(db, job, payload, actor=current_user)
+    return JobResponse.model_validate(updated)
+
+
+@router.post("/{job_id}/delete", response_model=JobResponse)
+async def delete_job(
+    job_id: uuid.UUID,
+    payload: JobDeleteRequest,
+    current_user: User = Depends(require_permission("job.delete")),
     db: AsyncSession = Depends(get_db),
 ) -> JobResponse:
     job = await job_service.get_job(db, job_id)
     if job is None:
         raise NotFoundError("Job not found.")
-    updated = await job_service.update_job(db, job, payload)
-    return JobResponse.model_validate(updated)
+    deleted = await job_service.delete_job(db, job, actor=current_user, reason=payload.reason)
+    return JobResponse.model_validate(deleted)

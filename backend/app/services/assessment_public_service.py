@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import AppError, NotFoundError
 from app.core.security import hash_opaque_token
@@ -26,7 +26,7 @@ from app.models.assessment import (
     Question,
 )
 from app.models.organization import Organization
-from app.services import application_service
+from app.services import activity_service, application_service
 
 _INVALID_MESSAGE = "This invitation link is no longer valid."
 
@@ -136,6 +136,19 @@ async def submit_attempt(
     if application is not None:
         await application_service.change_status(
             db, application, to_status=ApplicationStatus.ASSESSMENT_COMPLETED, actor_user_id=None
+        )
+        await activity_service.record_activity(
+            db,
+            organization_id=invitation.organization_id,
+            actor=None,
+            action="ASSESSMENT_COMPLETED",
+            entity_type="application",
+            entity_id=application.id,
+            entity_label=f"{application.candidate.full_name} — {assessment.title}",
+            description=(
+                f"{application.candidate.full_name} completed \"{assessment.title}\" "
+                f"(attempt {invitation.attempt_number}): {percentage}% — {'passed' if passed else 'failed'}."
+            ),
         )
 
     return result

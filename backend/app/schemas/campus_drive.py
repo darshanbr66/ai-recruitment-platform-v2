@@ -35,6 +35,10 @@ class CampusDriveCreateRequest(BaseModel):
         return self
 
 
+class CampusDriveDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class CampusDriveUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     college_name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -64,6 +68,7 @@ class CampusDriveResponse(BaseModel):
     default_assessment_title: str | None
     status: CampusDriveStatus
     application_count: int
+    deleted_at: datetime | None = None
     created_at: datetime
     # Only populated by the create/regenerate-link endpoints — the raw
     # token is shown once, like an assessment invitation link.
@@ -75,6 +80,8 @@ class CampusDriveFunnelCounts(BaseModel):
     screening: int
     assessment_invited: int
     assessment_completed: int
+    assessment_passed: int
+    assessment_failed: int
     shortlisted: int
     interview: int
     selected: int

@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -9,6 +10,8 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.models.application import Application, ApplicationSource, ApplicationStatus
 from app.models.candidate import Candidate
 from app.models.job import Job
+from app.models.user import User
+from app.services import activity_service
 from app.workflows import application_workflow
 
 _WITH_CANDIDATE_AND_JOB = (
@@ -54,6 +57,18 @@ async def create_application(
 
     reloaded = await get_application(db, application.id)
     assert reloaded is not None
+
+    actor = await db.get(User, actor_user_id) if actor_user_id is not None else None
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=actor,
+        action="APPLICATION_CREATED",
+        entity_type="application",
+        entity_id=application.id,
+        entity_label=f"{reloaded.candidate.full_name} — {reloaded.job.title}",
+        description=f"Application from {reloaded.candidate.full_name} for \"{reloaded.job.title}\" was created.",
+    )
     return reloaded
 
 
@@ -68,7 +83,7 @@ async def list_applications(
 ) -> list[Application]:
     query = (
         select(Application)
-        .where(Application.organization_id == organization_id)
+        .where(Application.organization_id == organization_id, Application.deleted_at.is_(None))
         .options(*_WITH_CANDIDATE_AND_JOB)
         .order_by(Application.created_at.desc())
     )
@@ -105,3 +120,31 @@ async def change_status(
     return await application_workflow.transition(
         db, application, to_status=to_status, actor_user_id=actor_user_id, reason=reason
     )
+
+
+async def delete_application(
+    db: AsyncSession, application: Application, *, actor: User, reason: str
+) -> Application:
+    """Soft-deletes/archives: keeps the row (and every AssessmentInvitation/
+    Note/ApplicationStatusHistory/ScreeningRun pointing at it) but removes
+    it from `list_applications` and records an Activity (CLAUDE.md § 3)."""
+    if application.deleted_at is not None:
+        raise ConflictError("This application has already been deleted.")
+
+    application.deleted_at = datetime.now(UTC)
+    application.deleted_by_user_id = actor.id
+    application.deletion_reason = reason
+    await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=application.organization_id,
+        actor=actor,
+        action="APPLICATION_DELETED",
+        entity_type="application",
+        entity_id=application.id,
+        entity_label=f"{application.candidate.full_name} — {application.job.title}",
+        description=f"Application from {application.candidate.full_name} for \"{application.job.title}\" was deleted.",
+        reason=reason,
+    )
+    return application

@@ -419,9 +419,326 @@ async def test_parse_questions_rejects_unsupported_file_type(
     assert response.json()["error"]["code"] == "question_import_failed"
 
 
+async def test_retest_preserves_original_attempt_and_creates_a_new_one(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-retest")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    invitation = (
+        await client.post(
+            "/api/v1/recruiter/assessments/invite",
+            json={"assessment_id": assessment["id"], "application_id": ctx["application_id"]},
+            headers=ctx["headers"],
+        )
+    ).json()
+    token = _extract_token(invitation["invitation_link"])
+    view = (await client.get(f"/api/v1/public/assessment/{token}")).json()
+    await client.post(f"/api/v1/public/assessment/{token}/start")
+
+    q1_id = view["questions"][0]["id"]
+    q2_id = view["questions"][1]["id"]
+    submit = await client.post(
+        f"/api/v1/public/assessment/{token}/submit",
+        json={
+            "answers": [
+                {"question_id": q1_id, "selected_option_ids": []},
+                {"question_id": q2_id, "selected_option_ids": []},
+            ]
+        },
+    )
+    assert submit.status_code == 200
+    assert submit.json()["passed"] is False
+
+    # Retesting without a reason is rejected.
+    no_reason = await client.post(
+        "/api/v1/recruiter/assessments/retest",
+        json={"application_id": ctx["application_id"], "reason": ""},
+        headers=ctx["headers"],
+    )
+    assert no_reason.status_code == 422
+
+    retest = await client.post(
+        "/api/v1/recruiter/assessments/retest",
+        json={
+            "application_id": ctx["application_id"],
+            "reason": "Candidate experienced network interruption.",
+        },
+        headers=ctx["headers"],
+    )
+    assert retest.status_code == 201, retest.text
+    retest_body = retest.json()
+    assert retest_body["attempt_number"] == 2
+    assert retest_body["status"] == "SENT"
+    assert retest_body["result"] is None
+    assert retest_body["retest_reason"] == "Candidate experienced network interruption."
+
+    application_after_retest = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{ctx['application_id']}", headers=ctx["headers"]
+        )
+    ).json()
+    assert application_after_retest["status"] == "ASSESSMENT_INVITED"
+
+    attempts = await client.get(
+        f"/api/v1/recruiter/applications/{ctx['application_id']}/assessment/attempts",
+        headers=ctx["headers"],
+    )
+    assert attempts.status_code == 200
+    attempt_bodies = attempts.json()
+    assert len(attempt_bodies) == 2
+    assert attempt_bodies[0]["attempt_number"] == 1
+    assert attempt_bodies[0]["status"] == "SUBMITTED"
+    assert attempt_bodies[0]["result"]["passed"] is False
+    assert attempt_bodies[1]["attempt_number"] == 2
+    assert attempt_bodies[1]["status"] == "SENT"
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=ctx["headers"])
+    actions = [a["action"] for a in activities.json()]
+    assert "ASSESSMENT_RETEST_CREATED" in actions
+
+    # The retest token is a fresh submission surface — completing it should
+    # not touch the original attempt's result.
+    retest_token = _extract_token(retest_body["invitation_link"])
+    retest_view = (await client.get(f"/api/v1/public/assessment/{retest_token}")).json()
+    await client.post(f"/api/v1/public/assessment/{retest_token}/start")
+    retest_q1 = retest_view["questions"][0]["id"]
+    retest_q1_correct = [
+        o["id"] for o in assessment["questions"][0]["options"] if o["is_correct"]
+    ]
+    retest_q2 = retest_view["questions"][1]["id"]
+    retest_q2_correct = [
+        o["id"] for o in assessment["questions"][1]["options"] if o["is_correct"]
+    ]
+    retest_submit = await client.post(
+        f"/api/v1/public/assessment/{retest_token}/submit",
+        json={
+            "answers": [
+                {"question_id": retest_q1, "selected_option_ids": retest_q1_correct},
+                {"question_id": retest_q2, "selected_option_ids": retest_q2_correct},
+            ]
+        },
+    )
+    assert retest_submit.status_code == 200
+    assert retest_submit.json()["passed"] is True
+
+    final_attempts = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{ctx['application_id']}/assessment/attempts",
+            headers=ctx["headers"],
+        )
+    ).json()
+    assert final_attempts[0]["result"]["passed"] is False  # original attempt untouched
+    assert final_attempts[1]["result"]["passed"] is True
+
+
+async def test_retest_rejected_before_current_attempt_is_submitted(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-retest-early")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    await client.post(
+        "/api/v1/recruiter/assessments/invite",
+        json={"assessment_id": assessment["id"], "application_id": ctx["application_id"]},
+        headers=ctx["headers"],
+    )
+
+    response = await client.post(
+        "/api/v1/recruiter/assessments/retest",
+        json={"application_id": ctx["application_id"], "reason": "Too early."},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 409
+
+
 async def test_parse_questions_requires_assessment_manage_permission(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/recruiter/assessments/parse-questions",
         files=_csv_upload(b"question,option_1,option_2,correct\nQ?,A,B,1\n"),
     )
     assert response.status_code == 401
+
+
+async def _invite_and_submit_first_attempt(client: AsyncClient, ctx: dict, assessment: dict) -> None:
+    invitation = (
+        await client.post(
+            "/api/v1/recruiter/assessments/invite",
+            json={"assessment_id": assessment["id"], "application_id": ctx["application_id"]},
+            headers=ctx["headers"],
+        )
+    ).json()
+    token = _extract_token(invitation["invitation_link"])
+    view = (await client.get(f"/api/v1/public/assessment/{token}")).json()
+    await client.post(f"/api/v1/public/assessment/{token}/start")
+    submit = await client.post(
+        f"/api/v1/public/assessment/{token}/submit",
+        json={
+            "answers": [
+                {"question_id": view["questions"][0]["id"], "selected_option_ids": []},
+                {"question_id": view["questions"][1]["id"], "selected_option_ids": []},
+            ]
+        },
+    )
+    assert submit.status_code == 200
+
+
+async def test_retest_with_an_existing_assessment_uses_the_chosen_assessment(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-retest-existing")
+    first_assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    other_payload = {**_ASSESSMENT_PAYLOAD, "title": "Advanced Python"}
+    other_assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=other_payload, headers=ctx["headers"]
+        )
+    ).json()
+    await _invite_and_submit_first_attempt(client, ctx, first_assessment)
+
+    retest = await client.post(
+        "/api/v1/recruiter/assessments/retest",
+        json={
+            "application_id": ctx["application_id"],
+            "reason": "Give them a different assessment.",
+            "assessment_choice": "EXISTING",
+            "assessment_id": other_assessment["id"],
+        },
+        headers=ctx["headers"],
+    )
+    assert retest.status_code == 201, retest.text
+    body = retest.json()
+    assert body["assessment_id"] == other_assessment["id"]
+    assert body["assessment_title"] == "Advanced Python"
+    assert body["attempt_number"] == 2
+
+    # The original attempt's own assessment link is untouched.
+    attempts = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{ctx['application_id']}/assessment/attempts",
+            headers=ctx["headers"],
+        )
+    ).json()
+    assert attempts[0]["assessment_id"] == first_assessment["id"]
+    assert attempts[1]["assessment_id"] == other_assessment["id"]
+
+
+async def test_retest_with_a_new_assessment_creates_it_via_the_normal_create_flow(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-retest-new")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    await _invite_and_submit_first_attempt(client, ctx, assessment)
+
+    new_payload = {**_ASSESSMENT_PAYLOAD, "title": "Retest-only Assessment"}
+    retest = await client.post(
+        "/api/v1/recruiter/assessments/retest",
+        json={
+            "application_id": ctx["application_id"],
+            "reason": "Needs a fresh set of questions.",
+            "assessment_choice": "NEW",
+            "new_assessment": new_payload,
+        },
+        headers=ctx["headers"],
+    )
+    assert retest.status_code == 201, retest.text
+    body = retest.json()
+    assert body["assessment_title"] == "Retest-only Assessment"
+
+    listing = await client.get("/api/v1/recruiter/assessments", headers=ctx["headers"])
+    titles = [a["title"] for a in listing.json()]
+    assert "Retest-only Assessment" in titles
+
+
+async def test_retest_existing_choice_requires_assessment_id(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-retest-existing-missing")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    await _invite_and_submit_first_attempt(client, ctx, assessment)
+
+    response = await client.post(
+        "/api/v1/recruiter/assessments/retest",
+        json={
+            "application_id": ctx["application_id"],
+            "reason": "Missing target assessment.",
+            "assessment_choice": "EXISTING",
+        },
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 422
+
+
+async def test_delete_assessment_soft_deletes_and_records_an_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-delete-happy")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+
+    delete_response = await client.post(
+        f"/api/v1/recruiter/assessments/{assessment['id']}/delete",
+        json={"reason": "Outdated question set."},
+        headers=ctx["headers"],
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    assert delete_response.json()["deleted_at"] is not None
+
+    listing = await client.get("/api/v1/recruiter/assessments", headers=ctx["headers"])
+    assert assessment["id"] not in [a["id"] for a in listing.json()]
+
+    second_delete = await client.post(
+        f"/api/v1/recruiter/assessments/{assessment['id']}/delete",
+        json={"reason": "Again."},
+        headers=ctx["headers"],
+    )
+    assert second_delete.status_code == 409
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=ctx["headers"])
+    delete_entries = [a for a in activities.json() if a["action"] == "ASSESSMENT_DELETED"]
+    assert len(delete_entries) == 1
+    assert delete_entries[0]["entity_id"] == assessment["id"]
+
+
+async def test_deleted_assessment_cannot_be_used_for_a_new_invitation(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-delete-invite-guard")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    await client.post(
+        f"/api/v1/recruiter/assessments/{assessment['id']}/delete",
+        json={"reason": "Retired."},
+        headers=ctx["headers"],
+    )
+
+    response = await client.post(
+        "/api/v1/recruiter/assessments/invite",
+        json={"assessment_id": assessment["id"], "application_id": ctx["application_id"]},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 404

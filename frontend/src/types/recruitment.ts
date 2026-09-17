@@ -17,8 +17,13 @@ export interface JobResponse {
   status: JobStatus;
   openings_count: number;
   created_by: string;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface JobDeleteRequest {
+  reason: string;
 }
 
 export interface JobCreateRequest {
@@ -53,6 +58,7 @@ export interface CandidateResponse {
   years_experience: number | null;
   source: CandidateSource;
   is_active: boolean;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -123,9 +129,14 @@ export interface ApplicationResponse {
   updated_at: string;
   resume_id: string | null;
   resume_filename: string | null;
+  deleted_at: string | null;
 }
 
 export interface ApplicationCreateRequest {
   candidate_id: string;
   job_id: string;
+}
+
+export interface ApplicationDeleteRequest {
+  reason: string;
 }

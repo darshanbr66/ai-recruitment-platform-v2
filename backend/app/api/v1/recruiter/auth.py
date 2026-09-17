@@ -9,17 +9,19 @@ mechanism itself (see docs/architecture.md § 4).
 """
 
 from fastapi import APIRouter, Cookie, Depends, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
+from app.core.security import hash_opaque_token
 from app.db.rls import rls_bypass
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRefreshToken
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.user import UserResponse
-from app.services import auth_service, user_service
+from app.services import activity_service, auth_service, user_service
 
 router = APIRouter(prefix="/auth", tags=["recruiter-auth"])
 
@@ -60,6 +62,23 @@ async def login(
     user = await auth_service.authenticate(db, email=payload.email, password=payload.password)
     tokens = await auth_service.issue_tokens(db, user)
 
+    if user.organization_id is not None:
+        # No tenant context is set on this session yet (that only happens
+        # from `get_current_user`, on the *next* request) — this is the
+        # same "resolving who a caller is before a tenant is known"
+        # bootstrap case app/db/rls.py::rls_bypass documents.
+        async with rls_bypass(db):
+            await activity_service.record_activity(
+                db,
+                organization_id=user.organization_id,
+                actor=user,
+                action="LOGIN",
+                entity_type="user",
+                entity_id=user.id,
+                entity_label=user.email,
+                description=f"{user.full_name} logged in.",
+            )
+
     _set_refresh_cookie(response, tokens.refresh_token)
 
     return TokenResponse(access_token=tokens.access_token, expires_in=tokens.access_expires_in)
@@ -88,7 +107,28 @@ async def logout(
     refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE_NAME),
 ) -> None:
     if refresh_token is not None:
+        async with rls_bypass(db):
+            token_row = await db.scalar(
+                select(UserRefreshToken).where(
+                    UserRefreshToken.token_hash == hash_opaque_token(refresh_token)
+                )
+            )
+            user = await db.get(User, token_row.user_id) if token_row is not None else None
+
         await auth_service.revoke_refresh_token(db, refresh_token)
+
+        if user is not None and user.organization_id is not None:
+            async with rls_bypass(db):
+                await activity_service.record_activity(
+                    db,
+                    organization_id=user.organization_id,
+                    actor=user,
+                    action="LOGOUT",
+                    entity_type="user",
+                    entity_id=user.id,
+                    entity_label=user.email,
+                    description=f"{user.full_name} logged out.",
+                )
     _clear_refresh_cookie(response)
 
 

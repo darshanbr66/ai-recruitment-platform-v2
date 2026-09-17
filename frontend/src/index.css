@@ -187,6 +187,22 @@ a {
   right: 1.25rem;
 }
 
+.auth-home-link {
+  position: absolute;
+  top: 1.25rem;
+  left: 1.25rem;
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+}
+
+.auth-home-link:hover {
+  background: var(--color-bg);
+}
+
 /* App shell (recruiter + admin) */
 /* App shell layout: header stays put, sidebar stays put, only `.content`
    scrolls. Implemented at the container level (fixed-height flex column
@@ -537,6 +553,44 @@ fieldset.field legend {
   color: var(--color-text-muted);
 }
 
+.workflow-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.workflow-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.workflow-step-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.workflow-step-arrow {
+  color: var(--color-text-muted);
+  margin: 0 0.15rem;
+}
+
 .link-button {
   background: none;
   border: none;
@@ -725,6 +779,72 @@ fieldset.field legend {
 .badge-danger {
   background: var(--color-danger-bg);
   color: var(--color-danger-text);
+}
+
+/* Skeleton loading placeholders */
+.skeleton {
+  display: inline-block;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--color-skeleton-base, var(--color-border)) 25%,
+    var(--color-skeleton-shine, var(--color-bg)) 37%,
+    var(--color-skeleton-base, var(--color-border)) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+.skeleton-table td {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+/* Inline button spinner */
+.btn-spinner-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: currentColor;
+  animation: spinner-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn-ghost .spinner,
+.btn-danger .spinner {
+  border: 2px solid var(--color-border);
+  border-top-color: currentColor;
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .spinner {
+    animation-duration: 1.2s;
+  }
 }
 
 /* Toast notifications */

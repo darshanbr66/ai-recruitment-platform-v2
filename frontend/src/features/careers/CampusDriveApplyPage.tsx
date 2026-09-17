@@ -87,13 +87,24 @@ export function CampusDriveApplyPage() {
             {driveQuery.data.status !== "ACTIVE" ? (
               <Alert>This campus drive is not currently accepting applications.</Alert>
             ) : applyMutation.isSuccess ? (
-              <Alert variant="success">
-                Thanks, {applyMutation.data.candidate_email}! Your application for{" "}
-                <strong>{applyMutation.data.job_title}</strong> has been received.
-                {applyMutation.data.assessment_invitation_link
-                  ? " This drive includes an assessment — check your email for the invitation link to complete it."
-                  : " We'll be in touch."}
-              </Alert>
+              <section className="card stack-sm">
+                <Alert variant="success">
+                  Thanks, {applyMutation.data.candidate_email}! Your application for{" "}
+                  <strong>{applyMutation.data.job_title}</strong> has been received.
+                  {applyMutation.data.assessment_invitation_link
+                    ? " This drive includes an assessment — start it now, or use the link we've sent to your email."
+                    : " We'll be in touch."}
+                </Alert>
+                {applyMutation.data.assessment_invitation_link && (
+                  <Link
+                    to={applyMutation.data.assessment_invitation_link}
+                    className="btn btn-primary"
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    Start Assessment
+                  </Link>
+                )}
+              </section>
             ) : (
               <section className="card">
                 <h2>Apply for this drive</h2>
@@ -102,7 +113,7 @@ export function CampusDriveApplyPage() {
                     This drive includes an assessment — after you apply, you'll be directed to take it.
                   </p>
                 )}
-                <form onSubmit={handleSubmit} noValidate>
+                <form onSubmit={handleSubmit}>
                   <label className="field">
                     <span>Full name</span>
                     <input

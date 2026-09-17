@@ -19,6 +19,7 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.application import (
     ApplicationCreateRequest,
+    ApplicationDeleteRequest,
     ApplicationResponse,
     ApplicationStatusChangeRequest,
 )
@@ -48,6 +49,7 @@ def _to_response(application: Application) -> ApplicationResponse:
         updated_at=application.updated_at,
         resume_id=application.resume.id if application.resume else None,
         resume_filename=application.resume.original_filename if application.resume else None,
+        deleted_at=application.deleted_at,
     )
 
 
@@ -102,6 +104,22 @@ async def get_application(
     return _to_response(application)
 
 
+@router.post("/{application_id}/delete", response_model=ApplicationResponse)
+async def delete_application(
+    application_id: uuid.UUID,
+    payload: ApplicationDeleteRequest,
+    current_user: User = Depends(require_permission("application.delete")),
+    db: AsyncSession = Depends(get_db),
+) -> ApplicationResponse:
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    deleted = await application_service.delete_application(
+        db, application, actor=current_user, reason=payload.reason
+    )
+    return _to_response(deleted)
+
+
 @router.get("/{application_id}/resume")
 async def download_resume(
     application_id: uuid.UUID,
@@ -127,6 +145,25 @@ async def download_resume(
     )
 
 
+def _invitation_to_response(
+    invitation, candidate_full_name: str
+) -> AssessmentInvitationResponse:
+    return AssessmentInvitationResponse(
+        id=invitation.id,
+        assessment_id=invitation.assessment_id,
+        assessment_title=invitation.assessment.title,
+        application_id=invitation.application_id,
+        candidate_full_name=candidate_full_name,
+        status=invitation.status,
+        expires_at=invitation.expires_at,
+        started_at=invitation.started_at,
+        submitted_at=invitation.submitted_at,
+        attempt_number=invitation.attempt_number,
+        retest_reason=invitation.retest_reason,
+        result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,
+    )
+
+
 @router.get("/{application_id}/assessment", response_model=AssessmentInvitationResponse | None)
 async def get_application_assessment(
     application_id: uuid.UUID,
@@ -136,20 +173,22 @@ async def get_application_assessment(
     invitation = await assessment_service.get_invitation_for_application(db, application_id)
     if invitation is None:
         return None
-
     application = await application_service.get_application(db, application_id)
-    return AssessmentInvitationResponse(
-        id=invitation.id,
-        assessment_id=invitation.assessment_id,
-        assessment_title=invitation.assessment.title,
-        application_id=invitation.application_id,
-        candidate_full_name=application.candidate.full_name if application else "",
-        status=invitation.status,
-        expires_at=invitation.expires_at,
-        started_at=invitation.started_at,
-        submitted_at=invitation.submitted_at,
-        result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,
-    )
+    return _invitation_to_response(invitation, application.candidate.full_name if application else "")
+
+
+@router.get("/{application_id}/assessment/attempts", response_model=list[AssessmentInvitationResponse])
+async def list_application_assessment_attempts(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("assessment.read")),
+    db: AsyncSession = Depends(get_db),
+) -> list[AssessmentInvitationResponse]:
+    """Full retest history for this application, oldest attempt first —
+    the original attempt is never overwritten or removed (CLAUDE.md § 3)."""
+    application = await application_service.get_application(db, application_id)
+    attempts = await assessment_service.list_attempts_for_application(db, application_id)
+    candidate_name = application.candidate.full_name if application else ""
+    return [_invitation_to_response(a, candidate_name) for a in attempts]
 
 
 @router.post("/{application_id}/status", response_model=ApplicationResponse)

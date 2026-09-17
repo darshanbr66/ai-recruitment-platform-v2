@@ -57,14 +57,41 @@ class ForbiddenError(AppError):
     code = "forbidden"
 
 
-def _error_body(code: str, message: str) -> dict[str, Any]:
-    return {
+def _error_body(code: str, message: str, *, details: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {
         "error": {
             "code": code,
             "message": message,
             "request_id": get_request_id(),
         }
     }
+    if details:
+        body["error"]["details"] = details
+    return body
+
+
+def _format_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Turns Pydantic's `exc.errors()` into a small, safe, human-readable
+    list — field path (e.g. "questions[2].options[1].label") plus message
+    (e.g. "String should have at least 1 character"). Pydantic's own `msg`
+    text never contains stack traces/SQL/file paths, so it is safe to send
+    to the client — this is the one place the UI can show the recruiter
+    *what* was wrong instead of a dead-end generic error (CLAUDE.md § 5:
+    strong validation, useful errors, not a weaker schema).
+    """
+    details: list[dict[str, str]] = []
+    for err in errors:
+        parts: list[str] = []
+        for segment in err.get("loc", ()):
+            if segment == "body":
+                continue
+            if isinstance(segment, int):
+                parts[-1] = f"{parts[-1]}[{segment}]" if parts else f"[{segment}]"
+            else:
+                parts.append(str(segment))
+        field = ".".join(parts) if parts else "(request)"
+        details.append({"field": field, "message": str(err.get("msg", "Invalid value."))})
+    return details
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -85,9 +112,14 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        details = _format_validation_errors(exc.errors())
+        logger.info(
+            "Request validation failed", extra={"extra_fields": {"errors": details}}
+        )
+        summary = "; ".join(f"{d['field']}: {d['message']}" for d in details[:5]) or "Request validation failed."
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=_error_body("validation_error", "Request validation failed."),
+            content=_error_body("validation_error", summary, details=details),
         )
 
     @app.exception_handler(Exception)

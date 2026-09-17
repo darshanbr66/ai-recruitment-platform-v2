@@ -3,12 +3,16 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { Modal } from "../../../shared/components/Modal";
+import { SkeletonTable } from "../../../shared/components/Skeleton";
+import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
+import type { ApplicationResponse } from "../../../types/recruitment";
 import { APPLICATION_STATUSES, type ApplicationStatus } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
-import { createApplication, listApplications } from "./api";
+import { createApplication, deleteApplication, listApplications } from "./api";
 
 const APPLICATIONS_QUERY_KEY = ["recruiter", "applications"];
 
@@ -51,6 +55,9 @@ export function ApplicationsPage() {
   const [candidateId, setCandidateId] = useState("");
   const [jobId, setJobId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ApplicationResponse | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const createApplicationMutation = useMutation({
     mutationFn: () => createApplication({ candidate_id: candidateId, job_id: jobId }, token),
@@ -70,6 +77,47 @@ export function ApplicationsPage() {
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     createApplicationMutation.mutate();
+  }
+
+  function closeForm() {
+    if (createApplicationMutation.isPending) return;
+    setShowForm(false);
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteApplication(pendingDelete!.id, { reason: deleteReason.trim() }, token),
+    onSuccess: () => {
+      showToast(`Application for ${pendingDelete?.candidate_full_name} was deleted.`, "success");
+      setPendingDelete(null);
+      setDeleteReason("");
+      setDeleteError(null);
+      void queryClient.invalidateQueries({ queryKey: APPLICATIONS_QUERY_KEY });
+    },
+    onError: (err) => {
+      setDeleteError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openDeleteModal(application: ApplicationResponse) {
+    setPendingDelete(application);
+    setDeleteReason("");
+    setDeleteError(null);
+  }
+
+  function closeDeleteModal() {
+    if (deleteMutation.isPending) return;
+    setPendingDelete(null);
+    setDeleteReason("");
+    setDeleteError(null);
+  }
+
+  function handleDeleteSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (deleteReason.trim().length === 0) {
+      setDeleteError("A reason for deletion is required.");
+      return;
+    }
+    deleteMutation.mutate();
   }
 
   const canManageApplications = !(
@@ -107,7 +155,7 @@ export function ApplicationsPage() {
         )}
       </div>
 
-      {applicationsQuery.isPending && <p role="status">Loading applications…</p>}
+      {applicationsQuery.isPending && <SkeletonTable columns={7} />}
 
       {applicationsQuery.isError && !canManageApplications && (
         <Alert>You do not have permission to view applications.</Alert>
@@ -172,21 +220,24 @@ export function ApplicationsPage() {
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th>#</th>
                     <th>Candidate</th>
                     <th>Job</th>
                     <th>Status</th>
                     <th>Source</th>
                     <th>Applied</th>
                     <th>Resume</th>
+                    {canManageApplications && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredApplications.map((application) => (
+                  {filteredApplications.map((application, index) => (
                     <tr
                       key={application.id}
                       className="clickable-row"
                       onClick={() => navigate(`/recruiter/applications/${application.id}`)}
                     >
+                      <td>{index + 1}</td>
                       <td>{application.candidate_full_name}</td>
                       <td>{application.job_title}</td>
                       <td>
@@ -201,6 +252,17 @@ export function ApplicationsPage() {
                       </td>
                       <td>{new Date(application.applied_at).toLocaleDateString()}</td>
                       <td>{application.resume_id ? "Yes" : "—"}</td>
+                      {canManageApplications && (
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => openDeleteModal(application)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -211,13 +273,7 @@ export function ApplicationsPage() {
       )}
 
       {canManageApplications && showForm && (
-        <section className="card">
-          <div className="page-header">
-            <h2>Link a candidate to a job</h2>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>
-              Cancel
-            </button>
-          </div>
+        <Modal title="Link a candidate to a job" onClose={closeForm}>
           <p className="muted">
             Most applications arrive through your career site automatically — use this to add one
             by hand.
@@ -270,15 +326,75 @@ export function ApplicationsPage() {
 
             {formError && <Alert>{formError}</Alert>}
 
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={createApplicationMutation.isPending || !candidateId || !jobId}
-            >
-              {createApplicationMutation.isPending ? "Linking…" : "Create application"}
-            </button>
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={createApplicationMutation.isPending || !candidateId || !jobId}
+              >
+                {createApplicationMutation.isPending ? (
+                  <Spinner label="Linking…" />
+                ) : (
+                  "Create application"
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeForm}
+                disabled={createApplicationMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
           </form>
-        </section>
+        </Modal>
+      )}
+
+      {pendingDelete && (
+        <Modal title="Delete application" onClose={closeDeleteModal}>
+          <form onSubmit={handleDeleteSubmit}>
+            <p>
+              <strong>Candidate:</strong> {pendingDelete.candidate_full_name}
+              <br />
+              <strong>Job:</strong> {pendingDelete.job_title}
+            </p>
+            <p className="muted">
+              This removes this application from your active pipeline. Its status history and any
+              assessment attempts are preserved, and this action is recorded in Activities.
+            </p>
+            <label className="field">
+              <span>Reason for deletion</span>
+              <textarea
+                required
+                rows={3}
+                value={deleteReason}
+                onChange={(e) => {
+                  setDeleteReason(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                disabled={deleteMutation.isPending}
+                placeholder="e.g. Duplicate application"
+              />
+            </label>
+
+            {deleteError && <Alert>{deleteError}</Alert>}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button type="submit" className="btn btn-danger" disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? <Spinner label="Deleting…" /> : "Delete application"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeDeleteModal}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

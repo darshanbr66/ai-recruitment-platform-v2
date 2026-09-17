@@ -40,6 +40,33 @@ any tenant — `organization_id` is `NULL`.
 | Organization | Acme Corp (`acme-corp`) |
 | Purpose | Standard recruiter-portal testing (jobs, candidates, applications) without user-management permissions — use to verify role boundaries against `admin@acme-corp.dev` |
 
+## Organization admin — Sigvitas Pvt. Ltd.
+
+Realistic demo organization (see backend/scripts or the seeding note below)
+with 15 real-looking job postings across engineering, design, data, and HR —
+used to demo the platform as more than a toy/empty instance.
+
+| Field | Value |
+|---|---|
+| Email | `admin@sigvitas.com` |
+| Password | `SigvitasAdmin@2026` |
+| Role | `ORG_ADMIN` |
+| Organization | Sigvitas Pvt. Ltd. (`sigvitas`) |
+| Purpose | Full recruiter-portal access for the Sigvitas demo tenant |
+
+## Recruiter — Sigvitas Pvt. Ltd.
+
+| Field | Value |
+|---|---|
+| Email | `recruiter@sigvitas.com` |
+| Password | `SigvitasRecruit@2026` |
+| Role | `RECRUITER` |
+| Organization | Sigvitas Pvt. Ltd. (`sigvitas`) |
+| Purpose | Standard recruiter-portal testing under the Sigvitas tenant |
+
+Public career site: `/org/sigvitas` (12 OPEN roles; also has 1 DRAFT, 1
+ON_HOLD, 1 CLOSED job to demonstrate the full status lifecycle).
+
 ## Notes
 
 - No candidate-portal test accounts exist yet (candidate auth ships in a

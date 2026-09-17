@@ -10,7 +10,12 @@ from app.api.deps import require_permission
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.candidate import CandidateCreateRequest, CandidateResponse, CandidateUpdateRequest
+from app.schemas.candidate import (
+    CandidateCreateRequest,
+    CandidateDeleteRequest,
+    CandidateResponse,
+    CandidateUpdateRequest,
+)
 from app.services import candidate_service
 
 router = APIRouter(prefix="/candidates", tags=["recruiter-candidates"])
@@ -24,7 +29,7 @@ async def create_candidate(
 ) -> CandidateResponse:
     assert current_user.organization_id is not None
     candidate = await candidate_service.create_candidate(
-        db, organization_id=current_user.organization_id, payload=payload
+        db, organization_id=current_user.organization_id, payload=payload, actor=current_user
     )
     return CandidateResponse.model_validate(candidate)
 
@@ -55,11 +60,27 @@ async def get_candidate(
 async def update_candidate(
     candidate_id: uuid.UUID,
     payload: CandidateUpdateRequest,
-    _: User = Depends(require_permission("candidate.update")),
+    current_user: User = Depends(require_permission("candidate.update")),
     db: AsyncSession = Depends(get_db),
 ) -> CandidateResponse:
     candidate = await candidate_service.get_candidate(db, candidate_id)
     if candidate is None:
         raise NotFoundError("Candidate not found.")
-    updated = await candidate_service.update_candidate(db, candidate, payload)
+    updated = await candidate_service.update_candidate(db, candidate, payload, actor=current_user)
     return CandidateResponse.model_validate(updated)
+
+
+@router.post("/{candidate_id}/delete", response_model=CandidateResponse)
+async def delete_candidate(
+    candidate_id: uuid.UUID,
+    payload: CandidateDeleteRequest,
+    current_user: User = Depends(require_permission("candidate.delete")),
+    db: AsyncSession = Depends(get_db),
+) -> CandidateResponse:
+    candidate = await candidate_service.get_candidate(db, candidate_id)
+    if candidate is None:
+        raise NotFoundError("Candidate not found.")
+    deleted = await candidate_service.delete_candidate(
+        db, candidate, actor=current_user, reason=payload.reason
+    )
+    return CandidateResponse.model_validate(deleted)

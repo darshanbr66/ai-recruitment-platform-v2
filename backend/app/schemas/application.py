@@ -17,6 +17,10 @@ class ApplicationStatusChangeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
+class ApplicationDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class ApplicationResponse(BaseModel):
     """Includes denormalized `candidate_full_name`/`job_title` — populated
     by the service's join query — so a recruiter list view doesn't need a
@@ -38,6 +42,7 @@ class ApplicationResponse(BaseModel):
     updated_at: datetime
     resume_id: uuid.UUID | None = None
     resume_filename: str | None = None
+    deleted_at: datetime | None = None
 
 
 class ApplicationStatusHistoryEntry(BaseModel):

@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,3 +46,15 @@ class Job(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+
+    # Soft delete — same rationale/shape as Candidate's (app/models/candidate.py):
+    # a hard DELETE would also be blocked by applications.job_id's ON DELETE
+    # RESTRICT the moment the job has any application, so this makes that the
+    # deliberate behavior everywhere. Deleted jobs are excluded from
+    # `job_service.list_jobs` but every Application/CampusDrive pointing at
+    # them stays intact.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -32,6 +32,17 @@ class UserCreateRequest(BaseModel):
     role: AssignableRole
 
 
+class UserUpdateRequest(BaseModel):
+    """Team management (deactivate/reactivate/change role) — all optional so
+    a single PATCH can change just one aspect. Guarded at the service layer
+    (app/services/user_service.py) against self-deactivation and against
+    removing the organization's last active ORG_ADMIN."""
+
+    is_active: bool | None = None
+    role: AssignableRole | None = None
+    reason: str | None = Field(default=None, max_length=1000)
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
