@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +34,14 @@ class Job(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     employment_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    # UI-visibility only — the JD text is never deleted when hidden (CLAUDE.md
+    # § 2: "Workflow state != ad hoc strings" applies equally here: this is a
+    # real column, not an ad hoc frontend-only flag). Enforced server-side on
+    # the public job-detail endpoint (app/api/v1/public/jobs.py), not just
+    # hidden in the UI.
+    description_visible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status", native_enum=True),
         nullable=False,

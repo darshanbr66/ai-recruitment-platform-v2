@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -13,6 +13,7 @@ from app.models.application import ApplicationStatus
 from app.models.assessment import (
     Assessment,
     AssessmentInvitation,
+    AssessmentMonitoringEvent,
     InvitationStatus,
     Question,
     QuestionOption,
@@ -21,6 +22,7 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.assessment import (
     AssessmentCreateRequest,
+    AssessmentUpdateRequest,
     ParsedQuestionsResponse,
     QuestionCreate,
     RetestAssessmentChoice,
@@ -159,6 +161,97 @@ async def delete_assessment(db: AsyncSession, assessment: Assessment, *, actor: 
     return assessment
 
 
+async def assessment_has_invitations(db: AsyncSession, assessment_id: uuid.UUID) -> bool:
+    """True once any candidate could have been invited to this assessment —
+    the point past which question-structure edits are locked (see
+    `update_assessment`), regardless of whether that invitation was ever
+    started or submitted."""
+    count = await db.scalar(
+        select(func.count(AssessmentInvitation.id)).where(
+            AssessmentInvitation.assessment_id == assessment_id
+        )
+    )
+    return bool(count)
+
+
+async def update_assessment(
+    db: AsyncSession, assessment: Assessment, payload: AssessmentUpdateRequest, *, actor: User
+) -> Assessment:
+    """Title/instructions/duration/pass score can always change. The
+    question set can only be replaced wholesale while no invitation exists
+    yet for this assessment (CLAUDE.md § 23: "Completed assessment attempts
+    must not be modified accidentally when editing an assessment") — once
+    one does, a 409 tells the caller to create a new assessment instead."""
+    updates = payload.model_dump(exclude_unset=True, exclude={"questions"})
+    replacing_questions = payload.questions is not None
+
+    if replacing_questions and await assessment_has_invitations(db, assessment.id):
+        raise ConflictError(
+            "This assessment's questions can't be changed once it has been sent to a "
+            "candidate. Create a new assessment instead."
+        )
+
+    changed_fields = list(updates) + (["questions"] if replacing_questions else [])
+    if not changed_fields:
+        return assessment
+
+    for field, value in updates.items():
+        setattr(assessment, field, value)
+
+    if replacing_questions:
+        assert payload.questions is not None
+        existing_questions = await db.execute(
+            select(Question).where(Question.assessment_id == assessment.id)
+        )
+        for question in existing_questions.scalars().all():
+            await db.delete(question)
+        await db.flush()
+
+        for order_index, question_payload in enumerate(payload.questions):
+            question = Question(
+                assessment_id=assessment.id,
+                prompt=question_payload.prompt,
+                type=question_payload.type,
+                points=question_payload.points,
+                order_index=order_index,
+            )
+            db.add(question)
+            await db.flush()
+            for option_order, option_payload in enumerate(question_payload.options):
+                db.add(
+                    QuestionOption(
+                        question_id=question.id,
+                        label=option_payload.label,
+                        is_correct=option_payload.is_correct,
+                        order_index=option_order,
+                    )
+                )
+
+        # `assessment.questions` (viewonly, selectin-loaded) was already
+        # populated by the caller's earlier `get_assessment` — an eager
+        # loader never refreshes an attribute that's already present on an
+        # identity-mapped object, so without this the reload below would
+        # silently keep serving the just-deleted question set.
+        db.expire(assessment, ["questions"])
+
+    await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=assessment.organization_id,
+        actor=actor,
+        action="ASSESSMENT_UPDATED",
+        entity_type="assessment",
+        entity_id=assessment.id,
+        entity_label=assessment.title,
+        description=f"Assessment \"{assessment.title}\" was updated ({', '.join(sorted(changed_fields))}).",
+    )
+
+    reloaded = await get_assessment(db, assessment.id)
+    assert reloaded is not None
+    return reloaded
+
+
 async def get_assessment(db: AsyncSession, assessment_id: uuid.UUID) -> Assessment | None:
     result = await db.execute(
         select(Assessment)
@@ -275,6 +368,20 @@ async def get_invitation_for_application(
         .limit(1)
     )
     return result.unique().scalar_one_or_none()
+
+
+async def list_monitoring_events(
+    db: AsyncSession, invitation_id: uuid.UUID
+) -> list[AssessmentMonitoringEvent]:
+    """Recruiter/admin read of one attempt's observed monitoring events, in
+    chronological order — permission-gated by `assessment.read` at the
+    route layer (SIGVITAS platform overhaul § 7)."""
+    result = await db.execute(
+        select(AssessmentMonitoringEvent)
+        .where(AssessmentMonitoringEvent.invitation_id == invitation_id)
+        .order_by(AssessmentMonitoringEvent.occurred_at.asc())
+    )
+    return list(result.scalars().all())
 
 
 async def list_attempts_for_application(

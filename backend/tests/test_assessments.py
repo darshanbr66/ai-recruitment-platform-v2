@@ -195,10 +195,10 @@ async def test_candidate_can_start_and_submit_via_token_no_auth(
     )
     assert submit.status_code == 200, submit.text
     result = submit.json()
-    assert result["score"] == 3
-    assert result["max_score"] == 3
-    assert result["percentage"] == 100
-    assert result["passed"] is True
+    # Candidate-facing result carries no score — recruiters/admins see it
+    # separately via the recruiter endpoint below (SIGVITAS platform
+    # overhaul § 4: never expose the score to the candidate).
+    assert set(result.keys()) == {"submitted_at"}
 
     application_after_submit = (
         await client.get(
@@ -252,9 +252,16 @@ async def test_partial_wrong_answers_score_correctly(client: AsyncClient, super_
         },
     )
     assert submit.status_code == 200
-    result = submit.json()
-    assert result["score"] == 0
-    assert result["passed"] is False
+    assert set(submit.json().keys()) == {"submitted_at"}  # no score shown to the candidate
+
+    recruiter_view = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{ctx['application_id']}/assessment",
+            headers=ctx["headers"],
+        )
+    ).json()
+    assert recruiter_view["result"]["score"] == 0
+    assert recruiter_view["result"]["passed"] is False
 
 
 async def test_invalid_token_returns_generic_not_found(client: AsyncClient) -> None:
@@ -451,7 +458,6 @@ async def test_retest_preserves_original_attempt_and_creates_a_new_one(
         },
     )
     assert submit.status_code == 200
-    assert submit.json()["passed"] is False
 
     # Retesting without a reason is rejected.
     no_reason = await client.post(
@@ -523,7 +529,6 @@ async def test_retest_preserves_original_attempt_and_creates_a_new_one(
         },
     )
     assert retest_submit.status_code == 200
-    assert retest_submit.json()["passed"] is True
 
     final_attempts = (
         await client.get(
@@ -742,3 +747,231 @@ async def test_deleted_assessment_cannot_be_used_for_a_new_invitation(
         headers=ctx["headers"],
     )
     assert response.status_code == 404
+
+
+async def test_get_assessment_returns_full_detail_for_viewing(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-view")
+    created = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    assert created["has_invitations"] is False
+
+    response = await client.get(
+        f"/api/v1/recruiter/assessments/{created['id']}", headers=ctx["headers"]
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["title"] == _ASSESSMENT_PAYLOAD["title"]
+    assert body["instructions"] == _ASSESSMENT_PAYLOAD["instructions"]
+    assert len(body["questions"]) == 2
+    assert body["questions"][0]["options"][0]["is_correct"] is not None
+    assert body["has_invitations"] is False
+
+
+async def test_update_assessment_applies_only_provided_fields(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-update")
+    created = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+
+    response = await client.patch(
+        f"/api/v1/recruiter/assessments/{created['id']}",
+        json={"title": "Python Basics (v2)", "pass_score": 70},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["title"] == "Python Basics (v2)"
+    assert body["pass_score"] == 70
+    assert body["instructions"] == _ASSESSMENT_PAYLOAD["instructions"]  # untouched
+    assert len(body["questions"]) == 2  # untouched
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=ctx["headers"])
+    actions = [a["action"] for a in activities.json()]
+    assert "ASSESSMENT_UPDATED" in actions
+
+
+async def test_update_assessment_can_replace_questions_before_any_invitation(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-update-questions")
+    created = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+
+    new_questions = [
+        {
+            "prompt": "What is 2 + 2?",
+            "type": "MCQ_SINGLE",
+            "points": 1,
+            "options": [
+                {"label": "3", "is_correct": False},
+                {"label": "4", "is_correct": True},
+            ],
+        }
+    ]
+    response = await client.patch(
+        f"/api/v1/recruiter/assessments/{created['id']}",
+        json={"questions": new_questions},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["questions"]) == 1
+    assert body["questions"][0]["prompt"] == "What is 2 + 2?"
+
+
+async def test_update_assessment_questions_blocked_once_invitation_exists(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-update-guard")
+    created = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    await client.post(
+        "/api/v1/recruiter/assessments/invite",
+        json={"assessment_id": created["id"], "application_id": ctx["application_id"]},
+        headers=ctx["headers"],
+    )
+
+    detail = (
+        await client.get(f"/api/v1/recruiter/assessments/{created['id']}", headers=ctx["headers"])
+    ).json()
+    assert detail["has_invitations"] is True
+
+    response = await client.patch(
+        f"/api/v1/recruiter/assessments/{created['id']}",
+        json={"questions": [{"prompt": "New?", "type": "MCQ_SINGLE", "points": 1, "options": [
+            {"label": "Yes", "is_correct": True}, {"label": "No", "is_correct": False},
+        ]}]},
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 409
+
+    # Non-structural fields remain editable even after invitations exist.
+    still_editable = await client.patch(
+        f"/api/v1/recruiter/assessments/{created['id']}",
+        json={"duration_minutes": 45},
+        headers=ctx["headers"],
+    )
+    assert still_editable.status_code == 200
+    assert still_editable.json()["duration_minutes"] == 45
+
+
+async def _start_attempt(client: AsyncClient, ctx: dict) -> str:
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    invitation = (
+        await client.post(
+            "/api/v1/recruiter/assessments/invite",
+            json={"assessment_id": assessment["id"], "application_id": ctx["application_id"]},
+            headers=ctx["headers"],
+        )
+    ).json()
+    token = _extract_token(invitation["invitation_link"])
+    await client.post(f"/api/v1/public/assessment/{token}/start")
+    return token
+
+
+async def test_monitoring_events_recorded_while_started(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-monitoring")
+    token = await _start_attempt(client, ctx)
+
+    response = await client.post(
+        f"/api/v1/public/assessment/{token}/events",
+        json={
+            "events": [
+                {"event_type": "MONITORING_CONSENT_GIVEN", "occurred_at": "2026-01-01T10:00:00Z"},
+                {"event_type": "TAB_SWITCH", "occurred_at": "2026-01-01T10:05:00Z"},
+                {
+                    "event_type": "FULLSCREEN_EXIT",
+                    "occurred_at": "2026-01-01T10:06:00Z",
+                    "duration_ms": 4200,
+                },
+            ]
+        },
+    )
+    assert response.status_code == 204, response.text
+
+    events = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{ctx['application_id']}/assessment/events",
+            headers=ctx["headers"],
+        )
+    ).json()
+    assert [e["event_type"] for e in events] == [
+        "MONITORING_CONSENT_GIVEN",
+        "TAB_SWITCH",
+        "FULLSCREEN_EXIT",
+    ]
+    assert events[2]["duration_ms"] == 4200
+
+
+async def test_monitoring_events_rejected_before_start_and_after_submit(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-monitoring-guard")
+    assessment = (
+        await client.post(
+            "/api/v1/recruiter/assessments", json=_ASSESSMENT_PAYLOAD, headers=ctx["headers"]
+        )
+    ).json()
+    invitation = (
+        await client.post(
+            "/api/v1/recruiter/assessments/invite",
+            json={"assessment_id": assessment["id"], "application_id": ctx["application_id"]},
+            headers=ctx["headers"],
+        )
+    ).json()
+    token = _extract_token(invitation["invitation_link"])
+
+    before_start = await client.post(
+        f"/api/v1/public/assessment/{token}/events",
+        json={"events": [{"event_type": "TAB_SWITCH", "occurred_at": "2026-01-01T10:00:00Z"}]},
+    )
+    assert before_start.status_code == 409
+
+    view = (await client.get(f"/api/v1/public/assessment/{token}")).json()
+    await client.post(f"/api/v1/public/assessment/{token}/start")
+    q1_id = view["questions"][0]["id"]
+    await client.post(
+        f"/api/v1/public/assessment/{token}/submit",
+        json={"answers": [{"question_id": q1_id, "selected_option_ids": []}]},
+    )
+
+    after_submit = await client.post(
+        f"/api/v1/public/assessment/{token}/events",
+        json={"events": [{"event_type": "TAB_SWITCH", "occurred_at": "2026-01-01T10:10:00Z"}]},
+    )
+    assert after_submit.status_code == 409
+
+
+async def test_monitoring_events_require_assessment_read_permission(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_screening_application(client, "assess-monitoring-perm")
+    token = await _start_attempt(client, ctx)
+    await client.post(
+        f"/api/v1/public/assessment/{token}/events",
+        json={"events": [{"event_type": "TAB_SWITCH", "occurred_at": "2026-01-01T10:00:00Z"}]},
+    )
+
+    unauthenticated = await client.get(
+        f"/api/v1/recruiter/applications/{ctx['application_id']}/assessment/events"
+    )
+    assert unauthenticated.status_code == 401

@@ -69,5 +69,5 @@ export interface CampusDriveFunnelCounts {
   interview: number;
   selected: number;
   rejected: number;
-  withdrawn: number;
+  hired: number;
 }

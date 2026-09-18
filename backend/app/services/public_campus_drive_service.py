@@ -29,11 +29,15 @@ _INVALID_MESSAGE = "This campus drive link is no longer valid."
 
 
 async def get_drive_by_token(db: AsyncSession, token: str) -> CampusDrive:
+    """A soft-deleted drive (`deleted_at` set) is excluded here — it must
+    behave exactly like an invalid/unknown token to a public caller
+    (SIGVITAS platform overhaul § 16), never fall through to the CLOSED
+    branch's slightly more specific messaging."""
     token_hash = hash_opaque_token(token)
     async with rls_bypass(db):
         result = await db.execute(
             select(CampusDrive)
-            .where(CampusDrive.link_token_hash == token_hash)
+            .where(CampusDrive.link_token_hash == token_hash, CampusDrive.deleted_at.is_(None))
             .options(joinedload(CampusDrive.job), joinedload(CampusDrive.default_assessment))
         )
         drive = result.unique().scalar_one_or_none()

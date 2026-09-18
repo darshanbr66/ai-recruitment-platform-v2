@@ -49,6 +49,7 @@ const FUNNEL_STAGES: { key: keyof CampusDriveFunnelCounts; label: string }[] = [
   { key: "interview", label: "Interview" },
   { key: "selected", label: "Selected" },
   { key: "rejected", label: "Rejected" },
+  { key: "hired", label: "Hired" },
 ];
 
 interface EditFormState {

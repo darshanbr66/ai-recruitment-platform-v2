@@ -7,13 +7,14 @@ import type {
 } from "../../types/careers";
 import type {
   AnswerSubmission,
+  MonitoringEventCreate,
   PublicInvitationView,
   PublicSubmissionResult,
 } from "../../types/assessment";
 import type {
   CampusDriveApplicationFormValues,
   PublicCampusDriveApplicationResult,
-  PublicCampusDriveView,
+  PublicCampusDriveResult,
 } from "../../types/publicCampusDrive";
 
 export function listOpenJobs(slug: string) {
@@ -56,8 +57,12 @@ export function submitAssessment(token: string, answers: AnswerSubmission[]) {
   });
 }
 
+export function sendMonitoringEvents(token: string, events: MonitoringEventCreate[]) {
+  return apiClient.post<void>(`/api/v1/public/assessment/${token}/events`, { events });
+}
+
 export function getCampusDriveByToken(token: string) {
-  return apiClient.get<PublicCampusDriveView>(`/api/v1/public/campus-drive/${token}`);
+  return apiClient.get<PublicCampusDriveResult>(`/api/v1/public/campus-drive/${token}`);
 }
 
 export function applyToCampusDrive(

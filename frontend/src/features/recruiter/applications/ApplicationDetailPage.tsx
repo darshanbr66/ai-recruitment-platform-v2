@@ -10,24 +10,53 @@ import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModa
 import { SkeletonLines } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { APPLICATION_TRANSITIONS, type ApplicationStatus } from "../../../types/recruitment";
-import type { AssessmentCreateRequest, RetestAssessmentChoice } from "../../../types/assessment";
+import type {
+  AssessmentCreateRequest,
+  MonitoringEventType,
+  RetestAssessmentChoice,
+} from "../../../types/assessment";
 import { useAuth } from "../../auth/AuthContext";
 import { AssessmentForm, emptyAssessmentFormValue } from "../assessments/AssessmentForm";
 import {
   getApplicationAssessment,
   inviteCandidate,
   listApplicationAssessmentAttempts,
+  listApplicationAssessmentEvents,
   listAssessments,
   retestCandidate,
 } from "../assessments/api";
 import { createNote, listNotes } from "../notes/api";
 import { listScreeningRuns, startScreening } from "../screening/api";
-import { changeApplicationStatus, downloadResume, getApplication } from "./api";
+import {
+  changeApplicationStatus,
+  downloadResume,
+  getApplication,
+  sendInterviewEmail,
+} from "./api";
+
+/** Non-accusatory, human-readable labels for observed monitoring events
+ * (SIGVITAS platform overhaul § 7) — describes what was observed, never
+ * accuses the candidate of anything. */
+const MONITORING_EVENT_LABELS: Record<MonitoringEventType, string> = {
+  MONITORING_CONSENT_GIVEN: "Candidate agreed to assessment monitoring",
+  TAB_SWITCH: "Assessment tab/window changed",
+  WINDOW_BLUR: "Assessment window lost focus",
+  WINDOW_FOCUS: "Assessment window regained focus",
+  FULLSCREEN_EXIT: "Fullscreen exited",
+  CAMERA_PERMISSION_CHANGED: "Camera permission changed",
+  MICROPHONE_PERMISSION_CHANGED: "Microphone permission changed",
+  CAMERA_DEVICE_CHANGED: "Camera device changed",
+  MICROPHONE_DEVICE_CHANGED: "Microphone device changed",
+  CAMERA_UNAVAILABLE: "Camera unavailable",
+  MICROPHONE_UNAVAILABLE: "Microphone unavailable",
+  CONNECTION_INTERRUPTED: "Connection interrupted",
+  CONNECTION_RESTORED: "Connection restored",
+};
 
 const TERMINAL_BADGE: Partial<Record<ApplicationStatus, string>> = {
   SELECTED: "badge-active",
   REJECTED: "badge-inactive",
-  WITHDRAWN: "badge-inactive",
+  HIRED: "badge-active",
 };
 
 const RECOMMENDATION_BADGE: Record<string, string> = {
@@ -37,7 +66,7 @@ const RECOMMENDATION_BADGE: Record<string, string> = {
   NOT_A_MATCH: "badge-danger",
 };
 
-const STATUSES_REQUIRING_CONFIRMATION: ApplicationStatus[] = ["REJECTED", "WITHDRAWN"];
+const STATUSES_REQUIRING_CONFIRMATION: ApplicationStatus[] = ["REJECTED"];
 
 export function ApplicationDetailPage() {
   const { applicationId = "" } = useParams<{ applicationId: string }>();
@@ -59,6 +88,12 @@ export function ApplicationDetailPage() {
     emptyAssessmentFormValue(),
   );
   const [showResumePreview, setShowResumePreview] = useState(false);
+  const [showInterviewEmailForm, setShowInterviewEmailForm] = useState(false);
+  const [interviewSubject, setInterviewSubject] = useState("");
+  const [interviewBody, setInterviewBody] = useState("");
+  const [interviewEmailFeedback, setInterviewEmailFeedback] = useState<
+    { type: "success" | "error"; message: string } | null
+  >(null);
 
   const applicationQuery = useQuery({
     queryKey: ["recruiter", "applications", applicationId],
@@ -90,6 +125,12 @@ export function ApplicationDetailPage() {
     enabled: accessToken !== null,
   });
 
+  const monitoringEventsQuery = useQuery({
+    queryKey: ["recruiter", "assessment-events", applicationId],
+    queryFn: () => listApplicationAssessmentEvents(applicationId, token),
+    enabled: accessToken !== null && !!assessmentInvitationQuery.data,
+  });
+
   const notesQuery = useQuery({
     queryKey: ["recruiter", "notes", applicationId],
     queryFn: () => listNotes(applicationId, token),
@@ -110,6 +151,40 @@ export function ApplicationDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "screening", applicationId] });
     },
   });
+
+  const interviewEmailMutation = useMutation({
+    mutationFn: () =>
+      sendInterviewEmail(applicationId, { subject: interviewSubject, body: interviewBody }, token),
+    onSuccess: (result) => {
+      setInterviewEmailFeedback(
+        result.sent
+          ? { type: "success", message: "Interview email sent." }
+          : {
+              type: "error",
+              message: result.reason ?? "The email could not be sent, but the attempt was recorded.",
+            },
+      );
+      if (result.sent) setShowInterviewEmailForm(false);
+    },
+    onError: (err) => {
+      setInterviewEmailFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Unable to reach the server.",
+      });
+    },
+  });
+
+  function openInterviewEmailForm() {
+    const jobTitle = applicationQuery.data?.job_title ?? "this role";
+    const candidateName = applicationQuery.data?.candidate_full_name ?? "there";
+    setInterviewSubject(`Interview details for ${jobTitle}`);
+    setInterviewBody(
+      `Hi ${candidateName},\n\nCongratulations — you've been selected to move forward for ${jobTitle}. ` +
+        "Our team will follow up shortly to schedule your interview.\n\nBest,\nThe Hiring Team",
+    );
+    setInterviewEmailFeedback(null);
+    setShowInterviewEmailForm(true);
+  }
 
   const inviteMutation = useMutation({
     mutationFn: () => inviteCandidate({ assessment_id: selectedAssessmentId, application_id: applicationId }, token),
@@ -266,6 +341,11 @@ export function ApplicationDetailPage() {
                 </option>
               ))}
             </select>
+          )}
+          {application.status === "SELECTED" && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={openInterviewEmailForm}>
+              Send Interview Email
+            </button>
           )}
         </div>
       </div>
@@ -472,6 +552,27 @@ export function ApplicationDetailPage() {
                   </div>
                 )}
 
+                {monitoringEventsQuery.data && monitoringEventsQuery.data.length > 0 && (
+                  <div className="stack-sm">
+                    <strong style={{ fontSize: "0.85rem" }}>Assessment Activity</strong>
+                    <p className="field-hint">
+                      Browser-observed events during this attempt — not an accusation, just what
+                      was detected.
+                    </p>
+                    <div className="timeline">
+                      {monitoringEventsQuery.data.map((event) => (
+                        <div key={event.id} className="timeline-item">
+                          <span className="timeline-dot" />
+                          <div>
+                            {new Date(event.occurred_at).toLocaleTimeString()} —{" "}
+                            {MONITORING_EVENT_LABELS[event.event_type]}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {assessmentInvitationQuery.data.status === "SUBMITTED" && (
                   <button
                     type="button"
@@ -533,19 +634,74 @@ export function ApplicationDetailPage() {
 
       {pendingStatus && (
         <ConfirmDialog
-          title={pendingStatus === "REJECTED" ? "Reject this application?" : "Withdraw this application?"}
-          message={
-            pendingStatus === "REJECTED"
-              ? `This marks ${application.candidate_full_name}'s application for ${application.job_title} as rejected. This can't be undone.`
-              : `This marks ${application.candidate_full_name}'s application for ${application.job_title} as withdrawn. This can't be undone.`
-          }
-          confirmLabel={pendingStatus === "REJECTED" ? "Reject application" : "Withdraw application"}
+          title="Reject this application?"
+          message={`This marks ${application.candidate_full_name}'s application for ${application.job_title} as rejected. This can't be undone.`}
+          confirmLabel="Reject application"
           isConfirming={statusMutation.isPending}
           onCancel={() => setPendingStatus(null)}
           onConfirm={() =>
             statusMutation.mutate(pendingStatus, { onSuccess: () => setPendingStatus(null) })
           }
         />
+      )}
+
+      {showInterviewEmailForm && (
+        <Modal title="Send Interview Email" onClose={() => setShowInterviewEmailForm(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              interviewEmailMutation.mutate();
+            }}
+          >
+            <p className="muted">
+              To: {application.candidate_full_name} — sent manually, only when you click Send. This
+              is not triggered automatically.
+            </p>
+            <label className="field">
+              <span>Subject</span>
+              <input
+                required
+                value={interviewSubject}
+                onChange={(e) => setInterviewSubject(e.target.value)}
+                disabled={interviewEmailMutation.isPending}
+              />
+            </label>
+            <label className="field">
+              <span>Message</span>
+              <textarea
+                required
+                rows={8}
+                value={interviewBody}
+                onChange={(e) => setInterviewBody(e.target.value)}
+                disabled={interviewEmailMutation.isPending}
+              />
+            </label>
+
+            {interviewEmailFeedback && (
+              <Alert variant={interviewEmailFeedback.type === "success" ? "success" : undefined}>
+                {interviewEmailFeedback.message}
+              </Alert>
+            )}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={interviewEmailMutation.isPending}
+              >
+                {interviewEmailMutation.isPending ? <Spinner label="Sending…" /> : "Send"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowInterviewEmailForm(false)}
+                disabled={interviewEmailMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {showRetestForm && assessmentInvitationQuery.data && (

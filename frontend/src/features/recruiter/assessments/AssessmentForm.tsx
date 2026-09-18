@@ -54,11 +54,18 @@ export function AssessmentForm({
   value,
   onChange,
   disabled = false,
+  questionsLocked = false,
+  questionsLockedReason,
   accessToken,
 }: {
   value: AssessmentCreateRequest;
   onChange: (value: AssessmentCreateRequest) => void;
   disabled?: boolean;
+  /** Freezes the import/question-editing controls while leaving
+   * title/instructions/duration/pass score editable — used once an
+   * assessment already has invitations (see AssessmentDetailPage). */
+  questionsLocked?: boolean;
+  questionsLockedReason?: string;
   accessToken: string;
 }) {
   const { showToast } = useToast();
@@ -68,6 +75,7 @@ export function AssessmentForm({
   const [importError, setImportError] = useState<string | null>(null);
 
   const { title, instructions, duration_minutes: durationMinutes, pass_score: passScore, questions } = value;
+  const questionsDisabled = disabled || questionsLocked;
 
   function patch(fields: Partial<AssessmentCreateRequest>) {
     onChange({ ...value, ...fields });
@@ -229,41 +237,50 @@ export function AssessmentForm({
         </label>
       </div>
 
-      <fieldset className="field">
-        <legend>Import questions</legend>
-        <p className="field-hint" style={{ marginBottom: "0.6rem" }}>
-          Upload a PDF, DOCX, XLSX, or CSV file. Tabular files (CSV/XLSX) need a{" "}
-          <code>question</code> column, <code>option_1</code>/<code>option_2</code>/… columns, and
-          a <code>correct</code> column (by number or letter). PDF/DOCX files need numbered
-          questions with lettered options — mark the right one with a trailing <code>*</code> or
-          add an <code>Answer: B</code> line.
-        </p>
-        <div className="btn-group">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx,.xlsx,.csv"
-            onChange={handleFileChosen}
-            style={{ display: "none" }}
-          />
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={disabled || importMutation.isPending}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {importMutation.isPending ? <Spinner label="Reading file…" /> : "Choose file to import"}
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={downloadTemplate} disabled={disabled}>
-            Download CSV template
-          </button>
-        </div>
-        {importError && (
-          <div style={{ marginTop: "0.6rem" }}>
-            <Alert>{importError}</Alert>
+      {questionsLocked && (
+        <Alert>
+          {questionsLockedReason ??
+            "Questions can't be changed once this assessment has been sent to a candidate. Create a new assessment instead."}
+        </Alert>
+      )}
+
+      {!questionsLocked && (
+        <fieldset className="field">
+          <legend>Import questions</legend>
+          <p className="field-hint" style={{ marginBottom: "0.6rem" }}>
+            Upload a PDF, DOCX, XLSX, or CSV file. Tabular files (CSV/XLSX) need a{" "}
+            <code>question</code> column, <code>option_1</code>/<code>option_2</code>/… columns,
+            and a <code>correct</code> column (by number or letter). PDF/DOCX files need numbered
+            questions with lettered options — mark the right one with a trailing <code>*</code> or
+            add an <code>Answer: B</code> line.
+          </p>
+          <div className="btn-group">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.xlsx,.csv"
+              onChange={handleFileChosen}
+              style={{ display: "none" }}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={disabled || importMutation.isPending}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {importMutation.isPending ? <Spinner label="Reading file…" /> : "Choose file to import"}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={downloadTemplate} disabled={disabled}>
+              Download CSV template
+            </button>
           </div>
-        )}
-      </fieldset>
+          {importError && (
+            <div style={{ marginTop: "0.6rem" }}>
+              <Alert>{importError}</Alert>
+            </div>
+          )}
+        </fieldset>
+      )}
 
       {preview && (
         <section className="card" style={{ background: "var(--color-bg)" }}>
@@ -340,7 +357,7 @@ export function AssessmentForm({
                     required
                     value={question.prompt}
                     onChange={(e) => updateQuestion(qIndex, { prompt: e.target.value })}
-                    disabled={disabled}
+                    disabled={questionsDisabled}
                   />
                 </label>
               </div>
@@ -350,7 +367,7 @@ export function AssessmentForm({
                   <select
                     value={question.type}
                     onChange={(e) => updateQuestionType(qIndex, e.target.value as QuestionType)}
-                    disabled={disabled}
+                    disabled={questionsDisabled}
                   >
                     <option value="MCQ_SINGLE">Single choice</option>
                     <option value="MCQ_MULTI">Multiple choice</option>
@@ -364,7 +381,7 @@ export function AssessmentForm({
                     min={1}
                     value={question.points}
                     onChange={(e) => updateQuestion(qIndex, { points: Number(e.target.value) })}
-                    disabled={disabled}
+                    disabled={questionsDisabled}
                   />
                 </label>
               </div>
@@ -378,7 +395,7 @@ export function AssessmentForm({
                       checked={option.is_correct}
                       onChange={(e) => updateOption(qIndex, oIndex, { is_correct: e.target.checked })}
                       title="Correct answer"
-                      disabled={disabled}
+                      disabled={questionsDisabled}
                     />
                     <input
                       required
@@ -386,14 +403,14 @@ export function AssessmentForm({
                       value={option.label}
                       onChange={(e) => updateOption(qIndex, oIndex, { label: e.target.value })}
                       style={{ flex: 1 }}
-                      disabled={disabled}
+                      disabled={questionsDisabled}
                     />
                     {question.options.length > 2 && (
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
                         onClick={() => removeOption(qIndex, oIndex)}
-                        disabled={disabled}
+                        disabled={questionsDisabled}
                       >
                         Remove
                       </button>
@@ -405,7 +422,7 @@ export function AssessmentForm({
                   className="btn btn-ghost btn-sm"
                   onClick={() => addOption(qIndex)}
                   style={{ alignSelf: "flex-start" }}
-                  disabled={disabled}
+                  disabled={questionsDisabled}
                 >
                   + Add option
                 </button>
@@ -415,7 +432,7 @@ export function AssessmentForm({
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  disabled={disabled || qIndex === 0}
+                  disabled={questionsDisabled || qIndex === 0}
                   onClick={() => moveQuestion(qIndex, -1)}
                 >
                   Move up
@@ -423,7 +440,7 @@ export function AssessmentForm({
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  disabled={disabled || qIndex === questions.length - 1}
+                  disabled={questionsDisabled || qIndex === questions.length - 1}
                   onClick={() => moveQuestion(qIndex, 1)}
                 >
                   Move down
@@ -433,7 +450,7 @@ export function AssessmentForm({
                     type="button"
                     className="btn btn-danger btn-sm"
                     onClick={() => removeQuestion(qIndex)}
-                    disabled={disabled}
+                    disabled={questionsDisabled}
                   >
                     Remove question
                   </button>
@@ -443,15 +460,17 @@ export function AssessmentForm({
           ))}
         </div>
 
-        <button
-          type="button"
-          className="btn btn-ghost"
-          style={{ marginTop: "1rem" }}
-          onClick={addQuestion}
-          disabled={disabled}
-        >
-          + Add question
-        </button>
+        {!questionsLocked && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: "1rem" }}
+            onClick={addQuestion}
+            disabled={disabled}
+          >
+            + Add question
+          </button>
+        )}
       </div>
     </div>
   );

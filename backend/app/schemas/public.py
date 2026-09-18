@@ -24,7 +24,10 @@ class PublicJobSummary(BaseModel):
 
 
 class PublicJobDetail(PublicJobSummary):
-    description: str
+    # None when the recruiter has hidden the JD from the public listing —
+    # the text itself is never deleted (app/models/job.py::description_visible),
+    # this is a presentation omission enforced here, not just in the UI.
+    description: str | None
     organization: PublicOrganizationSummary
 
 

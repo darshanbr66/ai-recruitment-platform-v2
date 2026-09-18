@@ -54,7 +54,21 @@ export interface AssessmentResponse {
   pass_score: number;
   deleted_at: string | null;
   created_at: string;
+  updated_at: string;
   questions: QuestionResponse[];
+  /** True once any candidate could have been invited — the point past
+   * which question-structure edits are locked (see AssessmentUpdateRequest). */
+  has_invitations: boolean;
+}
+
+export interface AssessmentUpdateRequest {
+  title?: string;
+  instructions?: string;
+  duration_minutes?: number;
+  pass_score?: number;
+  /** Replaces the entire question set — only accepted while
+   * `has_invitations` is false. */
+  questions?: QuestionCreate[];
 }
 
 export interface AssessmentSummary {
@@ -136,9 +150,39 @@ export interface AnswerSubmission {
   selected_option_ids: string[];
 }
 
+/** No score/percentage/pass-fail on purpose — the candidate sees a
+ * polished confirmation, never a number (recruiters see the score via
+ * AssessmentResultResponse, a separate schema). */
 export interface PublicSubmissionResult {
-  score: number;
-  max_score: number;
-  percentage: number;
-  passed: boolean;
+  submitted_at: string;
+}
+
+export type MonitoringEventType =
+  | "MONITORING_CONSENT_GIVEN"
+  | "TAB_SWITCH"
+  | "WINDOW_BLUR"
+  | "WINDOW_FOCUS"
+  | "FULLSCREEN_EXIT"
+  | "CAMERA_PERMISSION_CHANGED"
+  | "MICROPHONE_PERMISSION_CHANGED"
+  | "CAMERA_DEVICE_CHANGED"
+  | "MICROPHONE_DEVICE_CHANGED"
+  | "CAMERA_UNAVAILABLE"
+  | "MICROPHONE_UNAVAILABLE"
+  | "CONNECTION_INTERRUPTED"
+  | "CONNECTION_RESTORED";
+
+export interface MonitoringEventCreate {
+  event_type: MonitoringEventType;
+  occurred_at: string;
+  duration_ms?: number | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface MonitoringEventResponse {
+  id: string;
+  event_type: MonitoringEventType;
+  occurred_at: string;
+  duration_ms: number | null;
+  metadata: Record<string, unknown> | null;
 }

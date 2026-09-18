@@ -6,6 +6,8 @@ from app.api.v1.recruiter.assessments import router as assessments_router
 from app.api.v1.recruiter.auth import router as auth_router
 from app.api.v1.recruiter.campus_drives import router as campus_drives_router
 from app.api.v1.recruiter.candidates import router as candidates_router
+from app.api.v1.recruiter.departments import router as departments_router
+from app.api.v1.recruiter.employees import router as employees_router
 from app.api.v1.recruiter.jobs import router as jobs_router
 from app.api.v1.recruiter.notes import router as notes_router
 from app.api.v1.recruiter.reports import router as reports_router
@@ -24,3 +26,5 @@ router.include_router(assessments_router)
 router.include_router(campus_drives_router)
 router.include_router(notes_router)
 router.include_router(activities_router)
+router.include_router(departments_router)
+router.include_router(employees_router)

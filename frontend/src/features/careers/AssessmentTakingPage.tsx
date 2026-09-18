@@ -3,8 +3,26 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
+import type { MonitoringEventCreate } from "../../types/assessment";
 import { ThemeToggle } from "../theme/ThemeToggle";
-import { getAssessmentInvitation, startAssessment, submitAssessment } from "./api";
+import { MonitoringConsentScreen } from "./MonitoringConsentScreen";
+import { SubmissionSuccess } from "./SubmissionSuccess";
+import { useProctoring } from "./useProctoring";
+import { getAssessmentInvitation, sendMonitoringEvents, startAssessment, submitAssessment } from "./api";
+
+/** Best-effort permission read — a combined audio+video request can't
+ * distinguish which device was denied, so both flags fall back together;
+ * documented in docs/assessment.md. */
+async function checkCameraAndMicrophone(): Promise<{ camera: boolean; microphone: boolean }> {
+  if (!navigator.mediaDevices?.getUserMedia) return { camera: false, microphone: false };
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    return { camera: true, microphone: true };
+  } catch {
+    return { camera: false, microphone: false };
+  }
+}
 
 export function AssessmentTakingPage() {
   const { token = "" } = useParams<{ token: string }>();
@@ -16,10 +34,31 @@ export function AssessmentTakingPage() {
     queryFn: () => getAssessmentInvitation(token),
   });
 
+  useProctoring(token, invitationQuery.data?.status === "STARTED");
+
   const startMutation = useMutation({
     mutationFn: () => startAssessment(token),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["public", "assessment", token] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["public", "assessment", token] });
+      void (async () => {
+        const events: MonitoringEventCreate[] = [
+          { event_type: "MONITORING_CONSENT_GIVEN", occurred_at: new Date().toISOString() },
+        ];
+        const { camera, microphone } = await checkCameraAndMicrophone();
+        if (!camera) events.push({ event_type: "CAMERA_UNAVAILABLE", occurred_at: new Date().toISOString() });
+        if (!microphone) {
+          events.push({ event_type: "MICROPHONE_UNAVAILABLE", occurred_at: new Date().toISOString() });
+        }
+        await sendMonitoringEvents(token, events).catch(() => {
+          // Best-effort — never blocks the candidate from proceeding.
+        });
+      })();
+    },
   });
+
+  function handleAcceptMonitoring() {
+    startMutation.mutate();
+  }
 
   const submitMutation = useMutation({
     mutationFn: () =>
@@ -48,7 +87,7 @@ export function AssessmentTakingPage() {
   return (
     <div>
       <header className="public-nav">
-        <span className="topbar-title">AI Recruitment Platform</span>
+        <span className="topbar-title">{invitationQuery.data?.organization_name ?? "Careers"}</span>
         <ThemeToggle />
       </header>
       <div className="public-shell">
@@ -61,11 +100,7 @@ export function AssessmentTakingPage() {
           </Alert>
         )}
 
-        {invitationQuery.isSuccess && submitMutation.isSuccess && (
-          <Alert variant="success">
-            Thanks — your assessment has been submitted. You scored {submitMutation.data.percentage}%.
-          </Alert>
-        )}
+        {invitationQuery.isSuccess && submitMutation.isSuccess && <SubmissionSuccess />}
 
         {invitationQuery.isSuccess && !submitMutation.isSuccess && (
           <>
@@ -79,21 +114,26 @@ export function AssessmentTakingPage() {
             )}
 
             {invitationQuery.data.status === "SENT" && (
-              <section className="card">
-                <p>{invitationQuery.data.instructions}</p>
-                <p className="muted">
-                  Duration: {invitationQuery.data.duration_minutes} minutes ·{" "}
-                  {invitationQuery.data.questions.length} question(s)
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={startMutation.isPending}
-                  onClick={() => startMutation.mutate()}
-                >
-                  {startMutation.isPending ? "Starting…" : "Start assessment"}
-                </button>
-              </section>
+              <div className="stack-lg">
+                <section className="card">
+                  <p>{invitationQuery.data.instructions}</p>
+                  <p className="muted">
+                    Duration: {invitationQuery.data.duration_minutes} minutes ·{" "}
+                    {invitationQuery.data.questions.length} question(s)
+                  </p>
+                </section>
+                {startMutation.isError && (
+                  <Alert>
+                    {startMutation.error instanceof ApiError
+                      ? startMutation.error.message
+                      : "Could not start the assessment."}
+                  </Alert>
+                )}
+                <MonitoringConsentScreen
+                  onAccept={handleAcceptMonitoring}
+                  isStarting={startMutation.isPending}
+                />
+              </div>
             )}
 
             {invitationQuery.data.status === "STARTED" && (

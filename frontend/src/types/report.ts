@@ -35,6 +35,9 @@ export interface ReportOverview {
   open_jobs: number;
   total_candidates: number;
   total_applications: number;
+  selected_candidates: number;
+  rejected_candidates: number;
+  hired_candidates: number;
   applications_by_status: StatusCount[];
   applications_by_job: JobApplicationCount[];
   screening: ScreeningSummary;

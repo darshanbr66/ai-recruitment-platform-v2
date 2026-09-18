@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { Modal } from "../../../shared/components/Modal";
@@ -135,28 +136,35 @@ export function AssessmentsPage() {
                   <th>Questions</th>
                   <th>Duration</th>
                   <th>Pass score</th>
-                  {canManage && <th>Actions</th>}
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {assessmentsQuery.data.map((a, index) => (
                   <tr key={a.id}>
                     <td>{index + 1}</td>
-                    <td>{a.title}</td>
+                    <td>
+                      <Link to={`/recruiter/assessments/${a.id}`}>{a.title}</Link>
+                    </td>
                     <td>{a.question_count}</td>
                     <td>{a.duration_minutes} min</td>
                     <td>{a.pass_score}%</td>
-                    {canManage && (
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          onClick={() => openDeleteModal(a)}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    )}
+                    <td>
+                      <div className="btn-group">
+                        <Link to={`/recruiter/assessments/${a.id}`} className="btn btn-ghost btn-sm">
+                          View
+                        </Link>
+                        {canManage && (
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => openDeleteModal(a)}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

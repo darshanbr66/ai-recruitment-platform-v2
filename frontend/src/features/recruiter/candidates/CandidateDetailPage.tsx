@@ -57,6 +57,12 @@ export function CandidateDetailPage() {
   }
 
   const candidate = candidateQuery.data;
+  // Distinct roles this candidate has applied for — separate from
+  // `current_title` (their professional title today), one row per unique
+  // job, each linking to that application (SIGVITAS platform overhaul § 14).
+  const appliedRoles: [string, string][] = applicationsQuery.data
+    ? [...new Map(applicationsQuery.data.map((a) => [a.job_title, a.id])).entries()]
+    : [];
 
   return (
     <div className="stack-lg">
@@ -145,6 +151,22 @@ export function CandidateDetailPage() {
           <div className="detail-row">
             <span className="detail-row-label">Current title</span>
             <span>{candidate.current_title ?? "—"}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Applied roles</span>
+            <span>
+              {appliedRoles.length === 0 ? (
+                "—"
+              ) : (
+                <span style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                  {appliedRoles.map(([jobTitle, applicationId]) => (
+                    <Link key={applicationId} to={`/recruiter/applications/${applicationId}`}>
+                      {jobTitle}
+                    </Link>
+                  ))}
+                </span>
+              )}
+            </span>
           </div>
           <div className="detail-row">
             <span className="detail-row-label">Experience</span>

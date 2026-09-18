@@ -86,4 +86,4 @@ class CampusDriveFunnelCounts(BaseModel):
     interview: int
     selected: int
     rejected: int
-    withdrawn: int
+    hired: int

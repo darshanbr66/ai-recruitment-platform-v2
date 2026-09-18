@@ -19,6 +19,7 @@ from app.schemas.assessment import (
     AssessmentResponse,
     AssessmentResultResponse,
     AssessmentSummary,
+    AssessmentUpdateRequest,
     InviteCandidateRequest,
     ParsedQuestionsResponse,
     RetestRequest,
@@ -26,6 +27,12 @@ from app.schemas.assessment import (
 from app.services import application_service, assessment_service
 
 router = APIRouter(prefix="/assessments", tags=["recruiter-assessments"])
+
+
+async def _assessment_response(db: AsyncSession, assessment: Assessment) -> AssessmentResponse:
+    response = AssessmentResponse.model_validate(assessment)
+    response.has_invitations = await assessment_service.assessment_has_invitations(db, assessment.id)
+    return response
 
 
 async def _invitation_response(
@@ -72,7 +79,7 @@ async def create_assessment(
         payload=payload,
         actor=current_user,
     )
-    return AssessmentResponse.model_validate(assessment)
+    return await _assessment_response(db, assessment)
 
 
 @router.post("/{assessment_id}/delete", response_model=AssessmentResponse)
@@ -88,7 +95,7 @@ async def delete_assessment(
     deleted = await assessment_service.delete_assessment(
         db, assessment, actor=current_user, reason=payload.reason
     )
-    return AssessmentResponse.model_validate(deleted)
+    return await _assessment_response(db, deleted)
 
 
 @router.get("", response_model=list[AssessmentSummary])
@@ -120,7 +127,21 @@ async def get_assessment(
     assessment: Assessment | None = await assessment_service.get_assessment(db, assessment_id)
     if assessment is None:
         raise NotFoundError("Assessment not found.")
-    return AssessmentResponse.model_validate(assessment)
+    return await _assessment_response(db, assessment)
+
+
+@router.patch("/{assessment_id}", response_model=AssessmentResponse)
+async def update_assessment(
+    assessment_id: uuid.UUID,
+    payload: AssessmentUpdateRequest,
+    current_user: User = Depends(require_permission("assessment.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> AssessmentResponse:
+    assessment = await assessment_service.get_assessment(db, assessment_id)
+    if assessment is None or assessment.deleted_at is not None:
+        raise NotFoundError("Assessment not found.")
+    updated = await assessment_service.update_assessment(db, assessment, payload, actor=current_user)
+    return await _assessment_response(db, updated)
 
 
 @router.post("/invite", response_model=AssessmentInvitationResponse, status_code=status.HTTP_201_CREATED)

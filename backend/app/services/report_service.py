@@ -4,6 +4,7 @@ from collections import Counter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.application import ApplicationStatus
 from app.models.assessment import AssessmentInvitation, AssessmentResult, InvitationStatus
 from app.models.job import JobStatus
 from app.models.screening import ScreeningRun, ScreeningStatus
@@ -36,6 +37,9 @@ async def get_overview(db: AsyncSession, organization_id: uuid.UUID) -> ReportOv
         open_jobs=sum(1 for job in jobs if job.status == JobStatus.OPEN),
         total_candidates=len(candidates),
         total_applications=len(applications),
+        selected_candidates=sum(1 for a in applications if a.status == ApplicationStatus.SELECTED),
+        rejected_candidates=sum(1 for a in applications if a.status == ApplicationStatus.REJECTED),
+        hired_candidates=sum(1 for a in applications if a.status == ApplicationStatus.HIRED),
         applications_by_status=[
             StatusCount(status=status, count=count) for status, count in status_counts.items()
         ],

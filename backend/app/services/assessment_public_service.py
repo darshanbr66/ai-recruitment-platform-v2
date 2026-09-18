@@ -13,19 +13,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.core.exceptions import AppError, NotFoundError
+from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.security import hash_opaque_token
 from app.db.rls import rls_bypass, set_tenant_context
 from app.models.application import ApplicationStatus
 from app.models.assessment import (
     Assessment,
     AssessmentInvitation,
+    AssessmentMonitoringEvent,
     AssessmentResult,
     CandidateAnswer,
     InvitationStatus,
     Question,
 )
 from app.models.organization import Organization
+from app.schemas.public_assessment import MonitoringEventCreate
 from app.services import activity_service, application_service
 
 _INVALID_MESSAGE = "This invitation link is no longer valid."
@@ -152,6 +154,31 @@ async def submit_attempt(
         )
 
     return result
+
+
+async def record_monitoring_events(
+    db: AsyncSession, token: str, events: list[MonitoringEventCreate]
+) -> None:
+    """Persists observed browser-monitoring events for the candidate's
+    current attempt (SIGVITAS platform overhaul § 6-7) — only accepted
+    while the attempt is actually in progress (STARTED), so the event
+    stream stays meaningful (no events before consent/start, none after
+    submission)."""
+    invitation = await _resolve_invitation(db, token)
+    if invitation.status != InvitationStatus.STARTED:
+        raise ConflictError("Monitoring events can only be recorded during an active attempt.")
+
+    for event in events:
+        db.add(
+            AssessmentMonitoringEvent(
+                invitation_id=invitation.id,
+                event_type=event.event_type,
+                occurred_at=event.occurred_at,
+                duration_ms=event.duration_ms,
+                event_metadata=event.metadata,
+            )
+        )
+    await db.flush()
 
 
 async def get_organization_name(db: AsyncSession, organization_id: uuid.UUID) -> str:

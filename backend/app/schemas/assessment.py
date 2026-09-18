@@ -66,7 +66,14 @@ class AssessmentResponse(BaseModel):
     pass_score: int
     deleted_at: datetime | None = None
     created_at: datetime
+    updated_at: datetime
     questions: list[QuestionResponse] = []
+    # Computed, not an Assessment column — set by the route/service layer
+    # (assessment_service.assessment_has_invitations), never by
+    # `.model_validate(assessment)` alone. True once any candidate could
+    # have been invited, which is exactly when question-structure edits
+    # become locked (see AssessmentUpdateRequest).
+    has_invitations: bool = False
 
 
 class AssessmentSummary(BaseModel):
@@ -78,6 +85,22 @@ class AssessmentSummary(BaseModel):
     pass_score: int
     question_count: int
     created_at: datetime
+
+
+class AssessmentUpdateRequest(BaseModel):
+    """All fields optional — a PATCH applies only what the caller sends
+    (`exclude_unset=True` at the service layer, mirroring
+    `JobUpdateRequest`). `questions`, when provided, *replaces* the entire
+    question set — only legal while no `AssessmentInvitation` exists yet for
+    this assessment (see assessment_service.update_assessment); once a
+    candidate could have been invited, question content is frozen so a
+    completed/in-progress attempt is never invalidated retroactively."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    instructions: str | None = Field(default=None, min_length=1)
+    duration_minutes: int | None = Field(default=None, ge=1, le=480)
+    pass_score: int | None = Field(default=None, ge=0, le=100)
+    questions: list[QuestionCreate] | None = Field(default=None, min_length=1)
 
 
 class AssessmentDeleteRequest(BaseModel):

@@ -63,6 +63,7 @@ _STATUS_MESSAGES: dict[str, str] = {
         "at this time. We appreciate your interest and encourage you to apply again "
         "in the future."
     ),
+    "HIRED": "Welcome aboard — you've been hired! Our team will be in touch with next steps.",
 }
 
 
@@ -84,6 +85,23 @@ async def send_status_update(
         subject=subject,
         html=html,
         context={"kind": "status_update", "job_title": job_title, "status": status},
+    )
+
+
+async def send_interview_email(
+    *, to: str, subject: str, body: str
+) -> bool:
+    """A manual, recruiter-composed email (SIGVITAS platform overhaul § 17)
+    — unlike the other functions here, the subject/body are not templated;
+    the recruiter reviews and edits them before sending. Still routed
+    through the same provider abstraction and the same honest
+    success/failure contract as every other send in this module."""
+    html = body.replace("\n", "<br>")
+    return await _send(
+        to=to,
+        subject=subject,
+        html=html,
+        context={"kind": "interview_email"},
     )
 
 

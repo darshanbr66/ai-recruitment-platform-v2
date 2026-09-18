@@ -43,7 +43,7 @@ export function JobDetailPage() {
     <div>
       <header className="public-nav">
         <Link to="/" className="topbar-title" style={{ textDecoration: "none", color: "inherit" }}>
-          AI Recruitment Platform
+          {jobQuery.data?.organization.name ?? "Careers"}
         </Link>
         <ThemeToggle />
       </header>
@@ -72,10 +72,12 @@ export function JobDetailPage() {
               <span>{jobQuery.data.openings_count} opening(s)</span>
             </div>
 
-            <section style={{ marginBottom: "2rem" }}>
-              <h2>About this role</h2>
-              <p className="job-description">{jobQuery.data.description}</p>
-            </section>
+            {jobQuery.data.description && (
+              <section style={{ marginBottom: "2rem" }}>
+                <h2>Job Description</h2>
+                <p className="job-description">{jobQuery.data.description}</p>
+              </section>
+            )}
 
             {applyMutation.isSuccess ? (
               <Alert variant="success">

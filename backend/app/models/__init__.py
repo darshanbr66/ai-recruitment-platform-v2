@@ -12,9 +12,11 @@ from app.models.application import (
 from app.models.assessment import (
     Assessment,
     AssessmentInvitation,
+    AssessmentMonitoringEvent,
     AssessmentResult,
     CandidateAnswer,
     InvitationStatus,
+    MonitoringEventType,
     Question,
     QuestionOption,
     QuestionType,
@@ -27,6 +29,7 @@ from app.models.organization import Organization
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.resume import Resume
 from app.models.screening import ScreeningRun, ScreeningStatus
+from app.models.team_hierarchy import Department, Employee, EmploymentStatus
 from app.models.user import User, UserRefreshToken
 
 __all__ = [
@@ -57,7 +60,12 @@ __all__ = [
     "InvitationStatus",
     "CandidateAnswer",
     "AssessmentResult",
+    "AssessmentMonitoringEvent",
+    "MonitoringEventType",
     "CampusDrive",
     "CampusDriveStatus",
     "Note",
+    "Department",
+    "Employee",
+    "EmploymentStatus",
 ]

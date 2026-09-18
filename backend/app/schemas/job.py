@@ -12,6 +12,7 @@ class JobCreateRequest(BaseModel):
     location: str | None = Field(default=None, max_length=255)
     employment_type: str | None = Field(default=None, max_length=100)
     description: str = Field(min_length=1)
+    description_visible: bool = True
     openings_count: int = Field(default=1, ge=1)
 
 
@@ -24,6 +25,7 @@ class JobUpdateRequest(BaseModel):
     location: str | None = Field(default=None, max_length=255)
     employment_type: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, min_length=1)
+    description_visible: bool | None = None
     status: JobStatus | None = None
     openings_count: int | None = Field(default=None, ge=1)
 
@@ -42,6 +44,7 @@ class JobResponse(BaseModel):
     location: str | None
     employment_type: str | None
     description: str
+    description_visible: bool
     status: JobStatus
     openings_count: int
     created_by: uuid.UUID

@@ -18,28 +18,26 @@ from app.services import activity_service
 
 TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
     ApplicationStatus.APPLIED: frozenset(
-        {ApplicationStatus.UNDER_REVIEW, ApplicationStatus.WITHDRAWN}
+        {ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED}
     ),
     ApplicationStatus.UNDER_REVIEW: frozenset(
-        {ApplicationStatus.SCREENING, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN}
+        {ApplicationStatus.SCREENING, ApplicationStatus.REJECTED}
     ),
     ApplicationStatus.SCREENING: frozenset(
         {
             ApplicationStatus.ASSESSMENT_INVITED,
             ApplicationStatus.SHORTLISTED,
             ApplicationStatus.REJECTED,
-            ApplicationStatus.WITHDRAWN,
         }
     ),
     ApplicationStatus.ASSESSMENT_INVITED: frozenset(
         {
             ApplicationStatus.ASSESSMENT_STARTED,
             ApplicationStatus.REJECTED,
-            ApplicationStatus.WITHDRAWN,
         }
     ),
     ApplicationStatus.ASSESSMENT_STARTED: frozenset(
-        {ApplicationStatus.ASSESSMENT_COMPLETED, ApplicationStatus.WITHDRAWN}
+        {ApplicationStatus.ASSESSMENT_COMPLETED, ApplicationStatus.REJECTED}
     ),
     ApplicationStatus.ASSESSMENT_COMPLETED: frozenset(
         {
@@ -53,17 +51,19 @@ TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
         }
     ),
     ApplicationStatus.SHORTLISTED: frozenset(
-        {ApplicationStatus.INTERVIEW, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN}
+        {ApplicationStatus.INTERVIEW, ApplicationStatus.REJECTED}
     ),
     ApplicationStatus.INTERVIEW: frozenset(
-        {ApplicationStatus.SELECTED, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN}
+        {ApplicationStatus.SELECTED, ApplicationStatus.REJECTED}
     ),
-    # Terminal states — no code path transitions out of them (a
-    # mis-rejection is corrected by an explicit, audited recruiter override
-    # feature if/when that's built, not by silently un-terminal-izing here).
-    ApplicationStatus.SELECTED: frozenset(),
+    # SELECTED -> HIRED is the one non-terminal edge left: a recruiter marks
+    # a selected candidate as actually joined. REJECTED/HIRED are the only
+    # true terminal states (a mis-rejection is corrected by an explicit,
+    # audited recruiter override feature if/when that's built, not by
+    # silently un-terminal-izing here).
+    ApplicationStatus.SELECTED: frozenset({ApplicationStatus.HIRED}),
     ApplicationStatus.REJECTED: frozenset(),
-    ApplicationStatus.WITHDRAWN: frozenset(),
+    ApplicationStatus.HIRED: frozenset(),
 }
 
 

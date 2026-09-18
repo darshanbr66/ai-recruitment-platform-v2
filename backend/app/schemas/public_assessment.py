@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.assessment import InvitationStatus, QuestionType
+from app.models.assessment import InvitationStatus, MonitoringEventType, QuestionType
 
 
 class PublicQuestionOption(BaseModel):
@@ -43,7 +44,35 @@ class SubmitAnswersRequest(BaseModel):
 
 
 class PublicSubmissionResult(BaseModel):
-    score: int
-    max_score: int
-    percentage: int
-    passed: bool
+    """Deliberately carries no score/percentage/pass-fail (SIGVITAS platform
+    overhaul § 4) — the candidate sees a polished submission confirmation,
+    never a number. Recruiters/admins see the full score via
+    `AssessmentResultResponse` (app/schemas/assessment.py), a completely
+    separate schema."""
+
+    submitted_at: datetime
+
+
+class MonitoringEventCreate(BaseModel):
+    event_type: MonitoringEventType
+    occurred_at: datetime
+    duration_ms: int | None = Field(default=None, ge=0)
+    # Deliberately small and structured — never raw audio/video, never
+    # free-text beyond what the client itself controls (e.g. a device
+    # label), per CLAUDE.md's "avoid collecting unnecessary personal
+    # information."
+    metadata: dict[str, Any] | None = None
+
+
+class MonitoringEventBatchCreate(BaseModel):
+    events: list[MonitoringEventCreate] = Field(min_length=1, max_length=50)
+
+
+class MonitoringEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    event_type: MonitoringEventType
+    occurred_at: datetime
+    duration_ms: int | None
+    event_metadata: dict[str, Any] | None = Field(serialization_alias="metadata")

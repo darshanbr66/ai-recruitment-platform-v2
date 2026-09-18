@@ -22,7 +22,7 @@ export function CareersPage() {
     <div>
       <header className="public-nav">
         <Link to="/" className="topbar-title" style={{ textDecoration: "none", color: "inherit" }}>
-          AI Recruitment Platform
+          Careers
         </Link>
         <ThemeToggle />
       </header>

@@ -27,6 +27,7 @@ async def create_job(
         location=payload.location,
         employment_type=payload.employment_type,
         description=payload.description,
+        description_visible=payload.description_visible,
         openings_count=payload.openings_count,
     )
     db.add(job)

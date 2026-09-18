@@ -9,6 +9,7 @@ import { OrganizationsPage } from "../features/admin/organizations/Organizations
 import { ActivitiesPage } from "../features/recruiter/activities/ActivitiesPage";
 import { ApplicationDetailPage } from "../features/recruiter/applications/ApplicationDetailPage";
 import { ApplicationsPage } from "../features/recruiter/applications/ApplicationsPage";
+import { AssessmentDetailPage } from "../features/recruiter/assessments/AssessmentDetailPage";
 import { AssessmentsPage } from "../features/recruiter/assessments/AssessmentsPage";
 import { CampusDriveDetailPage } from "../features/recruiter/campusDrives/CampusDriveDetailPage";
 import { CampusDrivesPage } from "../features/recruiter/campusDrives/CampusDrivesPage";
@@ -58,6 +59,7 @@ export function AppRoutes() {
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
         <Route path="assessments" element={<AssessmentsPage />} />
+        <Route path="assessments/:assessmentId" element={<AssessmentDetailPage />} />
         <Route path="campus-drives" element={<CampusDrivesPage />} />
         <Route path="campus-drives/:driveId" element={<CampusDriveDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />

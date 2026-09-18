@@ -11,7 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.db.session import get_db
 from app.integrations.storage import LocalResumeStorage, ResumeStorage, StorageError
 from app.models.application import Application, ApplicationStatus
@@ -22,9 +22,17 @@ from app.schemas.application import (
     ApplicationDeleteRequest,
     ApplicationResponse,
     ApplicationStatusChangeRequest,
+    SendInterviewEmailRequest,
+    SendInterviewEmailResult,
 )
 from app.schemas.assessment import AssessmentInvitationResponse, AssessmentResultResponse
-from app.services import application_service, assessment_service, notification_service
+from app.schemas.public_assessment import MonitoringEventResponse
+from app.services import (
+    activity_service,
+    application_service,
+    assessment_service,
+    notification_service,
+)
 
 router = APIRouter(prefix="/applications", tags=["recruiter-applications"])
 
@@ -191,6 +199,26 @@ async def list_application_assessment_attempts(
     return [_invitation_to_response(a, candidate_name) for a in attempts]
 
 
+@router.get(
+    "/{application_id}/assessment/events",
+    response_model=list[MonitoringEventResponse],
+)
+async def list_application_assessment_events(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("assessment.read")),
+    db: AsyncSession = Depends(get_db),
+) -> list[MonitoringEventResponse]:
+    """Observed browser-monitoring events for this application's current
+    (latest) attempt — "Assessment Activity" on the application detail
+    page (SIGVITAS platform overhaul § 7). Permission-gated exactly like
+    the assessment/result data above; never exposed to the candidate."""
+    invitation = await assessment_service.get_invitation_for_application(db, application_id)
+    if invitation is None:
+        return []
+    events = await assessment_service.list_monitoring_events(db, invitation.id)
+    return [MonitoringEventResponse.model_validate(e) for e in events]
+
+
 @router.post("/{application_id}/status", response_model=ApplicationResponse)
 async def change_application_status(
     application_id: uuid.UUID,
@@ -222,3 +250,46 @@ async def change_application_status(
         )
 
     return _to_response(updated)
+
+
+@router.post(
+    "/{application_id}/send-interview-email",
+    response_model=SendInterviewEmailResult,
+)
+async def send_interview_email(
+    application_id: uuid.UUID,
+    payload: SendInterviewEmailRequest,
+    current_user: User = Depends(require_permission("application.status.change")),
+    db: AsyncSession = Depends(get_db),
+) -> SendInterviewEmailResult:
+    """Manual-only — never triggered automatically by a status change
+    (SIGVITAS platform overhaul § 17). The recruiter reviews/edits the
+    subject and body before this is called; sending is recorded in
+    Activities regardless of whether the underlying provider succeeded, so
+    the attempt itself is always auditable."""
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    if application.status != ApplicationStatus.SELECTED:
+        raise ConflictError("An interview email can only be sent for a selected candidate.")
+
+    sent = await notification_service.send_interview_email(
+        to=application.candidate.email, subject=payload.subject, body=payload.body
+    )
+
+    await activity_service.record_activity(
+        db,
+        organization_id=application.organization_id,
+        actor=current_user,
+        action="INTERVIEW_EMAIL_SENT",
+        entity_type="application",
+        entity_id=application.id,
+        entity_label=f"{application.candidate.full_name} — {application.job.title}",
+        description=(
+            f"Interview email {'sent to' if sent else 'attempted for'} "
+            f"{application.candidate.full_name} (\"{payload.subject}\")."
+        ),
+    )
+
+    reason = None if sent else "No email provider is configured, or the send failed."
+    return SendInterviewEmailResult(sent=sent, reason=reason)

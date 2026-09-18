@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.db.base import Base
 from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
@@ -179,3 +181,57 @@ class AssessmentResult(UUIDPrimaryKeyMixin, Base):
     percentage: Mapped[int] = mapped_column(Integer, nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MonitoringEventType(StrEnum):
+    """Transparent, browser-observable assessment-monitoring events (SIGVITAS
+    platform overhaul § 6) — an event is an *observed* browser condition,
+    never an automatic accusation. Only events genuinely reliable to detect
+    in a standard browser are listed; do not add one that can't actually be
+    implemented (§ 5/6: no overclaiming to the candidate)."""
+
+    MONITORING_CONSENT_GIVEN = "MONITORING_CONSENT_GIVEN"
+    TAB_SWITCH = "TAB_SWITCH"
+    WINDOW_BLUR = "WINDOW_BLUR"
+    WINDOW_FOCUS = "WINDOW_FOCUS"
+    FULLSCREEN_EXIT = "FULLSCREEN_EXIT"
+    CAMERA_PERMISSION_CHANGED = "CAMERA_PERMISSION_CHANGED"
+    MICROPHONE_PERMISSION_CHANGED = "MICROPHONE_PERMISSION_CHANGED"
+    CAMERA_DEVICE_CHANGED = "CAMERA_DEVICE_CHANGED"
+    MICROPHONE_DEVICE_CHANGED = "MICROPHONE_DEVICE_CHANGED"
+    CAMERA_UNAVAILABLE = "CAMERA_UNAVAILABLE"
+    MICROPHONE_UNAVAILABLE = "MICROPHONE_UNAVAILABLE"
+    CONNECTION_INTERRUPTED = "CONNECTION_INTERRUPTED"
+    CONNECTION_RESTORED = "CONNECTION_RESTORED"
+
+
+class AssessmentMonitoringEvent(UUIDPrimaryKeyMixin, Base):
+    """One observed browser-monitoring event during a candidate's attempt.
+    No `organization_id` of its own — tenancy is derived through
+    `invitation_id -> assessment_invitations.organization_id`, same indirect
+    pattern as `CandidateAnswer`/`AssessmentResult` above.
+
+    Deliberately minimal: no raw audio/video, no free-text beyond a small
+    JSON `event_metadata` blob (e.g. a device label), matching CLAUDE.md's
+    "do not store raw audio/video unless there is a clearly defined, secure
+    requirement and architecture for it" — there isn't one here, so none is
+    stored.
+    """
+
+    __tablename__ = "assessment_monitoring_events"
+
+    invitation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("assessment_invitations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[MonitoringEventType] = mapped_column(
+        Enum(MonitoringEventType, name="monitoring_event_type", native_enum=True), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

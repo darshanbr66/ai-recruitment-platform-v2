@@ -30,7 +30,7 @@ class ApplicationStatus(StrEnum):
     INTERVIEW = "INTERVIEW"
     SELECTED = "SELECTED"
     REJECTED = "REJECTED"
-    WITHDRAWN = "WITHDRAWN"
+    HIRED = "HIRED"
 
 
 class ApplicationSource(StrEnum):
@@ -50,9 +50,8 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     recruitment applications.
 
     Unique on `(candidate_id, job_id)`: one application per candidate per
-    job. Re-applying after WITHDRAWN/REJECTED is explicitly an open product
-    question per docs/database.md § 3.5 ("not finalized") — not implemented
-    here.
+    job. Re-applying after REJECTED is explicitly an open product question
+    per docs/database.md § 3.5 ("not finalized") — not implemented here.
     """
 
     __tablename__ = "applications"

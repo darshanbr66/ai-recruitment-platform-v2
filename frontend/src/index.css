@@ -1610,3 +1610,55 @@ a,
 [hidden] {
   display: none !important;
 }
+
+/* Candidate assessment submission confirmation (no score shown) */
+.submission-success {
+  text-align: center;
+  max-width: 32rem;
+  margin: 2rem auto;
+  padding: 2.5rem 2rem;
+}
+
+.submission-success-check {
+  margin: 0 auto 1rem;
+  width: 52px;
+  height: 52px;
+}
+
+.submission-success-check-circle {
+  stroke: var(--color-success, #2e7d32);
+  stroke-width: 2;
+  stroke-dasharray: 151;
+  stroke-dashoffset: 151;
+  animation: submission-success-circle 0.5s ease-out forwards;
+}
+
+.submission-success-check-mark {
+  stroke: var(--color-success, #2e7d32);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 36;
+  stroke-dashoffset: 36;
+  animation: submission-success-mark 0.4s 0.4s ease-out forwards;
+}
+
+@keyframes submission-success-circle {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes submission-success-mark {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submission-success-check-circle,
+  .submission-success-check-mark {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

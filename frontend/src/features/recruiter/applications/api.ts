@@ -4,6 +4,8 @@ import type {
   ApplicationDeleteRequest,
   ApplicationResponse,
   ApplicationStatus,
+  SendInterviewEmailRequest,
+  SendInterviewEmailResult,
 } from "../../../types/recruitment";
 
 export function listApplications(accessToken: string) {
@@ -43,6 +45,18 @@ export function changeApplicationStatus(
   return apiClient.post<ApplicationResponse>(
     `/api/v1/recruiter/applications/${applicationId}/status`,
     { to_status: toStatus },
+    accessToken,
+  );
+}
+
+export function sendInterviewEmail(
+  applicationId: string,
+  payload: SendInterviewEmailRequest,
+  accessToken: string,
+) {
+  return apiClient.post<SendInterviewEmailResult>(
+    `/api/v1/recruiter/applications/${applicationId}/send-interview-email`,
+    payload,
     accessToken,
   );
 }

@@ -3,6 +3,7 @@
 import type { CampusDriveStatus } from "./campusDrive";
 
 export interface PublicCampusDriveView {
+  kind: "drive";
   name: string;
   college_name: string;
   description: string | null;
@@ -13,6 +14,15 @@ export interface PublicCampusDriveView {
   status: CampusDriveStatus;
   has_assessment: boolean;
 }
+
+/** Returned once a drive is CLOSED — deliberately carries no JD, drive
+ * description, or assessment info (SIGVITAS platform overhaul § 16). */
+export interface PublicCampusDriveUnavailable {
+  kind: "unavailable";
+  message: string;
+}
+
+export type PublicCampusDriveResult = PublicCampusDriveView | PublicCampusDriveUnavailable;
 
 export interface PublicCampusDriveApplicationResult {
   application_id: string;

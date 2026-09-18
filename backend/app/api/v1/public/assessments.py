@@ -1,13 +1,14 @@
 """Candidate-facing assessment access by opaque token — no authentication
 (docs/assessment.md § 4)."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.db.session import get_db
 from app.models.organization import Organization
 from app.schemas.public_assessment import (
+    MonitoringEventBatchCreate,
     PublicInvitationView,
     PublicQuestion,
     PublicQuestionOption,
@@ -68,9 +69,11 @@ async def submit_assessment(
         raise AppError("At least one answer is required.", code="no_answers")
     answers = [(answer.question_id, answer.selected_option_ids) for answer in payload.answers]
     result = await assessment_public_service.submit_attempt(db, token, answers)
-    return PublicSubmissionResult(
-        score=result.score,
-        max_score=result.max_score,
-        percentage=result.percentage,
-        passed=result.passed,
-    )
+    return PublicSubmissionResult(submitted_at=result.evaluated_at)
+
+
+@router.post("/{token}/events", status_code=status.HTTP_204_NO_CONTENT)
+async def record_monitoring_events(
+    token: str, payload: MonitoringEventBatchCreate, db: AsyncSession = Depends(get_db)
+) -> None:
+    await assessment_public_service.record_monitoring_events(db, token, payload.events)

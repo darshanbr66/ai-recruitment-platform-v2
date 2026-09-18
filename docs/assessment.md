@@ -15,6 +15,63 @@ attempt per invitation), and email delivery is best-effort — if
 returned directly in the recruiter's API response so it can be copied
 manually (see `app/api/v1/recruiter/assessments.py`).
 
+## 0. Assessment monitoring ("proctoring") — SIGVITAS platform overhaul
+
+Transparent, browser-based monitoring, not hidden surveillance. Before
+starting an attempt, the candidate sees a "Before You Begin" screen
+(`frontend/src/features/careers/MonitoringConsentScreen.tsx`) listing
+exactly what's monitored and must explicitly check "I understand and
+agree" before the "Start Assessment" button is enabled. Only what is
+actually implemented is disclosed — nothing is claimed that the browser
+can't reliably detect.
+
+**Implemented events** (`app/models/assessment.py::MonitoringEventType`,
+persisted to `assessment_monitoring_events`, recorded via
+`POST /api/v1/public/assessment/{token}/events` while the attempt is
+`STARTED`): `MONITORING_CONSENT_GIVEN`, `TAB_SWITCH`, `WINDOW_BLUR`,
+`WINDOW_FOCUS`, `FULLSCREEN_EXIT`, `CAMERA_PERMISSION_CHANGED`,
+`MICROPHONE_PERMISSION_CHANGED`, `CAMERA_DEVICE_CHANGED`,
+`MICROPHONE_DEVICE_CHANGED`, `CAMERA_UNAVAILABLE`,
+`MICROPHONE_UNAVAILABLE`, `CONNECTION_INTERRUPTED`,
+`CONNECTION_RESTORED`. The frontend listener
+(`frontend/src/features/careers/useProctoring.ts`) batches events and
+flushes every ~4 seconds — a failed/dropped flush never blocks or fails the
+candidate's attempt.
+
+**No raw audio/video is ever captured or stored.** On accepting the consent
+screen, the browser is asked for camera/microphone permission purely to
+detect whether they're available (`getUserMedia`, then every track is
+immediately stopped) — no stream is displayed, transmitted, or persisted.
+This is a deliberate scope boundary (CLAUDE.md: "do not store raw
+audio/video unless there is a clearly defined, secure requirement and
+architecture for it" — there isn't one here).
+
+**Documented limitations** (do not oversell these to candidates or
+recruiters):
+- `navigator.mediaDevices.ondevicechange` fires on device add/remove, not
+  on a live, mid-session *permission* revocation in every browser — some
+  browsers don't surface that at all to page script.
+- `Permissions.query({name: "camera"})`/`"microphone"` isn't supported in
+  every browser; where unsupported, permission state is only inferred from
+  the initial `getUserMedia` call's success/failure, not live-tracked.
+- `visibilitychange`/`blur`/`focus` are reliable across modern browsers but
+  can't distinguish *why* focus was lost (another app, OS notification,
+  devtools) — the event only records that it happened.
+- Fullscreen monitoring only fires if the assessment UI actually requested
+  fullscreen; this build does not force fullscreen, so `FULLSCREEN_EXIT`
+  only fires for candidates who opted into fullscreen themselves.
+
+**Candidate-facing result never includes a score.** Submission returns only
+an acknowledgement (`PublicSubmissionResult`, just `submitted_at`) — the
+candidate sees a polished "Assessment Submitted" confirmation
+(`frontend/src/features/careers/SubmissionSuccess.tsx`), never a
+percentage. Recruiters/admins see the full score via the existing,
+separate `AssessmentResultResponse` and the events above via "Assessment
+Activity" on the application detail page — both permission-gated by the
+existing `assessment.read` permission, and both described to recruiters in
+neutral, non-accusatory language (an event is something *observed*, never
+an automatic accusation of misconduct).
+
 ## 1. Design goal
 
 Assessments are a reusable domain, independent of *why* a candidate was

@@ -78,6 +78,33 @@ async def test_public_listing_only_shows_open_jobs(client: AsyncClient, super_ad
     assert "Draft Role" not in titles
 
 
+async def test_public_job_detail_omits_description_when_hidden(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_open_job(client, "public-jobs-hidden-jd")
+
+    visible = await client.get(
+        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}"
+    )
+    assert visible.status_code == 200
+    assert visible.json()["description"] == _JOB_PAYLOAD["description"]
+
+    hide_response = await client.patch(
+        f"/api/v1/recruiter/jobs/{ctx['job_id']}",
+        json={"description_visible": False},
+        headers=ctx["admin_headers"],
+    )
+    assert hide_response.status_code == 200
+
+    hidden = await client.get(
+        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}"
+    )
+    assert hidden.status_code == 200
+    assert hidden.json()["description"] is None
+    # Every other field stays intact — only the JD text is withheld.
+    assert hidden.json()["title"] == _JOB_PAYLOAD["title"]
+
+
 async def test_unknown_organization_slug_is_404(client: AsyncClient) -> None:
     response = await client.get("/api/v1/public/organizations/does-not-exist/jobs")
     assert response.status_code == 404

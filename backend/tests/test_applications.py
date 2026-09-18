@@ -121,7 +121,7 @@ async def test_legal_status_transition_is_recorded(client: AsyncClient, super_ad
 async def test_illegal_status_transition_is_rejected(
     client: AsyncClient, super_admin: User
 ) -> None:
-    """APPLIED can only move to UNDER_REVIEW or WITHDRAWN — jumping straight
+    """APPLIED can only move to UNDER_REVIEW or REJECTED — jumping straight
     to SELECTED must be rejected (docs/recruitment-workflow.md § 2)."""
     org = await _bootstrap_org(client, "applications-illegal-transition")
     headers = await _org_admin_headers(client, org)
@@ -162,12 +162,12 @@ async def test_terminal_status_cannot_be_transitioned_out_of(
         )
     ).json()["id"]
 
-    withdraw = await client.post(
+    reject = await client.post(
         f"/api/v1/recruiter/applications/{application_id}/status",
-        json={"to_status": "WITHDRAWN"},
+        json={"to_status": "REJECTED"},
         headers=headers,
     )
-    assert withdraw.status_code == 200
+    assert reject.status_code == 200
 
     revive = await client.post(
         f"/api/v1/recruiter/applications/{application_id}/status",
@@ -175,6 +175,74 @@ async def test_terminal_status_cannot_be_transitioned_out_of(
         headers=headers,
     )
     assert revive.status_code == 409
+
+
+async def test_selected_can_be_hired_and_hired_is_terminal(
+    client: AsyncClient, super_admin: User
+) -> None:
+    """SELECTED -> HIRED is the one legal edge out of SELECTED; HIRED itself
+    is terminal (docs/recruitment-workflow.md § 2)."""
+    org = await _bootstrap_org(client, "applications-hired")
+    headers = await _org_admin_headers(client, org)
+    job_id = await _create_job(client, headers)
+    candidate_id = await _create_candidate(
+        client, headers, "cara@applications-hired-candidate.dev"
+    )
+    application_id = (
+        await client.post(
+            "/api/v1/recruiter/applications",
+            json={"candidate_id": candidate_id, "job_id": job_id},
+            headers=headers,
+        )
+    ).json()["id"]
+
+    for to_status in ("UNDER_REVIEW", "SCREENING", "SHORTLISTED", "INTERVIEW", "SELECTED"):
+        response = await client.post(
+            f"/api/v1/recruiter/applications/{application_id}/status",
+            json={"to_status": to_status},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+
+    hired = await client.post(
+        f"/api/v1/recruiter/applications/{application_id}/status",
+        json={"to_status": "HIRED"},
+        headers=headers,
+    )
+    assert hired.status_code == 200
+    assert hired.json()["status"] == "HIRED"
+
+    revive = await client.post(
+        f"/api/v1/recruiter/applications/{application_id}/status",
+        json={"to_status": "REJECTED"},
+        headers=headers,
+    )
+    assert revive.status_code == 409
+
+
+async def test_withdrawn_status_no_longer_accepted(client: AsyncClient, super_admin: User) -> None:
+    """WITHDRAWN was merged into REJECTED — the value must no longer be a
+    legal status anywhere in the API."""
+    org = await _bootstrap_org(client, "applications-no-withdrawn")
+    headers = await _org_admin_headers(client, org)
+    job_id = await _create_job(client, headers)
+    candidate_id = await _create_candidate(
+        client, headers, "cara@applications-no-withdrawn-candidate.dev"
+    )
+    application_id = (
+        await client.post(
+            "/api/v1/recruiter/applications",
+            json={"candidate_id": candidate_id, "job_id": job_id},
+            headers=headers,
+        )
+    ).json()["id"]
+
+    response = await client.post(
+        f"/api/v1/recruiter/applications/{application_id}/status",
+        json={"to_status": "WITHDRAWN"},
+        headers=headers,
+    )
+    assert response.status_code == 422
 
 
 async def test_interviewer_can_view_but_not_change_application_status(
@@ -318,3 +386,71 @@ async def test_application_status_change_is_recorded_as_an_activity(
     activities = await client.get("/api/v1/recruiter/activities", headers=headers)
     entries = [a for a in activities.json() if a["action"] == "APPLICATION_STATUS_CHANGED"]
     assert any(e["entity_id"] == application["id"] for e in entries)
+
+
+async def test_send_interview_email_requires_selected_status(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "applications-interview-email-guard")
+    headers = await _org_admin_headers(client, org)
+    job_id = await _create_job(client, headers)
+    candidate_id = await _create_candidate(
+        client, headers, "cara@applications-interview-email-guard-candidate.dev"
+    )
+    application_id = (
+        await client.post(
+            "/api/v1/recruiter/applications",
+            json={"candidate_id": candidate_id, "job_id": job_id},
+            headers=headers,
+        )
+    ).json()["id"]
+
+    response = await client.post(
+        f"/api/v1/recruiter/applications/{application_id}/send-interview-email",
+        json={"subject": "Interview details", "body": "Let's schedule your interview."},
+        headers=headers,
+    )
+    assert response.status_code == 409
+
+
+async def test_send_interview_email_for_selected_candidate_is_manual_and_audited(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "applications-interview-email")
+    headers = await _org_admin_headers(client, org)
+    job_id = await _create_job(client, headers)
+    candidate_id = await _create_candidate(
+        client, headers, "cara@applications-interview-email-candidate.dev"
+    )
+    application_id = (
+        await client.post(
+            "/api/v1/recruiter/applications",
+            json={"candidate_id": candidate_id, "job_id": job_id},
+            headers=headers,
+        )
+    ).json()["id"]
+
+    for to_status in ("UNDER_REVIEW", "SCREENING", "SHORTLISTED", "INTERVIEW", "SELECTED"):
+        response = await client.post(
+            f"/api/v1/recruiter/applications/{application_id}/status",
+            json={"to_status": to_status},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+
+    # No email provider is configured in tests — the send honestly reports
+    # failure rather than faking success (CLAUDE.md § 2), but the action is
+    # still recorded and the endpoint itself never errors.
+    send = await client.post(
+        f"/api/v1/recruiter/applications/{application_id}/send-interview-email",
+        json={"subject": "Interview details", "body": "Let's schedule your interview."},
+        headers=headers,
+    )
+    assert send.status_code == 200, send.text
+    body = send.json()
+    assert body["sent"] is False
+    assert body["reason"]
+
+    activities = await client.get("/api/v1/recruiter/activities", headers=headers)
+    entries = [a for a in activities.json() if a["action"] == "INTERVIEW_EMAIL_SENT"]
+    assert any(e["entity_id"] == application_id for e in entries)

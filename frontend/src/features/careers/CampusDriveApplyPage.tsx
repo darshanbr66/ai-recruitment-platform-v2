@@ -43,7 +43,7 @@ export function CampusDriveApplyPage() {
     <div>
       <header className="public-nav">
         <Link to="/" className="topbar-title" style={{ textDecoration: "none", color: "inherit" }}>
-          AI Recruitment Platform
+          {driveQuery.data?.kind === "drive" ? driveQuery.data.organization_name : "Careers"}
         </Link>
         <ThemeToggle />
       </header>
@@ -57,7 +57,17 @@ export function CampusDriveApplyPage() {
           </Alert>
         )}
 
-        {driveQuery.isSuccess && (
+        {driveQuery.isSuccess && driveQuery.data.kind === "unavailable" && (
+          <section className="card stack-sm" style={{ textAlign: "center" }}>
+            <h1>This Recruitment Drive Is No Longer Available</h1>
+            <p className="muted">{driveQuery.data.message}</p>
+            <Link to="/" className="btn btn-primary" style={{ alignSelf: "center" }}>
+              Back to Careers
+            </Link>
+          </section>
+        )}
+
+        {driveQuery.isSuccess && driveQuery.data.kind === "drive" && (
           <>
             <h1>{driveQuery.data.name}</h1>
             <p className="muted">

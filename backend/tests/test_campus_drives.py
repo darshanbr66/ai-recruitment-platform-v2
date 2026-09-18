@@ -247,6 +247,90 @@ async def test_apply_to_paused_drive_is_rejected(client: AsyncClient, super_admi
     assert response.json()["error"]["code"] == "drive_not_active"
 
 
+async def test_public_view_of_paused_drive_still_shows_details(
+    client: AsyncClient, super_admin: User
+) -> None:
+    """PAUSED is different from CLOSED/DELETED — the drive still exists and
+    can be reactivated, so its details stay visible; only applying is
+    blocked (SIGVITAS platform overhaul § 16)."""
+    ctx = await _bootstrap_org_with_job(client, "campus-paused-view")
+    drive = await _create_drive(client, ctx)
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "PAUSED"},
+        headers=ctx["headers"],
+    )
+    token = _extract_token(drive["application_link"])
+
+    view = await client.get(f"/api/v1/public/campus-drive/{token}")
+    assert view.status_code == 200
+    body = view.json()
+    assert body["kind"] == "drive"
+    assert body["status"] == "PAUSED"
+    assert body["job_title"] == "Graduate Engineer"
+
+
+async def test_public_view_of_closed_drive_hides_all_recruitment_content(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-closed-view")
+    drive = await _create_drive(client, ctx)
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "CLOSED"},
+        headers=ctx["headers"],
+    )
+    token = _extract_token(drive["application_link"])
+
+    view = await client.get(f"/api/v1/public/campus-drive/{token}")
+    assert view.status_code == 200
+    body = view.json()
+    assert body["kind"] == "unavailable"
+    assert "job_title" not in body
+    assert "job_description" not in body
+    assert "college_name" not in body
+    assert "has_assessment" not in body
+
+    apply_response = await client.post(
+        f"/api/v1/public/campus-drive/{token}/apply",
+        data={"full_name": "Priya Candidate", "email": "priya-closed@example.com"},
+        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
+    )
+    assert apply_response.status_code == 400
+    assert apply_response.json()["error"]["code"] == "drive_not_active"
+
+
+async def test_public_link_of_deleted_drive_is_404(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_job(client, "campus-deleted-view")
+    drive = await _create_drive(client, ctx)
+    await client.patch(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}",
+        json={"status": "ACTIVE"},
+        headers=ctx["headers"],
+    )
+    token = _extract_token(drive["application_link"])
+
+    delete_response = await client.post(
+        f"/api/v1/recruiter/campus-drives/{drive['id']}/delete",
+        json={"reason": "Duplicate drive"},
+        headers=ctx["headers"],
+    )
+    assert delete_response.status_code == 200, delete_response.text
+
+    view = await client.get(f"/api/v1/public/campus-drive/{token}")
+    assert view.status_code == 404
+
+
 async def test_apply_with_default_assessment_auto_invites(
     client: AsyncClient, super_admin: User
 ) -> None:

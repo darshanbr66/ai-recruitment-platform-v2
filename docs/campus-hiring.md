@@ -135,7 +135,7 @@ real (never hardcoded) views are available:
   that drive's applications, keyed to the same `ApplicationStatus` values
   used everywhere else in the product — registered, screening,
   assessment_invited, assessment_completed, shortlisted, interview,
-  selected, rejected, withdrawn.
+  selected, rejected, hired.
 - **Cross-drive comparison** (`GET /api/v1/recruiter/reports/overview`,
   `campus_drives` field): total application count per drive, for the
   Reports page's "Campus drives" chart.

@@ -80,6 +80,29 @@ async def test_job_update_applies_only_provided_fields(
     assert body["title"] == _JOB_PAYLOAD["title"]  # untouched
 
 
+async def test_job_created_visible_by_default_and_can_be_hidden(
+    client: AsyncClient, super_admin: User
+) -> None:
+    org = await _bootstrap_org(client, "jobs-description-visibility")
+    headers = await _org_admin_headers(client, org)
+
+    created = (
+        await client.post("/api/v1/recruiter/jobs", json=_JOB_PAYLOAD, headers=headers)
+    ).json()
+    assert created["description_visible"] is True
+
+    hidden = await client.patch(
+        f"/api/v1/recruiter/jobs/{created['id']}",
+        json={"description_visible": False},
+        headers=headers,
+    )
+    assert hidden.status_code == 200
+    body = hidden.json()
+    assert body["description_visible"] is False
+    # Hiding is UI-visibility only — the text itself must survive.
+    assert body["description"] == _JOB_PAYLOAD["description"]
+
+
 async def test_org_a_cannot_see_or_fetch_org_bs_job(client: AsyncClient, super_admin: User) -> None:
     org_a = await _bootstrap_org(client, "jobs-tenant-a")
     org_b = await _bootstrap_org(client, "jobs-tenant-b")

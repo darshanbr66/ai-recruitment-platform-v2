@@ -19,7 +19,7 @@ const APPLICATIONS_QUERY_KEY = ["recruiter", "applications"];
 const TERMINAL_BADGE: Partial<Record<ApplicationStatus, string>> = {
   SELECTED: "badge-active",
   REJECTED: "badge-inactive",
-  WITHDRAWN: "badge-inactive",
+  HIRED: "badge-active",
 };
 
 export function ApplicationsPage() {

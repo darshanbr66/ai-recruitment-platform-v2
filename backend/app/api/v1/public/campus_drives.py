@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.integrations.storage import LocalResumeStorage, ResumeStorage
+from app.models.campus_drive import CampusDriveStatus
 from app.models.organization import Organization
 from app.schemas.public_campus_drive import (
     PublicCampusDriveApplicationResult,
+    PublicCampusDriveUnavailable,
     PublicCampusDriveView,
 )
 from app.services import public_campus_drive_service
@@ -20,9 +22,14 @@ def _get_resume_storage() -> ResumeStorage:
     return LocalResumeStorage()
 
 
-@router.get("/{token}", response_model=PublicCampusDriveView)
-async def get_campus_drive(token: str, db: AsyncSession = Depends(get_db)) -> PublicCampusDriveView:
+@router.get("/{token}", response_model=PublicCampusDriveView | PublicCampusDriveUnavailable)
+async def get_campus_drive(
+    token: str, db: AsyncSession = Depends(get_db)
+) -> PublicCampusDriveView | PublicCampusDriveUnavailable:
     drive = await public_campus_drive_service.get_drive_by_token(db, token)
+    if drive.status == CampusDriveStatus.CLOSED:
+        return PublicCampusDriveUnavailable()
+
     organization = await db.get(Organization, drive.organization_id)
     return PublicCampusDriveView(
         name=drive.name,

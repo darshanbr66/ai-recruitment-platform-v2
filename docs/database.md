@@ -133,15 +133,23 @@ configured; recorded in `docs/ai-screening.md` once a provider is chosen.
 **applications**
 `id, organization_id, candidate_id, job_id, campus_drive_id NULL, status
 (APPLIED/UNDER_REVIEW/SCREENING/ASSESSMENT_INVITED/ASSESSMENT_STARTED/
-ASSESSMENT_COMPLETED/SHORTLISTED/INTERVIEW/SELECTED/REJECTED/WITHDRAWN),
+ASSESSMENT_COMPLETED/SHORTLISTED/INTERVIEW/SELECTED/REJECTED/HIRED),
 source (PORTAL/RECRUITER_ADDED/CAMPUS_IMPORT/REFERRAL/OTHER), applied_at,
 resume_id NULL (the resume used for this specific application, may differ
 across applications), created_at, updated_at`
 Unique: `(candidate_id, job_id)` — one active application per candidate per
-job; re-applying after `WITHDRAWN`/`REJECTED` is a product decision deferred
-to Phase 3 (likely: allow after a cooldown or on job re-open, tracked via a
-new row once the unique constraint is scoped by e.g. a reopen counter — not
+job; re-applying after `REJECTED` is a product decision deferred to Phase 3
+(likely: allow after a cooldown or on job re-open, tracked via a new row
+once the unique constraint is scoped by e.g. a reopen counter — not
 finalized).
+
+`WITHDRAWN` was merged into `REJECTED` (SIGVITAS platform overhaul): the
+platform no longer distinguishes a candidate-initiated withdrawal from a
+recruiter rejection at the status-vocabulary level. Existing `WITHDRAWN`
+rows were data-migrated to `REJECTED` and the value was dropped from the
+native Postgres enum (`backend/alembic/versions/
+c1a2f3b4d5e6_merge_withdrawn_into_rejected_add_hired.py`). `HIRED` was
+added as the new terminal state reachable only from `SELECTED`.
 
 **application_status_history**
 `id, application_id, from_status NULL, to_status, changed_by_user_id NULL,

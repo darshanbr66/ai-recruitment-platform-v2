@@ -52,6 +52,6 @@ async def get_open_job(
         employment_type=job.employment_type,
         openings_count=job.openings_count,
         created_at=job.created_at,
-        description=job.description,
+        description=job.description if job.description_visible else None,
         organization=PublicOrganizationSummary.model_validate(organization),
     )

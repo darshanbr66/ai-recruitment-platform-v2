@@ -280,5 +280,5 @@ async def get_funnel_counts(db: AsyncSession, drive_id: uuid.UUID) -> CampusDriv
         interview=counts[ApplicationStatus.INTERVIEW],
         selected=counts[ApplicationStatus.SELECTED],
         rejected=counts[ApplicationStatus.REJECTED],
-        withdrawn=counts[ApplicationStatus.WITHDRAWN],
+        hired=counts[ApplicationStatus.HIRED],
     )

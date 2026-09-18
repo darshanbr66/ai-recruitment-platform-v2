@@ -5,6 +5,8 @@ import type {
   AssessmentInvitationResponse,
   AssessmentResponse,
   AssessmentSummary,
+  AssessmentUpdateRequest,
+  MonitoringEventResponse,
   ParsedQuestionsResponse,
   RetestRequest,
 } from "../../../types/assessment";
@@ -31,6 +33,18 @@ export function createAssessment(payload: AssessmentCreateRequest, accessToken: 
   return apiClient.post<AssessmentResponse>("/api/v1/recruiter/assessments", payload, accessToken);
 }
 
+export function updateAssessment(
+  assessmentId: string,
+  payload: AssessmentUpdateRequest,
+  accessToken: string,
+) {
+  return apiClient.patch<AssessmentResponse>(
+    `/api/v1/recruiter/assessments/${assessmentId}`,
+    payload,
+    accessToken,
+  );
+}
+
 export function inviteCandidate(
   payload: { assessment_id: string; application_id: string },
   accessToken: string,
@@ -52,6 +66,13 @@ export function getApplicationAssessment(applicationId: string, accessToken: str
 export function listApplicationAssessmentAttempts(applicationId: string, accessToken: string) {
   return apiClient.get<AssessmentInvitationResponse[]>(
     `/api/v1/recruiter/applications/${applicationId}/assessment/attempts`,
+    accessToken,
+  );
+}
+
+export function listApplicationAssessmentEvents(applicationId: string, accessToken: string) {
+  return apiClient.get<MonitoringEventResponse[]>(
+    `/api/v1/recruiter/applications/${applicationId}/assessment/events`,
     accessToken,
   );
 }

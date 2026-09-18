@@ -14,6 +14,7 @@ export interface JobResponse {
   location: string | null;
   employment_type: string | null;
   description: string;
+  description_visible: boolean;
   status: JobStatus;
   openings_count: number;
   created_by: string;
@@ -32,6 +33,7 @@ export interface JobCreateRequest {
   location?: string | null;
   employment_type?: string | null;
   description: string;
+  description_visible?: boolean;
   openings_count?: number;
 }
 
@@ -41,6 +43,7 @@ export interface JobUpdateRequest {
   location?: string | null;
   employment_type?: string | null;
   description?: string;
+  description_visible?: boolean;
   openings_count?: number;
   status?: JobStatus;
 }
@@ -83,7 +86,7 @@ export type ApplicationStatus =
   | "INTERVIEW"
   | "SELECTED"
   | "REJECTED"
-  | "WITHDRAWN";
+  | "HIRED";
 
 export const APPLICATION_STATUSES: ApplicationStatus[] = [
   "APPLIED",
@@ -96,22 +99,22 @@ export const APPLICATION_STATUSES: ApplicationStatus[] = [
   "INTERVIEW",
   "SELECTED",
   "REJECTED",
-  "WITHDRAWN",
+  "HIRED",
 ];
 
 /** Mirrors app/workflows/application_workflow.py's TRANSITIONS table. */
 export const APPLICATION_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
-  APPLIED: ["UNDER_REVIEW", "WITHDRAWN"],
-  UNDER_REVIEW: ["SCREENING", "REJECTED", "WITHDRAWN"],
-  SCREENING: ["ASSESSMENT_INVITED", "SHORTLISTED", "REJECTED", "WITHDRAWN"],
-  ASSESSMENT_INVITED: ["ASSESSMENT_STARTED", "REJECTED", "WITHDRAWN"],
-  ASSESSMENT_STARTED: ["ASSESSMENT_COMPLETED", "WITHDRAWN"],
+  APPLIED: ["UNDER_REVIEW", "REJECTED"],
+  UNDER_REVIEW: ["SCREENING", "REJECTED"],
+  SCREENING: ["ASSESSMENT_INVITED", "SHORTLISTED", "REJECTED"],
+  ASSESSMENT_INVITED: ["ASSESSMENT_STARTED", "REJECTED"],
+  ASSESSMENT_STARTED: ["ASSESSMENT_COMPLETED", "REJECTED"],
   ASSESSMENT_COMPLETED: ["SHORTLISTED", "REJECTED"],
-  SHORTLISTED: ["INTERVIEW", "REJECTED", "WITHDRAWN"],
-  INTERVIEW: ["SELECTED", "REJECTED", "WITHDRAWN"],
-  SELECTED: [],
+  SHORTLISTED: ["INTERVIEW", "REJECTED"],
+  INTERVIEW: ["SELECTED", "REJECTED"],
+  SELECTED: ["HIRED"],
   REJECTED: [],
-  WITHDRAWN: [],
+  HIRED: [],
 };
 
 export interface ApplicationResponse {
@@ -139,4 +142,14 @@ export interface ApplicationCreateRequest {
 
 export interface ApplicationDeleteRequest {
   reason: string;
+}
+
+export interface SendInterviewEmailRequest {
+  subject: string;
+  body: string;
+}
+
+export interface SendInterviewEmailResult {
+  sent: boolean;
+  reason: string | null;
 }

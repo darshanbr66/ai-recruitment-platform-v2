@@ -42,6 +42,13 @@ class ReportOverview(BaseModel):
     open_jobs: int
     total_candidates: int
     total_applications: int
+    # Candidate-outcome metrics for the Overview dashboard (SIGVITAS
+    # platform overhaul § 15) — each a direct count of
+    # `ApplicationStatus.{SELECTED,REJECTED,HIRED}`, tenant-scoped and
+    # excluding soft-deleted applications like every other field here.
+    selected_candidates: int
+    rejected_candidates: int
+    hired_candidates: int
     applications_by_status: list[StatusCount]
     applications_by_job: list[JobApplicationCount]
     screening: ScreeningSummary

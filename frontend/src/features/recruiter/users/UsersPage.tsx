@@ -10,14 +10,18 @@ import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import { useAuth } from "../../auth/AuthContext";
 import { createUser, listUsers, updateUser } from "../../auth/api";
+import { DepartmentsHierarchy } from "../team/DepartmentsHierarchy";
 
 const USERS_QUERY_KEY = ["recruiter", "users"];
+
+type TeamTab = "accounts" | "departments";
 
 export function UsersPage() {
   const { accessToken, user: currentUser } = useAuth();
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [activeTab, setActiveTab] = useState<TeamTab>("accounts");
 
   const usersQuery = useQuery({
     queryKey: USERS_QUERY_KEY,
@@ -142,22 +146,49 @@ export function UsersPage() {
       <div className="page-header">
         <div>
           <h1>Team</h1>
-          <p className="muted">Recruiters and admins who work in your organization.</p>
+          <p className="muted">
+            {activeTab === "accounts"
+              ? "Recruiters and admins who work in your organization."
+              : "The organization hierarchy — departments and the employees within them."}
+          </p>
         </div>
-        {canManageUsers && (
+        {activeTab === "accounts" && canManageUsers && (
           <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
             + Add team member
           </button>
         )}
       </div>
 
-      {usersQuery.isPending && <SkeletonTable columns={6} />}
+      <div className="btn-group" role="tablist" aria-label="Team views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "accounts"}
+          className={`btn btn-sm ${activeTab === "accounts" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setActiveTab("accounts")}
+        >
+          Accounts
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "departments"}
+          className={`btn btn-sm ${activeTab === "departments" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setActiveTab("departments")}
+        >
+          Departments
+        </button>
+      </div>
 
-      {usersQuery.isError && !canManageUsers && (
+      {activeTab === "departments" && <DepartmentsHierarchy />}
+
+      {activeTab === "accounts" && usersQuery.isPending && <SkeletonTable columns={6} />}
+
+      {activeTab === "accounts" && usersQuery.isError && !canManageUsers && (
         <Alert>You do not have permission to view or manage team members.</Alert>
       )}
 
-      {usersQuery.isError && canManageUsers && (
+      {activeTab === "accounts" && usersQuery.isError && canManageUsers && (
         <Alert>
           {usersQuery.error instanceof ApiError
             ? usersQuery.error.message
@@ -165,7 +196,7 @@ export function UsersPage() {
         </Alert>
       )}
 
-      {usersQuery.isSuccess && (
+      {activeTab === "accounts" && usersQuery.isSuccess && (
         <section>
           {usersQuery.data.length === 0 ? (
             <div className="empty-state">

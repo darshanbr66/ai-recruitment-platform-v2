@@ -16,7 +16,8 @@ export interface PublicJobSummary {
 }
 
 export interface PublicJobDetail extends PublicJobSummary {
-  description: string;
+  /** null when the recruiter has hidden the JD from the public page. */
+  description: string | null;
   organization: PublicOrganizationSummary;
 }
 

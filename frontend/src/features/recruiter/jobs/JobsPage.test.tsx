@@ -18,6 +18,7 @@ const sampleJob: JobResponse = {
   location: null,
   employment_type: null,
   description: "Build things.",
+  description_visible: true,
   status: "OPEN",
   openings_count: 1,
   created_by: "user-1",

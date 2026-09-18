@@ -49,6 +49,7 @@ interface JobFormState {
   employmentType: string;
   openingsCount: string;
   description: string;
+  descriptionVisible: boolean;
 }
 
 const EMPTY_FORM: JobFormState = {
@@ -58,6 +59,7 @@ const EMPTY_FORM: JobFormState = {
   employmentType: "Full-time",
   openingsCount: "1",
   description: "",
+  descriptionVisible: true,
 };
 
 function jobToFormState(job: JobResponse): JobFormState {
@@ -68,7 +70,38 @@ function jobToFormState(job: JobResponse): JobFormState {
     employmentType: job.employment_type ?? "",
     openingsCount: String(job.openings_count),
     description: job.description,
+    descriptionVisible: job.description_visible,
   };
+}
+
+/** No icon library exists in this project (see ThemeToggle's plain-emoji
+ * convention) — small inline SVGs, matching that lightweight approach. */
+function EyeIcon({ visible }: { visible: boolean }) {
+  if (visible) {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3 3l18 18M10.6 10.7a3 3 0 0 0 4.2 4.2M6.6 6.7C3.9 8.4 1.5 12 1.5 12S5 19 12 19c1.8 0 3.4-.4 4.7-1M17.4 17.3C20.1 15.6 22.5 12 22.5 12S19.4 6.2 14 5.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export function JobsPage() {
@@ -123,6 +156,7 @@ export function JobsPage() {
         location: form.location || null,
         employment_type: form.employmentType || null,
         description: form.description,
+        description_visible: form.descriptionVisible,
         openings_count: Number(form.openingsCount),
       };
       return editingJob
@@ -404,7 +438,25 @@ export function JobsPage() {
             </div>
 
             <label className="field">
-              <span>Description</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "space-between" }}>
+                Job Description
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                  onClick={() => setForm({ ...form, descriptionVisible: !form.descriptionVisible })}
+                  disabled={saveMutation.isPending}
+                  aria-pressed={form.descriptionVisible}
+                  title={
+                    form.descriptionVisible
+                      ? "Visible to candidates on the public job page — click to hide"
+                      : "Hidden from candidates on the public job page — click to show"
+                  }
+                >
+                  <EyeIcon visible={form.descriptionVisible} />
+                  {form.descriptionVisible ? "Visible to candidates" : "Hidden from candidates"}
+                </button>
+              </span>
               <textarea
                 required
                 rows={4}
@@ -412,6 +464,12 @@ export function JobsPage() {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 disabled={saveMutation.isPending}
               />
+              {!form.descriptionVisible && (
+                <span className="field-hint">
+                  This description is saved but hidden from the public job page. Toggle "Visible to
+                  candidates" to show it again.
+                </span>
+              )}
             </label>
 
             {formError && <Alert>{formError}</Alert>}

@@ -36,27 +36,24 @@ application into an invalid state or skip the history write.
 ```
 APPLIED
   → UNDER_REVIEW
-  → WITHDRAWN                (candidate-initiated, any point before a terminal state)
+  → REJECTED
 
 UNDER_REVIEW
   → SCREENING
   → REJECTED
-  → WITHDRAWN
 
 SCREENING
   → ASSESSMENT_INVITED       (if an assessment is required for this pipeline)
   → SHORTLISTED              (if no assessment required)
   → REJECTED
-  → WITHDRAWN
 
 ASSESSMENT_INVITED
   → ASSESSMENT_STARTED
   → REJECTED                 (e.g. invitation expired without action — recruiter decision, not automatic)
-  → WITHDRAWN
 
 ASSESSMENT_STARTED
   → ASSESSMENT_COMPLETED
-  → WITHDRAWN
+  → REJECTED
 
 ASSESSMENT_COMPLETED
   → SHORTLISTED
@@ -65,14 +62,15 @@ ASSESSMENT_COMPLETED
 SHORTLISTED
   → INTERVIEW
   → REJECTED
-  → WITHDRAWN
 
 INTERVIEW
   → SELECTED
   → REJECTED
-  → WITHDRAWN
 
-SELECTED, REJECTED, WITHDRAWN   (terminal)
+SELECTED
+  → HIRED
+
+REJECTED, HIRED   (terminal)
 ```
 
 Notes:
@@ -85,10 +83,15 @@ Notes:
 - Interview scheduling/feedback is out of scope for the initial phases
   (tracked as a future domain); `INTERVIEW` is a status the recruiter moves
   an application into/out of manually for now.
-- `REJECTED`/`SELECTED`/`WITHDRAWN` are terminal — no code path transitions
-  out of them. A mis-rejection is corrected by recruiter override
-  (explicit, audited, permission-gated), not by "un-terminal-izing" a state
-  silently.
+- `REJECTED`/`HIRED` are terminal — no code path transitions out of them. A
+  mis-rejection is corrected by recruiter override (explicit, audited,
+  permission-gated), not by "un-terminal-izing" a state silently.
+- **`WITHDRAWN` was removed (SIGVITAS platform overhaul):** the platform no
+  longer distinguishes a candidate-initiated withdrawal from a recruiter
+  rejection — every prior `WITHDRAWN` application became `REJECTED`, and the
+  value no longer exists in the enum (application code or database). `HIRED`
+  was added as the new outcome after `SELECTED`, matching the product's
+  "Selected → Hired" flow.
 
 ## 3. Candidate-visible projection
 
@@ -105,7 +108,7 @@ The candidate API maps internal status to a small, stable public vocabulary:
 | INTERVIEW | "Interview" |
 | SELECTED | "Selected" |
 | REJECTED | "Not Selected" |
-| WITHDRAWN | "Withdrawn" |
+| HIRED | "Hired" |
 
 This mapping lives in the candidate-facing schema/serializer, not in the
 workflow module itself — the workflow module's vocabulary is the operational

@@ -63,19 +63,28 @@ export function OverviewPage() {
 
       <section className="card-grid">
         <div className="stat-card">
-          <span className="stat-label">Open jobs</span>
-          {reportQuery.isPending && <span className="stat-value muted">…</span>}
-          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.open_jobs}</span>}
-        </div>
-        <div className="stat-card">
           <span className="stat-label">Candidates</span>
           {reportQuery.isPending && <span className="stat-value muted">…</span>}
           {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.total_candidates}</span>}
         </div>
         <div className="stat-card">
-          <span className="stat-label">Applications</span>
+          <span className="stat-label">Selected Candidates</span>
           {reportQuery.isPending && <span className="stat-value muted">…</span>}
-          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.total_applications}</span>}
+          {reportQuery.isSuccess && (
+            <span className="stat-value">{reportQuery.data.selected_candidates}</span>
+          )}
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Rejected Candidates</span>
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && (
+            <span className="stat-value">{reportQuery.data.rejected_candidates}</span>
+          )}
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Hired Candidates</span>
+          {reportQuery.isPending && <span className="stat-value muted">…</span>}
+          {reportQuery.isSuccess && <span className="stat-value">{reportQuery.data.hired_candidates}</span>}
         </div>
         <div className="stat-card">
           <span className="stat-label">Assessment invitations</span>
