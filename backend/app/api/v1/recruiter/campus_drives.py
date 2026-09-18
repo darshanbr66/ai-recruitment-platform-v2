@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
+from app.core.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.campus_drive import CampusDrive
@@ -21,13 +22,12 @@ from app.services import campus_drive_service
 
 router = APIRouter(prefix="/campus-drives", tags=["recruiter-campus-drives"])
 
-# The candidate-facing app's own origin — the link a recruiter copies/shares
-# points at the frontend route that resolves the token, not the API itself.
-_CANDIDATE_APP_BASE_URL = "http://localhost:5173"
-
 
 def _application_link(raw_token: str) -> str:
-    return f"{_CANDIDATE_APP_BASE_URL}/campus-drive/{raw_token}"
+    # The candidate-facing app's own origin — the link a recruiter
+    # copies/shares points at the frontend route that resolves the token,
+    # not the API itself (settings.frontend_base_url, env-configurable).
+    return f"{get_settings().frontend_base_url}/campus-drive/{raw_token}"
 
 
 def _to_response(

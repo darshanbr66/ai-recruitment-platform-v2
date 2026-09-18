@@ -30,6 +30,13 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = Field(default_factory=list)
 
+    # The candidate-facing frontend's own origin — used to build links a
+    # recruiter shares (assessment invitations, campus-drive application
+    # links) that resolve on the frontend, not the API. Defaults to the
+    # local Vite dev server; production sets this to the deployed frontend
+    # URL (e.g. the Vercel domain) via the environment.
+    frontend_base_url: str = "http://localhost:5173"
+
     resume_storage_dir: str = "uploads/resumes"
     max_resume_size_mb: int = 10
     allowed_resume_extensions: tuple[str, ...] = (".pdf", ".doc", ".docx")

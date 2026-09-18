@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
+from app.core.config import get_settings
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import generate_opaque_token, hash_opaque_token
 from app.integrations.documents.question_import import parse_questions as _parse_questions
@@ -326,7 +327,7 @@ async def invite_candidate(
 
     organization = await db.get(Organization, organization_id)
     if organization is not None:
-        base_url = "http://localhost:5173"  # candidate-facing app origin
+        base_url = get_settings().frontend_base_url
         await notification_service.send_assessment_invitation(
             to=application.candidate.email,
             candidate_name=application.candidate.full_name,
@@ -485,7 +486,7 @@ async def create_retest(
 
     organization = await db.get(Organization, organization_id)
     if organization is not None:
-        base_url = "http://localhost:5173"
+        base_url = get_settings().frontend_base_url
         await notification_service.send_assessment_invitation(
             to=application.candidate.email,
             candidate_name=application.candidate.full_name,

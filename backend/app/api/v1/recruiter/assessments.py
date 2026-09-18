@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
+from app.core.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.assessment import Assessment, AssessmentInvitation
@@ -162,7 +163,7 @@ async def invite_candidate(
     # provider is configured locally (see app/integrations/email) — this is
     # the one response that ever carries it, matching the "shown once"
     # handling of the underlying raw token.
-    link = f"http://localhost:5173/assessment/{raw_token}"
+    link = f"{get_settings().frontend_base_url}/assessment/{raw_token}"
     return await _invitation_response(db, invitation, invitation_link=link)
 
 
@@ -183,5 +184,5 @@ async def retest_candidate(
         assessment_id=payload.assessment_id,
         new_assessment=payload.new_assessment,
     )
-    link = f"http://localhost:5173/assessment/{raw_token}"
+    link = f"{get_settings().frontend_base_url}/assessment/{raw_token}"
     return await _invitation_response(db, invitation, invitation_link=link)

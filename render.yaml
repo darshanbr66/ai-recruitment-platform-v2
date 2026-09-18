@@ -1,0 +1,64 @@
+# Render Blueprint for the SIGVITAS recruitment platform backend.
+#
+# This provisions the FastAPI web service only. The Postgres database is
+# created separately (Render's managed Postgres, with pgvector enabled) per
+# docs/deployment.md — a Blueprint-managed `databases:` entry is deliberately
+# NOT used here so the connection string can be reviewed/rewritten to the
+# `postgresql+psycopg://` scheme this app requires before it's wired in (see
+# docs/deployment.md § "Database URL scheme").
+#
+# Apply via the Render dashboard: New -> Blueprint -> point at this repo.
+# Every `sync: false` value must be filled in manually in the Render
+# dashboard after the service is created — nothing sensitive lives in this
+# file (CLAUDE.md: never commit secrets).
+
+services:
+  - type: web
+    name: sigvitas-recruitment-api
+    runtime: python
+    rootDir: backend
+    plan: starter
+    buildCommand: "pip install --upgrade pip && pip install ."
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "15"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: RESUME_STORAGE_DIR
+        value: uploads/resumes
+      - key: MAX_RESUME_SIZE_MB
+        value: "10"
+      # Optional integrations — the app runs correctly with these unset
+      # (email/AI screening report "not configured" rather than failing).
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_MODEL
+        value: llama3.1
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
