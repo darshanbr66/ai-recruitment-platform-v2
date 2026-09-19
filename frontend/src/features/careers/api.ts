@@ -32,9 +32,32 @@ export function applyToJob(
   resume: File,
 ) {
   const formData = new FormData();
-  formData.append("full_name", values.full_name);
-  formData.append("email", values.email);
-  if (values.phone) formData.append("phone", values.phone);
+  // Only non-empty values are sent — the backend treats an absent field as
+  // "not provided", while an empty string would fail number/enum parsing.
+  const append = (name: string, value: string) => {
+    const trimmed = value.trim();
+    if (trimmed) formData.append(name, trimmed);
+  };
+
+  append("full_name", values.full_name);
+  append("email", values.email);
+  append("phone", values.phone);
+  formData.append("candidate_type", values.candidate_type);
+  if (values.candidate_type === "EXPERIENCED") {
+    append("years_experience", values.years_experience);
+    append("current_title", values.current_title);
+    append("current_company", values.current_company);
+    if (values.immediate_joiner) {
+      formData.append("immediate_joiner", "true");
+    } else {
+      append("notice_period_days", values.notice_period_days);
+    }
+  }
+  append("current_location", values.current_location);
+  append("preferred_location", values.preferred_location);
+  append("qualification", values.qualification);
+  append("linkedin_url", values.linkedin_url);
+  append("github_url", values.github_url);
   formData.append("resume", resume);
 
   return apiClient.postForm<PublicApplicationResult>(

@@ -6,7 +6,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.core.config import get_settings
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import generate_opaque_token, hash_opaque_token
 from app.integrations.documents.question_import import parse_questions as _parse_questions
@@ -19,7 +18,6 @@ from app.models.assessment import (
     Question,
     QuestionOption,
 )
-from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.assessment import (
     AssessmentCreateRequest,
@@ -29,7 +27,7 @@ from app.schemas.assessment import (
     RetestAssessmentChoice,
 )
 from app.schemas.assessment import QuestionOptionCreate as QuestionOptionCreateSchema
-from app.services import activity_service, application_service, notification_service
+from app.services import activity_service, application_service
 
 _INVITATION_EXPIRY_DAYS = 7
 
@@ -325,19 +323,9 @@ async def invite_candidate(
         db, application, to_status=ApplicationStatus.ASSESSMENT_INVITED, actor_user_id=invited_by_user_id
     )
 
-    organization = await db.get(Organization, organization_id)
-    if organization is not None:
-        base_url = get_settings().frontend_base_url
-        await notification_service.send_assessment_invitation(
-            to=application.candidate.email,
-            candidate_name=application.candidate.full_name,
-            job_title=application.job.title,
-            organization_name=organization.name,
-            assessment_title=assessment.title,
-            invitation_link=f"{base_url}/assessment/{raw_token}",
-            duration_minutes=assessment.duration_minutes,
-        )
-
+    # Assigning an assessment only *prepares* the invitation. Emailing it is a
+    # separate, explicit recruiter action ("Send Assessment Invitation" ->
+    # app/services/email_composer.py), so nothing is sent from here.
     invited_by = await db.get(User, invited_by_user_id)
     await activity_service.record_activity(
         db,
@@ -484,19 +472,8 @@ async def create_retest(
         reason=reason,
     )
 
-    organization = await db.get(Organization, organization_id)
-    if organization is not None:
-        base_url = get_settings().frontend_base_url
-        await notification_service.send_assessment_invitation(
-            to=application.candidate.email,
-            candidate_name=application.candidate.full_name,
-            job_title=application.job.title,
-            organization_name=organization.name,
-            assessment_title=chosen_assessment.title,
-            invitation_link=f"{base_url}/assessment/{raw_token}",
-            duration_minutes=chosen_assessment.duration_minutes,
-        )
-
+    # Like a first assignment, a retest is only prepared here; the recruiter
+    # emails it explicitly.
     reloaded = await get_invitation_for_application(db, application_id)
     assert reloaded is not None
     return reloaded, raw_token

@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ConflictError
 from app.models.candidate import Candidate
 from app.models.user import User
-from app.schemas.candidate import CandidateCreateRequest, CandidateUpdateRequest
+from app.schemas.candidate import (
+    CandidateCreateRequest,
+    CandidateProfileFields,
+    CandidateUpdateRequest,
+)
 from app.services import activity_service
 
 
@@ -24,10 +28,8 @@ async def create_candidate(
         email=payload.email,
         full_name=payload.full_name,
         phone=payload.phone,
-        location=payload.location,
-        current_title=payload.current_title,
-        years_experience=payload.years_experience,
         source=payload.source,
+        **payload.model_dump(include=set(CandidateProfileFields.model_fields)),
     )
     db.add(candidate)
     try:

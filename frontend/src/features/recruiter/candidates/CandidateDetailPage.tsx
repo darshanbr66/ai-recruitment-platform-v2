@@ -175,6 +175,62 @@ export function CandidateDetailPage() {
             </span>
           </div>
           <div className="detail-row">
+            <span className="detail-row-label">Candidate type</span>
+            <span>
+              {candidate.candidate_type === null
+                ? "—"
+                : candidate.candidate_type === "FRESHER"
+                  ? "Fresher"
+                  : "Experienced"}
+            </span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Current company</span>
+            <span>{candidate.current_company ?? "—"}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Preferred location</span>
+            <span>{candidate.preferred_location ?? "—"}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Notice period</span>
+            <span>
+              {candidate.immediate_joiner
+                ? "Immediate joiner"
+                : candidate.notice_period_days !== null
+                  ? `${candidate.notice_period_days} days`
+                  : "—"}
+            </span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Qualification</span>
+            <span>{candidate.qualification ?? "—"}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">LinkedIn</span>
+            <span>
+              {candidate.linkedin_url ? (
+                <a href={candidate.linkedin_url} target="_blank" rel="noopener noreferrer">
+                  {candidate.linkedin_url}
+                </a>
+              ) : (
+                "—"
+              )}
+            </span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-row-label">GitHub</span>
+            <span>
+              {candidate.github_url ? (
+                <a href={candidate.github_url} target="_blank" rel="noopener noreferrer">
+                  {candidate.github_url}
+                </a>
+              ) : (
+                "—"
+              )}
+            </span>
+          </div>
+          <div className="detail-row">
             <span className="detail-row-label">Source</span>
             <span>{candidate.source}</span>
           </div>

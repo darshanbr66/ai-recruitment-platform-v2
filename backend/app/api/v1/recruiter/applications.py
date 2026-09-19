@@ -11,27 +11,30 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.integrations.storage import StorageError, get_resume_storage_for_provider
 from app.models.application import Application, ApplicationStatus
-from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.application import (
     ApplicationCreateRequest,
     ApplicationDeleteRequest,
     ApplicationResponse,
     ApplicationStatusChangeRequest,
-    SendInterviewEmailRequest,
-    SendInterviewEmailResult,
 )
 from app.schemas.assessment import AssessmentInvitationResponse, AssessmentResultResponse
+from app.schemas.email import (
+    EmailComposeRequest,
+    EmailComposeResponse,
+    EmailDraftRequest,
+    EmailPreviewResponse,
+    EmailSendResponse,
+)
 from app.schemas.public_assessment import MonitoringEventResponse
 from app.services import (
-    activity_service,
     application_service,
     assessment_service,
-    notification_service,
+    email_composer,
 )
 
 router = APIRouter(prefix="/applications", tags=["recruiter-applications"])
@@ -43,6 +46,7 @@ def _to_response(application: Application) -> ApplicationResponse:
         organization_id=application.organization_id,
         candidate_id=application.candidate_id,
         candidate_full_name=application.candidate.full_name,
+        candidate_email=application.candidate.email,
         job_id=application.job_id,
         job_title=application.job.title,
         campus_drive_id=application.campus_drive_id,
@@ -165,6 +169,7 @@ def _invitation_to_response(
         expires_at=invitation.expires_at,
         started_at=invitation.started_at,
         submitted_at=invitation.submitted_at,
+        emailed_at=invitation.emailed_at,
         attempt_number=invitation.attempt_number,
         retest_reason=invitation.retest_reason,
         result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,
@@ -236,59 +241,69 @@ async def change_application_status(
         reason=payload.reason,
     )
 
-    # Best-effort candidate notification — must never fail the status
-    # change itself (CLAUDE.md § 2: "Email provider != business logic").
-    organization = await db.get(Organization, current_user.organization_id)
-    if organization is not None:
-        await notification_service.send_status_update(
-            to=updated.candidate.email,
-            candidate_name=updated.candidate.full_name,
-            job_title=updated.job.title,
-            organization_name=organization.name,
-            status=updated.status.value,
-        )
-
+    # Deliberately no email here: candidate email is manual-only, sent from
+    # the explicit "Send Email" action (`POST .../email/send`).
     return _to_response(updated)
 
 
-@router.post(
-    "/{application_id}/send-interview-email",
-    response_model=SendInterviewEmailResult,
-)
-async def send_interview_email(
+@router.post("/{application_id}/email/compose", response_model=EmailComposeResponse)
+async def compose_email(
     application_id: uuid.UUID,
-    payload: SendInterviewEmailRequest,
-    current_user: User = Depends(require_permission("application.status.change")),
+    payload: EmailComposeRequest,
+    current_user: User = Depends(require_permission("application.email.send")),
     db: AsyncSession = Depends(get_db),
-) -> SendInterviewEmailResult:
-    """Manual-only — never triggered automatically by a status change
-    (SIGVITAS platform overhaul § 17). The recruiter reviews/edits the
-    subject and body before this is called; sending is recorded in
-    Activities regardless of whether the underlying provider succeeded, so
-    the attempt itself is always auditable."""
-    application = await application_service.get_application(db, application_id)
-    if application is None:
-        raise NotFoundError("Application not found.")
-    if application.status != ApplicationStatus.SELECTED:
-        raise ConflictError("An interview email can only be sent for a selected candidate.")
-
-    sent = await notification_service.send_interview_email(
-        to=application.candidate.email, subject=payload.subject, body=payload.body
+) -> EmailComposeResponse:
+    """Loads a predefined template for this application — candidate, job,
+    company and recruiter details filled in — as an editable subject/body.
+    Nothing is sent."""
+    composed = await email_composer.compose_email(
+        db, application_id=application_id, actor=current_user, request=payload
+    )
+    return EmailComposeResponse(
+        template_key=composed.template_key,
+        subject=composed.subject,
+        body=composed.body,
+        variables=composed.variables,
+        missing_required=composed.missing_required,
     )
 
-    await activity_service.record_activity(
-        db,
-        organization_id=application.organization_id,
-        actor=current_user,
-        action="INTERVIEW_EMAIL_SENT",
-        entity_type="application",
-        entity_id=application.id,
-        entity_label=f"{application.candidate.full_name} — {application.job.title}",
-        description=(
-            f"Interview email {'sent to' if sent else 'attempted for'} "
-            f"{application.candidate.full_name} (\"{payload.subject}\")."
-        ),
+
+@router.post("/{application_id}/email/preview", response_model=EmailPreviewResponse)
+async def preview_email(
+    application_id: uuid.UUID,
+    payload: EmailDraftRequest,
+    current_user: User = Depends(require_permission("application.email.send")),
+    db: AsyncSession = Depends(get_db),
+) -> EmailPreviewResponse:
+    """Renders the (possibly edited) draft exactly as it would be sent.
+    Nothing is sent."""
+    previewed = await email_composer.preview_email(
+        db, application_id=application_id, actor=current_user, draft=payload
+    )
+    return EmailPreviewResponse(
+        to=previewed.to,
+        reply_to=previewed.reply_to,
+        subject=previewed.rendered.subject,
+        html=previewed.rendered.html,
+        text=previewed.rendered.text,
+        has_call_to_action=previewed.has_call_to_action,
     )
 
-    reason = None if sent else "No email provider is configured, or the send failed."
-    return SendInterviewEmailResult(sent=sent, reason=reason)
+
+@router.post("/{application_id}/email/send", response_model=EmailSendResponse)
+async def send_email(
+    application_id: uuid.UUID,
+    payload: EmailDraftRequest,
+    current_user: User = Depends(require_permission("application.email.send")),
+    db: AsyncSession = Depends(get_db),
+) -> EmailSendResponse:
+    """The only way a candidate is emailed: an explicit action by an
+    authorized recruiter/admin (never triggered by applying, assigning an
+    assessment, or a status change). Delivery is never faked: no SMTP
+    configuration -> 503 `email_not_configured`; the provider failing or
+    refusing -> 502 `email_delivery_failed`. Both outcomes are recorded in
+    Activities."""
+    sent = await email_composer.send_email(
+        db, application_id=application_id, actor=current_user, draft=payload
+    )
+    return EmailSendResponse(sent=True, to=sent.to, subject=sent.rendered.subject)

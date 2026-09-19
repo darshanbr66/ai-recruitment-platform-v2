@@ -1,20 +1,48 @@
-from collections.abc import AsyncGenerator
+import os
+from collections.abc import AsyncGenerator, Sequence
+from types import SimpleNamespace
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
-from app.core.asyncio_compat import configure_event_loop_policy
+# A developer's local .env may hold real SMTP/Resend credentials. Environment
+# variables take precedence over .env in pydantic-settings, so blanking them
+# here — before `app.*` (and therefore Settings) is imported — guarantees no
+# test can ever deliver a real email. Tests that need a configured provider
+# monkeypatch `get_email_provider`/`get_settings` explicitly.
+for _name in (
+    "SMTP_HOST",
+    "SMTP_USERNAME",
+    "SMTP_PASSWORD",
+    "SMTP_FROM_EMAIL",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+):
+    os.environ[_name] = ""
+
+# Same reasoning for resume storage: a local .env selecting `mongodb_gridfs`
+# would send app-level tests to a MongoDB that isn't connected in tests (and
+# would write test resumes into a real deployment if it were). App-level
+# tests always use the disk backend; the GridFS provider has its own tests
+# against an in-memory fake (tests/test_resume_mongodb_provider.py).
+os.environ["RESUME_STORAGE_PROVIDER"] = "local"
+
+from app.core.asyncio_compat import configure_event_loop_policy  # noqa: E402
 
 configure_event_loop_policy()
 
 from app.core.security import hash_password  # noqa: E402
 from app.db.rls import rls_bypass  # noqa: E402
 from app.db.session import engine, get_db  # noqa: E402
+from app.integrations.email import EmailError, EmailProvider  # noqa: E402
+from app.integrations.email.base import as_address_list  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.rbac import Role, UserRole  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.services import notification_service  # noqa: E402
 
 # Fixed test credentials for the one platform account that can't be created
 # through the HTTP API (see app/cli.py) — seeded directly here the same way
@@ -30,6 +58,48 @@ from app.models.user import User  # noqa: E402
 # every run.
 SUPER_ADMIN_EMAIL = "pytest.super.admin@platform.dev"
 SUPER_ADMIN_PASSWORD = "SuperSecretPass1"
+
+
+class RecordingEmailProvider(EmailProvider):
+    """Stands in for the SMTP server: records every email the application
+    tries to send (or raises `error` instead), so tests can assert exactly
+    what did — and, just as importantly, did not — go out."""
+
+    def __init__(self, error: EmailError | None = None) -> None:
+        self.sent: list[SimpleNamespace] = []
+        self.error = error
+
+    async def send(
+        self,
+        *,
+        to: str | Sequence[str],
+        subject: str,
+        html: str,
+        text: str | None = None,
+        reply_to: str | None = None,
+        cc: Sequence[str] = (),
+        bcc: Sequence[str] = (),
+    ) -> None:
+        if self.error is not None:
+            raise self.error
+        self.sent.append(
+            SimpleNamespace(
+                to=as_address_list(to),
+                cc=list(cc),
+                bcc=list(bcc),
+                subject=subject,
+                html=html,
+                text=text,
+                reply_to=reply_to,
+            )
+        )
+
+
+@pytest.fixture
+def recording_email(monkeypatch: pytest.MonkeyPatch) -> RecordingEmailProvider:
+    provider = RecordingEmailProvider()
+    monkeypatch.setattr(notification_service, "get_email_provider", lambda: provider)
+    return provider
 
 
 @pytest_asyncio.fixture

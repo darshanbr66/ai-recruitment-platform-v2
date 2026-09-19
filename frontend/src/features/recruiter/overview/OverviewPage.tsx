@@ -7,6 +7,7 @@ import { BarList } from "../../../shared/components/BarList";
 import { useAuth } from "../../auth/AuthContext";
 import { listApplications } from "../applications/api";
 import { getReportOverview } from "../reports/api";
+import { greetingName } from "./greeting";
 
 const QUICK_LINKS = [
   { to: "/recruiter/jobs", title: "Post a job", description: "Create and publish a new requisition." },
@@ -51,7 +52,7 @@ export function OverviewPage() {
   return (
     <div className="stack-lg">
       <section>
-        <h1>Welcome back, {user?.full_name.split(" ")[0]}</h1>
+        <h1>Welcome back, {greetingName(user)}</h1>
         <p className="muted">Here's what's happening with your hiring pipeline.</p>
       </section>
 

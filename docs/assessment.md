@@ -10,10 +10,11 @@ on submit. Real simplifications from the design below, noted in
 `app/models/assessment.py`'s docstring: no `AssessmentEvaluation` as a
 separate row (the scoring process and its result are one `AssessmentResult`
 row), no `DELIVERED`/`OPENED` webhook states, no `max_attempts` bound (one
-attempt per invitation), and email delivery is best-effort — if
-`RESEND_API_KEY` isn't set, the invitation is still created and its link is
-returned directly in the recruiter's API response so it can be copied
-manually (see `app/api/v1/recruiter/assessments.py`).
+attempt per invitation), and email is manual — assigning an assessment
+only *prepares* the invitation (the link is also returned once in the
+recruiter's API response so it can be copied manually, see
+`app/api/v1/recruiter/assessments.py`); the recruiter emails it explicitly
+with "Send Assessment Invitation" (see § 8).
 
 ## 0. Assessment monitoring ("proctoring") — SIGVITAS platform overhaul
 
@@ -181,7 +182,8 @@ Invitation/attempt events call into `application_workflow.transition(...)`
 (see `docs/recruitment-workflow.md`) rather than the assessment domain
 writing to `Application.status` directly:
 
-- Invitation sent → `Application.status = ASSESSMENT_INVITED`
+- Invitation assigned/prepared → `Application.status = ASSESSMENT_INVITED`
+  (independent of whether the invitation has been emailed yet)
 - Attempt started → `Application.status = ASSESSMENT_STARTED`
 - Attempt submitted + evaluated → `Application.status = ASSESSMENT_COMPLETED`
 
@@ -190,12 +192,23 @@ rule in one place, even though the trigger originates in a different domain.
 
 ## 8. Email integration
 
-The invitation email is sent through the Notification Service (see
-`docs/architecture.md` § notification module) — the assessment service calls
-`notification_service.send_assessment_invitation(invitation)`, which resolves
-a template and hands off to whatever `EmailProvider` is configured. The
-assessment/campus/recruitment services never import an email provider SDK
-directly (`CLAUDE.md` § 2).
+Invitation email is **manual only**. Assigning an assessment
+(`POST /recruiter/assessments/invite`) or authorizing a retest creates the
+invitation and moves the application to `ASSESSMENT_INVITED`, but sends
+nothing; `assessment_invitations.emailed_at` stays `NULL` ("Not emailed yet").
+
+The recruiter then clicks **Send Assessment Invitation** on the application,
+which opens the composer with the `ASSESSMENT_INVITATION` template
+(`app/services/email_composer.py`): assessment name, deadline (the
+invitation's expiry) and the candidate/job/company details are filled in, the
+recruiter may edit the text, previews it, and sends. Because only
+`sha256(token)` is stored, the raw link cannot be recovered later — so the
+*send* issues a fresh personal link (the "Start the assessment" button), and
+it replaces the previous token only if delivery succeeds. A failed send leaves
+the existing link working. Only an invitation that is still `SENT` (not
+started, submitted or expired) can be emailed. Delivery goes through the
+`EmailProvider` interface; services never import a provider SDK directly
+(`CLAUDE.md` § 2).
 
 ## 9. Importing questions from a file
 

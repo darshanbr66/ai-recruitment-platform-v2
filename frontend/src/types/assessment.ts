@@ -102,6 +102,8 @@ export interface AssessmentInvitationResponse {
   expires_at: string;
   started_at: string | null;
   submitted_at: string | null;
+  /** null = prepared but never emailed to the candidate. */
+  emailed_at: string | null;
   attempt_number: number;
   retest_reason: string | null;
   result: AssessmentResultResponse | null;

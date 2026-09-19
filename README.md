@@ -10,7 +10,15 @@ org/tenant isolation via Postgres RLS), Jobs/Candidates/Applications CRUD
 and pipeline, a public career site with resume upload, AI-assisted resume
 screening, MCQ assessments with token-based candidate access (no login
 required), campus drives, application notes, live reports, and outbound
-email (Resend) for application/status/assessment notifications.
+template-based candidate email over SMTP. Email is **manual only**: a
+recruiter picks one of six professional HTML templates (application received,
+interview invitation, assessment invitation, next steps, rejection, general),
+edits it if needed, previews it, and sends. Applying, assigning an assessment
+and changing a status never send email on their own. The same composer is also
+available as a general **Email** page for messages that aren't tied to an
+application. The Team page shows a live organization chart built from the
+organization's departments and employees, and an org admin can delete activity
+entries in bulk (a selection, or every entry of their own organization).
 
 Local test accounts are in [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md).
 No candidate portal (self-service login/profile) yet — candidates interact
@@ -89,7 +97,8 @@ rather than faking success/results:
 
 | Variable | Enables |
 |---|---|
-| `RESEND_API_KEY`, `EMAIL_FROM` | Application confirmation, status update, and assessment invitation emails (via [Resend](https://resend.com)) |
+| `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_TLS` (default `true`) | Outbound email over SMTP for the recruiter's manual "Send Email" / "Send Assessment Invitation" actions (nothing is emailed automatically). `SMTP_PASSWORD` is a secret — keep it in your local `.env` / the host's secret store only, never in source or `.env.example`. With any of host/username/password/from-address missing, sends fail with a clear `email_not_configured` error. |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Legacy alternative to SMTP (via [Resend](https://resend.com)); only used when SMTP is not fully configured. |
 | `OLLAMA_BASE_URL` (+ `OLLAMA_MODEL`) | AI-assisted resume screening via a **free, local** [Ollama](https://ollama.com) model — no API key, nothing leaves your machine. Preferred over the paid options below when set. |
 | `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening via a paid cloud provider, if you'd rather not run Ollama. Only used when `OLLAMA_BASE_URL` isn't set. |
 

@@ -1,0 +1,304 @@
+/*
+ * Organization chart (organization -> departments -> employees).
+ *
+ * Pure CSS tree connectors — no diagram library. Colours come from the app's
+ * theme variables (index.css), so light/dark themes work without extra rules.
+ * Desktop: a horizontal tree that scrolls sideways if it is wider than the
+ * card. Narrow screens (<= 720px): a compact vertical tree, no sideways scroll.
+ */
+
+.org-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.org-chart-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.org-chart-scroll {
+  overflow-x: auto;
+  padding: 0.25rem 0.25rem 1rem;
+}
+
+.org-chart {
+  --org-line: var(--color-border);
+  /* Connectors need more contrast than a card border, in both themes — and must
+     be opaque, or the overlapping branch segments show as dots. */
+  --org-line: color-mix(in srgb, var(--color-text-muted) 50%, var(--color-surface));
+  --org-gap: 1.5rem;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Centre when narrower than the card, grow (and scroll) when wider. */
+  width: max-content;
+  min-width: 100%;
+}
+
+/* --- nodes ---------------------------------------------------------- */
+
+.org-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 9.5rem;
+  max-width: 14rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  text-align: center;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.org-node-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.org-node-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.org-node-root {
+  padding: 0.7rem 1.5rem;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+button.org-node {
+  cursor: pointer;
+}
+
+button.org-node:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
+}
+
+button.org-node:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.org-node-dept[aria-expanded="true"] {
+  border-color: var(--color-primary);
+}
+
+.org-node-unassigned {
+  border-style: dashed;
+}
+
+/* --- departments level ---------------------------------------------- */
+
+.org-level {
+  list-style: none;
+  margin: 0;
+  padding: var(--org-gap) 0 0;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+/* vertical stem from the organization down to the branch line */
+.org-level::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--org-gap);
+  border-left: 2px solid var(--org-line);
+}
+
+.org-branch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--org-gap) 0.6rem 0;
+}
+
+/* left half / right half of the horizontal branch line, plus the drop to the node */
+.org-branch::before,
+.org-branch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: var(--org-gap);
+  border-top: 2px solid var(--org-line);
+}
+
+.org-branch::before {
+  right: 50%;
+}
+
+.org-branch::after {
+  left: 50%;
+  border-left: 2px solid var(--org-line);
+}
+
+.org-branch:first-child::before,
+.org-branch:last-child::after {
+  border-top: 0;
+}
+
+/* a single department hangs straight off the stem */
+.org-branch:only-child {
+  padding-top: 0;
+}
+
+.org-branch:only-child::before,
+.org-branch:only-child::after {
+  display: none;
+}
+
+/* --- employees level ------------------------------------------------ */
+
+.org-employees {
+  list-style: none;
+  margin: 0;
+  padding: var(--org-gap) 0 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.org-employees::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 1.2rem;
+  left: 50%;
+  border-left: 2px solid var(--org-line);
+}
+
+.org-employee {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 8rem;
+  max-width: 13rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font-size: 0.85rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.org-employee-role {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.org-empty-note {
+  margin: var(--org-gap) 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* --- compact vertical tree on narrow screens ------------------------- */
+
+@media (max-width: 720px) {
+  .org-chart {
+    align-items: stretch;
+    width: auto;
+    min-width: 0;
+  }
+
+  .org-node-root {
+    align-self: flex-start;
+  }
+
+  .org-node {
+    align-items: flex-start;
+    width: 100%;
+    max-width: none;
+    text-align: left;
+  }
+
+  .org-node-root {
+    width: auto;
+  }
+
+  .org-level {
+    flex-direction: column;
+    align-items: stretch;
+    margin-left: 1.1rem;
+    padding: 0.25rem 0 0 0;
+    border-left: 2px solid var(--org-line);
+  }
+
+  .org-level::before {
+    display: none;
+  }
+
+  .org-branch,
+  .org-branch:only-child {
+    align-items: flex-start;
+    padding: 0.75rem 0 0 1.25rem;
+  }
+
+  /* a short tick from the vertical line to each department */
+  .org-branch::before,
+  .org-branch:first-child::before,
+  .org-branch:only-child::before {
+    display: block;
+    top: 1.85rem;
+    right: auto;
+    left: 0;
+    width: 1.25rem;
+    height: 0;
+    border-top: 2px solid var(--org-line);
+  }
+
+  .org-branch::after,
+  .org-branch:only-child::after {
+    display: none;
+  }
+
+  .org-employees {
+    align-items: stretch;
+    margin-left: 1rem;
+    padding: 0.5rem 0 0 1rem;
+    border-left: 2px solid var(--org-line);
+  }
+
+  .org-employees::before {
+    display: none;
+  }
+
+  .org-employee {
+    align-items: flex-start;
+    max-width: none;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-node {
+    transition: none;
+  }
+}

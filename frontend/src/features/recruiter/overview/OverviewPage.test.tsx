@@ -7,8 +7,9 @@ import * as applicationsApi from "../applications/api";
 import * as reportsApi from "../reports/api";
 import { OverviewPage } from "./OverviewPage";
 
+let mockUser = { full_name: "Riya Recruiter", roles: ["RECRUITER"] };
 vi.mock("../../auth/AuthContext", () => ({
-  useAuth: () => ({ accessToken: "test-token", user: { full_name: "Riya Recruiter" } }),
+  useAuth: () => ({ accessToken: "test-token", user: mockUser }),
 }));
 
 const overview: ReportOverview = {
@@ -49,5 +50,25 @@ describe("OverviewPage dashboard cards", () => {
     expect(screen.getByText("Hired Candidates")).toBeInTheDocument();
     expect(screen.queryByText("Open jobs")).not.toBeInTheDocument();
     expect(screen.queryByText("Applications")).not.toBeInTheDocument();
+  });
+
+  it("greets the signed-in recruiter by their own first name", async () => {
+    mockUser = { full_name: "Riya Recruiter", roles: ["RECRUITER"] };
+    vi.spyOn(reportsApi, "getReportOverview").mockResolvedValue(overview);
+    vi.spyOn(applicationsApi, "listApplications").mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Welcome back, Riya" })).toBeInTheDocument();
+  });
+
+  it("greets an organization admin as Admin", async () => {
+    mockUser = { full_name: "Sam Owner", roles: ["ORG_ADMIN"] };
+    vi.spyOn(reportsApi, "getReportOverview").mockResolvedValue(overview);
+    vi.spyOn(applicationsApi, "listApplications").mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Welcome back, Admin" })).toBeInTheDocument();
   });
 });

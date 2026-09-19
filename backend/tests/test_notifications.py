@@ -1,6 +1,7 @@
-"""Email notifications must never fake success, and must never fail the
-workflow action that triggers them (CLAUDE.md § 2: "Email provider !=
-business logic")."""
+"""Email must never fake success, and — because candidate email is manual
+only — never gets in the way of a workflow action (CLAUDE.md § 2: "Email
+provider != business logic"). Applying and changing status work with no
+email provider configured at all."""
 
 from httpx import AsyncClient
 
@@ -23,14 +24,15 @@ async def test_unconfigured_provider_raises_rather_than_faking_success() -> None
     assert raised
 
 
-async def test_notification_service_reports_failure_without_raising() -> None:
-    sent = await notification_service.send_application_confirmation(
-        to="candidate@example.com",
-        candidate_name="Cara Candidate",
-        job_title="Backend Engineer",
-        organization_name="Acme Corp",
-    )
-    assert sent is False
+async def test_sending_without_a_configured_provider_raises_rather_than_faking_success() -> None:
+    raised = False
+    try:
+        await notification_service.send_email(
+            to=["candidate@example.com"], subject="Hi", html="<p>Hi</p>", text="Hi"
+        )
+    except EmailNotConfiguredError:
+        raised = True
+    assert raised
 
 
 async def test_apply_with_unconfigured_email_still_succeeds(

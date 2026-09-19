@@ -10,6 +10,7 @@ import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModa
 import { SkeletonLines } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { APPLICATION_TRANSITIONS, type ApplicationStatus } from "../../../types/recruitment";
+import type { EmailTemplateKey } from "../../../types/email";
 import type {
   AssessmentCreateRequest,
   MonitoringEventType,
@@ -31,8 +32,8 @@ import {
   changeApplicationStatus,
   downloadResume,
   getApplication,
-  sendInterviewEmail,
 } from "./api";
+import { EmailComposerModal } from "./EmailComposerModal";
 
 /** Non-accusatory, human-readable labels for observed monitoring events
  * (SIGVITAS platform overhaul § 7) — describes what was observed, never
@@ -88,12 +89,9 @@ export function ApplicationDetailPage() {
     emptyAssessmentFormValue(),
   );
   const [showResumePreview, setShowResumePreview] = useState(false);
-  const [showInterviewEmailForm, setShowInterviewEmailForm] = useState(false);
-  const [interviewSubject, setInterviewSubject] = useState("");
-  const [interviewBody, setInterviewBody] = useState("");
-  const [interviewEmailFeedback, setInterviewEmailFeedback] = useState<
-    { type: "success" | "error"; message: string } | null
-  >(null);
+  // null = composer closed; "" = open with no template chosen yet.
+  const [composerTemplate, setComposerTemplate] = useState<EmailTemplateKey | "" | null>(null);
+  const [emailFeedback, setEmailFeedback] = useState<string | null>(null);
 
   const applicationQuery = useQuery({
     queryKey: ["recruiter", "applications", applicationId],
@@ -151,40 +149,6 @@ export function ApplicationDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "screening", applicationId] });
     },
   });
-
-  const interviewEmailMutation = useMutation({
-    mutationFn: () =>
-      sendInterviewEmail(applicationId, { subject: interviewSubject, body: interviewBody }, token),
-    onSuccess: (result) => {
-      setInterviewEmailFeedback(
-        result.sent
-          ? { type: "success", message: "Interview email sent." }
-          : {
-              type: "error",
-              message: result.reason ?? "The email could not be sent, but the attempt was recorded.",
-            },
-      );
-      if (result.sent) setShowInterviewEmailForm(false);
-    },
-    onError: (err) => {
-      setInterviewEmailFeedback({
-        type: "error",
-        message: err instanceof ApiError ? err.message : "Unable to reach the server.",
-      });
-    },
-  });
-
-  function openInterviewEmailForm() {
-    const jobTitle = applicationQuery.data?.job_title ?? "this role";
-    const candidateName = applicationQuery.data?.candidate_full_name ?? "there";
-    setInterviewSubject(`Interview details for ${jobTitle}`);
-    setInterviewBody(
-      `Hi ${candidateName},\n\nCongratulations — you've been selected to move forward for ${jobTitle}. ` +
-        "Our team will follow up shortly to schedule your interview.\n\nBest,\nThe Hiring Team",
-    );
-    setInterviewEmailFeedback(null);
-    setShowInterviewEmailForm(true);
-  }
 
   const inviteMutation = useMutation({
     mutationFn: () => inviteCandidate({ assessment_id: selectedAssessmentId, application_id: applicationId }, token),
@@ -342,13 +306,20 @@ export function ApplicationDetailPage() {
               ))}
             </select>
           )}
-          {application.status === "SELECTED" && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={openInterviewEmailForm}>
-              Send Interview Email
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setEmailFeedback(null);
+              setComposerTemplate("");
+            }}
+          >
+            Send Email
+          </button>
         </div>
       </div>
+
+      {emailFeedback && <Alert variant="success">{emailFeedback}</Alert>}
 
       <div className="detail-grid">
         <div className="stack-lg" style={{ gap: "1.5rem" }}>
@@ -458,7 +429,10 @@ export function ApplicationDetailPage() {
             {assessmentInvitationQuery.isPending && <SkeletonLines count={2} />}
             {assessmentInvitationQuery.isSuccess && !assessmentInvitationQuery.data && (
               <div className="stack-lg" style={{ gap: "0.75rem" }}>
-                <p className="muted">No assessment assigned yet. Reuse an existing assessment below.</p>
+                <p className="muted">
+                  No assessment assigned yet. Assigning one only prepares the invitation — nothing is
+                  emailed until you send it.
+                </p>
                 <div className="field-row" style={{ alignItems: "end" }}>
                   <label className="field" style={{ marginBottom: 0 }}>
                     <span>Reuse existing assessment</span>
@@ -480,7 +454,7 @@ export function ApplicationDetailPage() {
                     disabled={!selectedAssessmentId || inviteMutation.isPending}
                     onClick={() => inviteMutation.mutate()}
                   >
-                    {inviteMutation.isPending ? <Spinner label="Sending…" /> : "Send invitation"}
+                    {inviteMutation.isPending ? <Spinner label="Assigning…" /> : "Assign assessment"}
                   </button>
                 </div>
                 <p className="field-hint">
@@ -494,7 +468,7 @@ export function ApplicationDetailPage() {
                   <Alert>
                     {inviteMutation.error instanceof ApiError
                       ? inviteMutation.error.message
-                      : "Could not send the invitation."}
+                      : "Could not assign the assessment."}
                   </Alert>
                 )}
               </div>
@@ -503,11 +477,40 @@ export function ApplicationDetailPage() {
               <div className="stack-lg" style={{ gap: "0.75rem" }}>
                 <p>
                   <strong>{assessmentInvitationQuery.data.assessment_title}</strong> —{" "}
-                  <span className="badge badge-active">{assessmentInvitationQuery.data.status}</span>
+                  <span className="badge badge-active">{assessmentInvitationQuery.data.status}</span>{" "}
+                  {assessmentInvitationQuery.data.emailed_at ? (
+                    <span className="badge badge-active">
+                      Emailed {new Date(assessmentInvitationQuery.data.emailed_at).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="badge badge-warn">Not emailed yet</span>
+                  )}
                 </p>
+                {assessmentInvitationQuery.data.status === "SENT" && (
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setEmailFeedback(null);
+                        setComposerTemplate("ASSESSMENT_INVITATION");
+                      }}
+                    >
+                      {assessmentInvitationQuery.data.emailed_at
+                        ? "Resend Assessment Invitation"
+                        : "Send Assessment Invitation"}
+                    </button>
+                    <p className="field-hint" style={{ marginTop: "0.4rem" }}>
+                      Sending issues a fresh personal link for the candidate; any link emailed before
+                      stops working.
+                    </p>
+                  </div>
+                )}
                 {(inviteMutation.data?.invitation_link || retestMutation.data?.invitation_link) && (
                   <Alert variant="success">
-                    Invitation link (copy this to send manually if email isn't configured):{" "}
+                    Assessment assigned — the invitation is prepared but has not been emailed. If you
+                    would rather share the link yourself instead of emailing it, copy it now (it is
+                    not shown again):{" "}
                     <code>
                       {retestMutation.data?.invitation_link ?? inviteMutation.data?.invitation_link}
                     </code>
@@ -645,63 +648,26 @@ export function ApplicationDetailPage() {
         />
       )}
 
-      {showInterviewEmailForm && (
-        <Modal title="Send Interview Email" onClose={() => setShowInterviewEmailForm(false)}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              interviewEmailMutation.mutate();
-            }}
-          >
-            <p className="muted">
-              To: {application.candidate_full_name} — sent manually, only when you click Send. This
-              is not triggered automatically.
-            </p>
-            <label className="field">
-              <span>Subject</span>
-              <input
-                required
-                value={interviewSubject}
-                onChange={(e) => setInterviewSubject(e.target.value)}
-                disabled={interviewEmailMutation.isPending}
-              />
-            </label>
-            <label className="field">
-              <span>Message</span>
-              <textarea
-                required
-                rows={8}
-                value={interviewBody}
-                onChange={(e) => setInterviewBody(e.target.value)}
-                disabled={interviewEmailMutation.isPending}
-              />
-            </label>
-
-            {interviewEmailFeedback && (
-              <Alert variant={interviewEmailFeedback.type === "success" ? "success" : undefined}>
-                {interviewEmailFeedback.message}
-              </Alert>
-            )}
-
-            <div className="btn-group" style={{ marginTop: "1rem" }}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={interviewEmailMutation.isPending}
-              >
-                {interviewEmailMutation.isPending ? <Spinner label="Sending…" /> : "Send"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setShowInterviewEmailForm(false)}
-                disabled={interviewEmailMutation.isPending}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </Modal>
+      {composerTemplate !== null && (
+        <EmailComposerModal
+          applicationId={applicationId}
+          candidateName={application.candidate_full_name}
+          candidateEmail={application.candidate_email}
+          accessToken={token}
+          initialTemplate={composerTemplate === "" ? undefined : composerTemplate}
+          onClose={() => setComposerTemplate(null)}
+          onSent={(result) => {
+            setComposerTemplate(null);
+            setEmailFeedback(`Email sent to ${result.to}: "${result.subject}".`);
+            void queryClient.invalidateQueries({
+              queryKey: ["recruiter", "assessment-invitation", applicationId],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: ["recruiter", "assessment-attempts", applicationId],
+            });
+            void queryClient.invalidateQueries({ queryKey: ["recruiter", "activities"] });
+          }}
+        />
       )}
 
       {showRetestForm && assessmentInvitationQuery.data && (

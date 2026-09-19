@@ -14,6 +14,12 @@ const NAV_ITEMS = [
   { to: "/recruiter/users", label: "Team" },
 ];
 
+/** Roles that may send email (backend permission `application.email.send`).
+ * Hidden for everyone else so it never shows in a HIRING_MANAGER/INTERVIEWER's
+ * navigation — UX only, the API enforces it. */
+const EMAIL_NAV_ITEM = { to: "/recruiter/email", label: "Email" };
+const EMAIL_ROLES = ["ORG_ADMIN", "RECRUITER"];
+
 /** Admin-only nav entries — deliberately kept out of NAV_ITEMS so they
  * never render for a plain RECRUITER, not just permission-gated once the
  * page loads (CLAUDE.md: Activities must not appear in the normal
@@ -33,6 +39,7 @@ export function RecruiterLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const isOrgAdmin = user?.roles.includes("ORG_ADMIN") ?? false;
+  const canSendEmail = user?.roles.some((role) => EMAIL_ROLES.includes(role)) ?? false;
 
   async function handleLogout() {
     await logout();
@@ -71,6 +78,15 @@ export function RecruiterLayout() {
               {item.label}
             </NavLink>
           ))}
+          {canSendEmail && (
+            <NavLink
+              to={EMAIL_NAV_ITEM.to}
+              className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+              onClick={() => setMenuOpen(false)}
+            >
+              {EMAIL_NAV_ITEM.label}
+            </NavLink>
+          )}
           {isOrgAdmin &&
             ADMIN_NAV_ITEMS.map((item) => (
               <NavLink

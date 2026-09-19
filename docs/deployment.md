@@ -71,8 +71,8 @@ nothing sensitive is stored in the Blueprint file itself.
 | `JWT_ALGORITHM` | No (default `HS256`) | |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No (default `15`) | |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | No (default `30`) | |
-| `ENVIRONMENT` | Recommended | Set to `production`. Gates `Settings.is_production`. |
-| `DEBUG` | Recommended | Set to `false`. Also flips refresh-token cookies to `Secure` (see `app/api/v1/recruiter/auth.py`). |
+| `ENVIRONMENT` | **Yes, for login persistence** | Set to `production`. Gates `Settings.is_production`, which makes the refresh-token cookie `Secure; SameSite=None` (see `app/api/v1/recruiter/auth.py`). Without it the cookie is `SameSite=Lax` and is not sent on the Vercel → Render refresh call, so users are logged out on every page reload. |
+| `DEBUG` | Recommended | Set to `false`. |
 | `LOG_LEVEL` | No (default `INFO`) | |
 | `CORS_ALLOW_ORIGINS` | Yes | JSON array, e.g. `["https://<your-vercel-domain>"]`. See § 5. |
 | `FRONTEND_BASE_URL` | Yes | The same Vercel origin — used to build assessment/campus-drive links shared with candidates. |
@@ -81,9 +81,20 @@ nothing sensitive is stored in the Blueprint file itself.
 | `MAX_RESUME_SIZE_MB` | No (default `10`) | |
 | `MONGODB_URI` | Yes, if `RESUME_STORAGE_PROVIDER=mongodb_gridfs` | Connection string for the MongoDB deployment storing resume files (e.g. an Atlas cluster). Never commit the real value. |
 | `MONGODB_DATABASE` | No (default `ai_recruitment`) | Database name within the MongoDB deployment; the `resumes` GridFS bucket is created inside it. |
-| `RESEND_API_KEY` / `EMAIL_FROM` | No | Optional. Unset → email sends report "not configured" rather than failing or faking success. |
+| `SMTP_HOST` | For email | SMTP server, e.g. `smtp.gmail.com`. |
+| `SMTP_PORT` | No (default `587`) | `587` = STARTTLS, `465` = implicit TLS. |
+| `SMTP_USERNAME` | For email | SMTP login (also usually the from address). |
+| `SMTP_PASSWORD` | For email | **Secret** — set only in the Render dashboard (`sync: false` in `render.yaml`). For Gmail this must be an app password. Never commit it, never put it in `.env.example`. |
+| `SMTP_FROM_EMAIL` | For email | The `From:` address. |
+| `SMTP_FROM_NAME` | No (default `AI Recruitment Platform`) | Display name on the `From:` header. |
+| `SMTP_USE_TLS` | No (default `true`) | STARTTLS on non-465 ports. |
+| `RESEND_API_KEY` / `EMAIL_FROM` | No | Legacy alternative to SMTP; only used when SMTP is not fully configured. |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | No | Optional, free/local AI screening — not reachable from Render, only useful if you run Ollama somewhere Render can reach it. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No | Optional paid AI screening providers. Do not set unless you intend to enable AI screening. |
+
+Email is optional: with neither SMTP nor Resend configured, the manual send
+action returns a `503 email_not_configured` error rather than failing
+silently or faking success.
 
 None of the optional integrations block startup or any core workflow if
 left unset — this is enforced in code (`app/integrations/email`,
@@ -107,7 +118,9 @@ in order (identity/tenancy → recruitment core → screening/assessments/
 campus/notes → campus-drive redesign → activity/soft-delete → assessment
 retests → team-management/soft-delete columns → the WITHDRAWN→REJECTED
 enum rebuild → job description visibility → assessment monitoring events →
-team hierarchy/departments/employees), seeding system roles and permissions
+team hierarchy/departments/employees → resume storage provider → the
+`activity.delete` permission → nullable candidate profile columns for the
+public application form), seeding system roles and permissions
 as it goes. This full chain was verified locally (`alembic downgrade base`
 → `alembic upgrade head` → `alembic downgrade base` → `alembic upgrade
 head`) during the SIGVITAS platform work — see git history — with no
@@ -233,7 +246,9 @@ the fresh process.
 4. Log in as that org admin from the deployed frontend; confirm CORS
    works (no browser console CORS errors) and the refresh-token cookie is
    set (check DevTools → Application → Cookies — should show `Secure`,
-   `HttpOnly`, `SameSite=Strict`).
+   `HttpOnly`, `SameSite=None`), then reload the page and confirm you stay
+   signed in (the silent refresh depends on that cookie being sent
+   cross-site).
 5. Create a job, publish it, open the public career site
    (`https://<vercel-domain>/org/<slug>`), submit a test application,
    confirm the resume upload succeeds and is retrievable — see § 11 for
@@ -294,24 +309,57 @@ safe.**
 
 ## 12. Email — production behavior
 
-The manual "Send Interview Email" action
-(`app/services/notification_service.py::send_interview_email`) and every
-other outbound email path already meet the production bar with no changes
-needed:
+Outbound email goes through `app/integrations/email/get_email_provider()`:
+SMTP when `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD` and
+`SMTP_FROM_EMAIL` are all set, else Resend (legacy) when
+`RESEND_API_KEY`/`EMAIL_FROM` are set, else an always-raising "not
+configured" provider.
 
-- Manually triggered only — nothing sends automatically on a status change
-  except the existing best-effort candidate status-update notification,
-  which was already the case before this deployment work and is unrelated
-  to the interview-email feature.
-- No hardcoded credentials — `RESEND_API_KEY`/`EMAIL_FROM` come from the
-  environment (`app/integrations/email/__init__.py::get_email_provider`).
-- If unset, sends are logged as "not configured" and every caller reports
-  that honestly back to the recruiter (`sent: false, reason: "..."`) —
-  never a fabricated success (see `app/integrations/email/base.py`'s
-  `UnconfiguredEmailProvider`).
-
-Leave `RESEND_API_KEY`/`EMAIL_FROM` unset until you have a verified
-sending domain with Resend; the app is fully functional without them.
+- **Manual only.** Candidate email is sent only by an explicit recruiter/admin
+  action on the application page: **Send Email** (any template) or **Send
+  Assessment Invitation**. Nothing sends automatically — not on applying
+  (job or campus drive), not on assigning/retesting an assessment, not on any
+  status change (selection and rejection included). The API is
+  `POST /api/v1/recruiter/applications/{id}/email/{compose,preview,send}`
+  (gated by the `application.email.send` permission, ORG_ADMIN and RECRUITER
+  only; tenant-scoped, so another organization's application is a 404) plus
+  `GET /api/v1/recruiter/email-templates`.
+- **Templates.** Six predefined templates (application received, interview
+  invitation, assessment invitation, next steps, rejection, general) live in
+  code (`app/email_templates/`); editing an email never changes them. The
+  composer fills the candidate, job, company and recruiter details, lets the
+  recruiter edit subject/body, and previews the exact HTML that will be sent.
+  Optional details left empty (e.g. no meeting link) drop their line; a
+  required detail that is still empty, or any unknown `{{placeholder}}`,
+  blocks preview/send with a `422 unresolved_placeholders` error, so a raw
+  placeholder can never reach a candidate.
+- **HTML.** One shared table-based layout (company header, content, optional
+  button, footer with recruiter contact), inline CSS only — no images,
+  scripts or external resources — with a plain-text alternative. The message
+  is sent from the configured SMTP address with the sending recruiter as
+  `Reply-To`.
+- **General email.** The **Email** page (`/recruiter/email`, visible to
+  ORG_ADMIN and RECRUITER) sends the same templates to addresses the sender
+  types, with no application: `POST /api/v1/recruiter/email/{compose,preview,send}`
+  under the same `application.email.send` permission. Recipients (To, and
+  optional Cc/Bcc — at most 10 each, 20 in total) are validated as bare email
+  addresses, de-duplicated across the three fields, and never accepted from
+  anywhere but the request body; the company name always comes from the signed-in
+  user's organization and the SMTP account is never client-selectable. The
+  Assessment invitation template needs an application (it carries a personal
+  link) and is unavailable there; templates that mention a role ask for it, and
+  the recipient defaults to "Sir or Madam" when no name is given. Sends are
+  audited as `GENERAL_EMAIL_SENT` / `GENERAL_EMAIL_FAILED` (recipients and
+  subject, not the body). No configuration change: it uses the same `SMTP_*`
+  settings.
+- **Honest failures.** Not configured -> `503` with code
+  `email_not_configured`; the SMTP server rejecting the credentials or the
+  message -> `502` with code `email_delivery_failed`. Both attempts are
+  recorded in Activities (`CANDIDATE_EMAIL_FAILED` / `CANDIDATE_EMAIL_SENT`).
+  Nothing is ever reported as sent when it was not.
+- **No credentials in code.** `SMTP_PASSWORD` is read from the environment
+  into a `SecretStr`, is never logged, never returned by any endpoint, and is
+  absent from `.env.example`. Set it only in the Render dashboard.
 
 ## 13. AI provider — production behavior
 
@@ -337,9 +385,12 @@ Audited as part of this preparation task:
 - `JWT_SECRET_KEY` and `DATABASE_URL` have no default — the app refuses to
   start without them (`app/core/config.py::Settings`), which is the
   correct fail-closed behavior.
-- Refresh-token cookies are `HttpOnly`, `SameSite=Strict`, and `Secure`
-  whenever `DEBUG=false` (`app/api/v1/recruiter/auth.py`) — sets
-  correctly once `DEBUG` is set per § 3.
+- Refresh-token cookies are `HttpOnly` and, when `ENVIRONMENT=production`,
+  `Secure` + `SameSite=None` (`app/api/v1/recruiter/auth.py`) — required
+  because the Vercel frontend and the Render API are different sites; a
+  `Strict` cookie is never sent on that cross-site refresh call. Outside
+  production they are `SameSite=Lax`. `ENVIRONMENT=production` must therefore
+  be set on Render (it is in `render.yaml`).
 - Structured JSON logs redact `password`, `hashed_password`, `token`,
   `authorization`, and `secret` keys unconditionally
   (`app/core/logging.py::_SENSITIVE_KEYS`) — independent of log level.

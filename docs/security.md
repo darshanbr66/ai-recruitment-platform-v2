@@ -27,8 +27,13 @@ not as a completed hardening sign-off.
   candidate decision), and role claims.
 - Refresh tokens: opaque random value, only the hash is stored
   (`user_refresh_tokens.token_hash` / `candidate_refresh_tokens.token_hash`),
-  delivered as `httpOnly; Secure; SameSite=Strict` cookies — never accessible
-  to frontend JS, never put in `localStorage`. Rotated on every refresh;
+  delivered as `httpOnly; Secure` cookies (`SameSite=None` in production
+  because frontend and API are on different sites, `Lax` locally) — never
+  accessible to frontend JS, never put in `localStorage`. Because
+  `SameSite=None` cookies are sent on cross-site requests, the CORS allow-list
+  (`CORS_ALLOW_ORIGINS`) must name the exact frontend origin, and browsers that
+  block third-party cookies outright (e.g. Safari) will still break the silent
+  refresh unless the API is served from the same site as the frontend. Rotated on every refresh;
   reuse of an already-rotated token revokes the entire token family
   (indicates token theft).
 - **Assessment invitation tokens are a third mechanism**, deliberately not a
@@ -76,7 +81,7 @@ Defense in depth, per `docs/architecture.md` § 3:
 ## 5. Assessment invitation security
 
 - Token is a high-entropy random value (≥ 256 bits), generated server-side,
-  shown to the candidate exactly once (in the invitation email link).
+  shown to the candidate exactly once (in the invitation email link, which is issued when the recruiter sends the invitation).
 - The database stores only `sha256(token)` (`token_hash`) — a leaked
   database backup does not expose usable tokens.
 - Tokens expire (`expires_at`); expired-token access returns a generic
@@ -136,6 +141,25 @@ Defense in depth, per `docs/architecture.md` § 3:
 - Logged: authentication events, job/candidate/application create & status
   changes, assessment invitation lifecycle, screening runs, AI evaluations,
   campus drive actions, user/role changes.
+- As implemented today, the organization-visible trail is the `activities`
+  table (`app/models/activity.py`), readable with `activity.read` and — since
+  the ORG_ADMIN activity-delete feature — removable with `activity.delete`.
+  Both permissions are ORG_ADMIN-only. `DELETE /api/v1/recruiter/activities/{id}`
+  filters by the caller's own `organization_id` inside the DELETE statement (and
+  RLS backs it up), so another tenant's id is a plain 404; each removal is
+  written to the structured application log (actor, activity id, action) but is
+  not itself re-recorded as an activity. The bulk endpoints
+  (`DELETE .../activities/bulk` for a selection, `.../activities/all` for the
+  whole organization, which also needs an explicit `{"confirm": true}`) apply
+  the same `organization_id` filter inside one DELETE statement: ids from
+  another tenant or already deleted match nothing and are not counted, the
+  response reports the number of rows actually removed, and one concise log line
+  (counts, actor, organization — no per-row records) is written per request.
+  Recruiters and hiring managers get 403 on all of them.
+- Outbound email is audited in the same table: `CANDIDATE_EMAIL_SENT/FAILED`
+  (application email) and `GENERAL_EMAIL_SENT/FAILED` (general email) record
+  who sent which template with which subject to which addresses and whether it
+  worked — never the message body and never any SMTP configuration.
 - Never logged: passwords, raw tokens (access, refresh, or invitation),
   provider API keys, full request/response bodies of authentication
   endpoints.

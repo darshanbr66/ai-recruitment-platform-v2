@@ -1,10 +1,10 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
 import { ThemeToggle } from "../theme/ThemeToggle";
-import { applyToJob, getOpenJob } from "./api";
+import { getOpenJob } from "./api";
+import { JobApplicationForm } from "./JobApplicationForm";
 
 export function JobDetailPage() {
   const { slug = "", jobId = "" } = useParams<{ slug: string; jobId: string }>();
@@ -12,32 +12,6 @@ export function JobDetailPage() {
     queryKey: ["public", "job", slug, jobId],
     queryFn: () => getOpenJob(slug, jobId),
   });
-
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [resume, setResume] = useState<File | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const applyMutation = useMutation({
-    mutationFn: () => {
-      if (!resume) throw new Error("Resume is required.");
-      return applyToJob(slug, jobId, { full_name: fullName, email, phone }, resume);
-    },
-    onError: (err) => {
-      setFormError(err instanceof ApiError ? err.message : "Unable to submit your application.");
-    },
-  });
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setFormError(null);
-    if (!resume) {
-      setFormError("Please attach your resume.");
-      return;
-    }
-    applyMutation.mutate();
-  }
 
   return (
     <div>
@@ -79,69 +53,7 @@ export function JobDetailPage() {
               </section>
             )}
 
-            {applyMutation.isSuccess ? (
-              <Alert variant="success">
-                Thanks, {applyMutation.data.candidate_email}! Your application for{" "}
-                <strong>{applyMutation.data.job_title}</strong> has been received. We'll be in
-                touch.
-              </Alert>
-            ) : (
-              <section className="card">
-                <h2>Apply for this role</h2>
-                <form onSubmit={handleSubmit}>
-                  <label className="field">
-                    <span>Full name</span>
-                    <input
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Email</span>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Phone</span>
-                    <input
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Resume (PDF, DOC, or DOCX)</span>
-                    <input
-                      type="file"
-                      required
-                      accept=".pdf,.doc,.docx"
-                      onChange={(e) => setResume(e.target.files?.[0] ?? null)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  {formError && <Alert>{formError}</Alert>}
-
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={applyMutation.isPending}
-                  >
-                    {applyMutation.isPending ? "Submitting…" : "Submit application"}
-                  </button>
-                </form>
-              </section>
-            )}
+            <JobApplicationForm slug={slug} jobId={jobId} />
           </>
         )}
       </div>

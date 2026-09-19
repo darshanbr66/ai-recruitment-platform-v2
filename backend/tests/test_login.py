@@ -21,7 +21,9 @@ async def test_successful_login_returns_access_token_and_sets_refresh_cookie(
     assert "refresh_token" in response.cookies
     set_cookie_header = response.headers.get("set-cookie", "")
     assert "HttpOnly" in set_cookie_header
-    assert "SameSite=strict" in set_cookie_header or "samesite=strict" in set_cookie_header.lower()
+    # Lax in development (frontend + API share the `localhost` site); the
+    # production SameSite=None variant is covered in test_session_cookie.py.
+    assert "samesite=lax" in set_cookie_header.lower()
 
 
 async def test_login_with_wrong_password_is_rejected(

@@ -4,9 +4,15 @@ import type {
   ApplicationDeleteRequest,
   ApplicationResponse,
   ApplicationStatus,
-  SendInterviewEmailRequest,
-  SendInterviewEmailResult,
 } from "../../../types/recruitment";
+import type {
+  EmailComposeRequest,
+  EmailComposeResponse,
+  EmailDraft,
+  EmailPreview,
+  EmailSendResult,
+  EmailTemplate,
+} from "../../../types/email";
 
 export function listApplications(accessToken: string) {
   return apiClient.get<ApplicationResponse[]>("/api/v1/recruiter/applications", accessToken);
@@ -49,14 +55,35 @@ export function changeApplicationStatus(
   );
 }
 
-export function sendInterviewEmail(
+export function listEmailTemplates(accessToken: string) {
+  return apiClient.get<EmailTemplate[]>("/api/v1/recruiter/email-templates", accessToken);
+}
+
+export function composeEmail(
   applicationId: string,
-  payload: SendInterviewEmailRequest,
+  payload: EmailComposeRequest,
   accessToken: string,
 ) {
-  return apiClient.post<SendInterviewEmailResult>(
-    `/api/v1/recruiter/applications/${applicationId}/send-interview-email`,
+  return apiClient.post<EmailComposeResponse>(
+    `/api/v1/recruiter/applications/${applicationId}/email/compose`,
     payload,
+    accessToken,
+  );
+}
+
+export function previewEmail(applicationId: string, draft: EmailDraft, accessToken: string) {
+  return apiClient.post<EmailPreview>(
+    `/api/v1/recruiter/applications/${applicationId}/email/preview`,
+    draft,
+    accessToken,
+  );
+}
+
+/** The only call that emails a candidate — always an explicit user action. */
+export function sendEmail(applicationId: string, draft: EmailDraft, accessToken: string) {
+  return apiClient.post<EmailSendResult>(
+    `/api/v1/recruiter/applications/${applicationId}/email/send`,
+    draft,
     accessToken,
   );
 }

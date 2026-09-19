@@ -142,6 +142,10 @@ class AssessmentInvitation(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixi
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When a recruiter last emailed this invitation to the candidate (NULL =
+    # prepared but never emailed). `status = SENT` predates manual email and
+    # does not imply an email went out; this is the honest record.
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     retest_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 

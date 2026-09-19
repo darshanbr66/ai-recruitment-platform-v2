@@ -24,6 +24,14 @@ class CandidateSource(StrEnum):
     OTHER = "OTHER"
 
 
+class CandidateType(StrEnum):
+    """Self-declared on the public application form — drives which of the
+    experience fields are meaningful (a FRESHER has no notice period)."""
+
+    FRESHER = "FRESHER"
+    EXPERIENCED = "EXPERIENCED"
+
+
 class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     """Reusable candidate profile data — never merged with Application, which
     carries per-opportunity workflow state (CLAUDE.md § 2: "Candidate !=
@@ -47,6 +55,21 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     years_experience: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Reusable profile data captured by the public application form. All
+    # nullable: recruiter-added and imported candidates may not have them,
+    # and this is candidate *profile* data, not per-application state
+    # (CLAUDE.md § 2: "Candidate != Application"). `location` above is the
+    # candidate's current location.
+    candidate_type: Mapped[CandidateType | None] = mapped_column(
+        Enum(CandidateType, name="candidate_type", native_enum=True), nullable=True
+    )
+    current_company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    preferred_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notice_period_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    immediate_joiner: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    qualification: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    github_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source: Mapped[CandidateSource] = mapped_column(
         Enum(CandidateSource, name="candidate_source", native_enum=True),
         nullable=False,

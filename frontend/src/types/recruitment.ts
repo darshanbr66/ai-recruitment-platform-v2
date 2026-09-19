@@ -50,6 +50,8 @@ export interface JobUpdateRequest {
 
 export type CandidateSource = "PORTAL" | "RECRUITER_ADDED" | "CAMPUS_IMPORT" | "REFERRAL" | "OTHER";
 
+export type CandidateType = "FRESHER" | "EXPERIENCED";
+
 export interface CandidateResponse {
   id: string;
   organization_id: string;
@@ -58,7 +60,15 @@ export interface CandidateResponse {
   phone: string | null;
   location: string | null;
   current_title: string | null;
+  current_company: string | null;
+  preferred_location: string | null;
   years_experience: number | null;
+  candidate_type: CandidateType | null;
+  notice_period_days: number | null;
+  immediate_joiner: boolean | null;
+  qualification: string | null;
+  linkedin_url: string | null;
+  github_url: string | null;
   source: CandidateSource;
   is_active: boolean;
   deleted_at: string | null;
@@ -122,6 +132,7 @@ export interface ApplicationResponse {
   organization_id: string;
   candidate_id: string;
   candidate_full_name: string;
+  candidate_email: string;
   job_id: string;
   job_title: string;
   campus_drive_id: string | null;
@@ -144,12 +155,3 @@ export interface ApplicationDeleteRequest {
   reason: string;
 }
 
-export interface SendInterviewEmailRequest {
-  subject: string;
-  body: string;
-}
-
-export interface SendInterviewEmailResult {
-  sent: boolean;
-  reason: string | null;
-}

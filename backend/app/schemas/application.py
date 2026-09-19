@@ -21,19 +21,6 @@ class ApplicationDeleteRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
-class SendInterviewEmailRequest(BaseModel):
-    """Manual, recruiter-reviewed email — never sent automatically as a side
-    effect of a status change (SIGVITAS platform overhaul § 17)."""
-
-    subject: str = Field(min_length=1, max_length=255)
-    body: str = Field(min_length=1, max_length=10000)
-
-
-class SendInterviewEmailResult(BaseModel):
-    sent: bool
-    reason: str | None = None
-
-
 class ApplicationResponse(BaseModel):
     """Includes denormalized `candidate_full_name`/`job_title` — populated
     by the service's join query — so a recruiter list view doesn't need a
@@ -45,6 +32,7 @@ class ApplicationResponse(BaseModel):
     organization_id: uuid.UUID
     candidate_id: uuid.UUID
     candidate_full_name: str
+    candidate_email: str
     job_id: uuid.UUID
     job_title: str
     campus_drive_id: uuid.UUID | None = None

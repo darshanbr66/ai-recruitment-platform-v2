@@ -50,6 +50,7 @@ async def _invitation_response(
         expires_at=invitation.expires_at,
         started_at=invitation.started_at,
         submitted_at=invitation.submitted_at,
+        emailed_at=invitation.emailed_at,
         attempt_number=invitation.attempt_number,
         retest_reason=invitation.retest_reason,
         result=AssessmentResultResponse.model_validate(invitation.result) if invitation.result else None,

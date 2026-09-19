@@ -155,6 +155,7 @@ class AssessmentInvitationResponse(BaseModel):
     expires_at: datetime
     started_at: datetime | None
     submitted_at: datetime | None
+    emailed_at: datetime | None = None
     attempt_number: int
     retest_reason: str | None
     result: "AssessmentResultResponse | None" = None

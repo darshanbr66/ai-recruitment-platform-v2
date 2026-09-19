@@ -17,8 +17,12 @@ from app.models.application import Application, ApplicationSource
 from app.models.campus_drive import CampusDrive, CampusDriveStatus
 from app.models.candidate import Candidate, CandidateSource
 from app.models.job import Job, JobStatus
-from app.models.organization import Organization
-from app.services import application_service, candidate_service, notification_service, resume_service
+from app.schemas.candidate import CandidateProfileFields, PublicApplicantProfile
+from app.services import (
+    application_service,
+    candidate_service,
+    resume_service,
+)
 
 
 async def apply_to_job(
@@ -30,6 +34,7 @@ async def apply_to_job(
     full_name: str,
     email: str,
     phone: str | None,
+    profile: PublicApplicantProfile | None = None,
     resume_filename: str,
     resume_content_type: str,
     resume_bytes: bytes,
@@ -37,6 +42,10 @@ async def apply_to_job(
     job = await db.get(Job, job_id)
     if job is None or job.status != JobStatus.OPEN:
         raise NotFoundError("This job is not accepting applications.")
+
+    profile_values = (
+        profile.model_dump(include=set(CandidateProfileFields.model_fields)) if profile else {}
+    )
 
     candidate = await candidate_service.get_candidate_by_email(
         db, organization_id=organization_id, email=email
@@ -48,8 +57,18 @@ async def apply_to_job(
             full_name=full_name,
             phone=phone,
             source=CandidateSource.PORTAL,
+            **profile_values,
         )
         db.add(candidate)
+        await db.flush()
+    else:
+        # An existing candidate (same email in this organization) is only
+        # ever *filled in*, never overwritten: this endpoint is anonymous,
+        # so anyone who knows an email must not be able to rewrite what a
+        # recruiter or the real candidate already recorded.
+        for field, value in profile_values.items():
+            if value is not None and getattr(candidate, field) is None:
+                setattr(candidate, field, value)
         await db.flush()
 
     # A job with an ACTIVE campus drive gets the application associated
@@ -87,15 +106,7 @@ async def apply_to_job(
     reloaded = await application_service.get_application(db, application.id)
     assert reloaded is not None
 
-    # Best-effort: a failed/unconfigured email provider must never fail the
-    # application itself (CLAUDE.md § 2: "Email provider != business logic").
-    organization = await db.get(Organization, organization_id)
-    if organization is not None:
-        await notification_service.send_application_confirmation(
-            to=reloaded.candidate.email,
-            candidate_name=reloaded.candidate.full_name,
-            job_title=reloaded.job.title,
-            organization_name=organization.name,
-        )
-
+    # No email is sent here. Candidate email is manual-only: a recruiter
+    # reviews the application and sends "Application received" (or any other
+    # template) from the application page.
     return reloaded

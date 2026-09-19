@@ -33,7 +33,19 @@ each prefix (not per-endpoint, to avoid one endpoint being forgotten).
 ```
 GET  /api/v1/public/organizations/{org_slug}/jobs
 GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply   (multipart)
 ```
+`apply` takes `full_name`, `email`, `resume` plus optional profile fields:
+`candidate_type` (`FRESHER`|`EXPERIENCED`), `years_experience`,
+`notice_period_days`, `immediate_joiner`, `current_title`, `current_company`,
+`current_location`, `preferred_location`, `qualification`, `linkedin_url`,
+`github_url`. `EXPERIENCED` requires `years_experience` and either
+`notice_period_days` or `immediate_joiner`; a `FRESHER` is stored with 0 years
+and no notice period; profile URLs must be http(s) on linkedin.com /
+github.com. Profile data lands on the (tenant-scoped) Candidate; an existing
+candidate's already-filled fields are never overwritten by an anonymous
+submission.
+
 Only published (`status=OPEN`) jobs, minimal fields (title, department,
 location, employment_type, description, requirements summary).
 
@@ -87,6 +99,27 @@ POST          /api/v1/recruiter/campus-drives/{drive_id}/assessment-invitations:
 GET           /api/v1/recruiter/reports/funnel
 GET           /api/v1/recruiter/reports/campus/{drive_id}
 GET/POST      /api/v1/recruiter/users
+GET           /api/v1/recruiter/auth/me                       (includes organization_name)
+GET           /api/v1/recruiter/activities                    (activity.read, ORG_ADMIN)
+GET           /api/v1/recruiter/activities/count              (activity.read, ORG_ADMIN; the org's total)
+DELETE        /api/v1/recruiter/activities/{activity_id}      (activity.delete, ORG_ADMIN; 404 across tenants)
+DELETE        /api/v1/recruiter/activities/bulk               (activity.delete; body {"activity_ids": [...]} max 500;
+                                                                returns {"deleted": n} — only rows of the caller's org)
+DELETE        /api/v1/recruiter/activities/all                (activity.delete; body {"confirm": true} required;
+                                                                deletes every entry of the caller's own org)
+GET           /api/v1/recruiter/email-templates               (application.email.send; each template lists `fields`
+                                                                for an application email and `general_fields` — null
+                                                                when it needs an application — for a general email)
+POST          /api/v1/recruiter/email/compose                 (general email, no application; nothing sent)
+POST          /api/v1/recruiter/email/preview                 (draft + to/cc/bcc; nothing sent)
+POST          /api/v1/recruiter/email/send                    (general email to typed addresses: 1-10 in each of
+                                                                to/cc/bcc, 20 total, validated & de-duplicated;
+                                                                same 422/503/502 errors as application send)
+POST          /api/v1/recruiter/applications/{application_id}/email/compose   (load a template; nothing sent)
+POST          /api/v1/recruiter/applications/{application_id}/email/preview   (render the draft; nothing sent)
+POST          /api/v1/recruiter/applications/{application_id}/email/send      (the only way a candidate is emailed;
+                                                                                422 unresolved_placeholders /
+                                                                                503 email_not_configured / 502 email_delivery_failed)
 ```
 All resolve `organization_id` from the authenticated principal — never from
 a path/query/body parameter — and enforce the specific permission for the

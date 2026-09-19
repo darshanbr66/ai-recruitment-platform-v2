@@ -11,3 +11,11 @@ export interface ActivityResponse {
   reason: string | null;
   created_at: string;
 }
+
+export interface ActivityDeleteResult {
+  deleted: number;
+}
+
+export interface ActivityCount {
+  total: number;
+}

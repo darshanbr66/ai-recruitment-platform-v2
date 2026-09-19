@@ -18,15 +18,35 @@ from app.core.exceptions import UnauthorizedError
 from app.core.security import hash_opaque_token
 from app.db.rls import rls_bypass
 from app.db.session import get_db
+from app.models.organization import Organization
 from app.models.user import User, UserRefreshToken
 from app.schemas.auth import LoginRequest, TokenResponse
-from app.schemas.user import UserResponse
+from app.schemas.user import CurrentUserResponse
 from app.services import activity_service, auth_service, user_service
 
 router = APIRouter(prefix="/auth", tags=["recruiter-auth"])
 
 _REFRESH_COOKIE_NAME = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/v1/recruiter/auth"
+
+
+def _cookie_attributes() -> dict[str, object]:
+    """Cookie flags for the refresh token.
+
+    In production the SPA (Vercel) and this API (Render) are different
+    *sites*, so the browser only attaches the cookie to the SPA's
+    cross-site `fetch(..., credentials: "include")` when it is
+    `SameSite=None` — which browsers only accept together with `Secure`.
+    `Strict` (the previous value) silently dropped the cookie on every
+    cross-site request, so the silent refresh on page load always failed
+    and the user was logged out on refresh. Local development runs
+    frontend and API on `localhost` (same site), where `Lax` is enough
+    and works over plain http.
+    """
+    settings = get_settings()
+    if settings.is_production:
+        return {"secure": True, "samesite": "none"}
+    return {"secure": not settings.debug, "samesite": "lax"}
 
 
 def _set_refresh_cookie(response: Response, raw_token: str) -> None:
@@ -37,19 +57,16 @@ def _set_refresh_cookie(response: Response, raw_token: str) -> None:
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
         path=_REFRESH_COOKIE_PATH,
         httponly=True,
-        secure=not settings.debug,
-        samesite="strict",
+        **_cookie_attributes(),  # type: ignore[arg-type]
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    settings = get_settings()
     response.delete_cookie(
         key=_REFRESH_COOKIE_NAME,
         path=_REFRESH_COOKIE_PATH,
         httponly=True,
-        secure=not settings.debug,
-        samesite="strict",
+        **_cookie_attributes(),  # type: ignore[arg-type]
     )
 
 
@@ -132,11 +149,11 @@ async def logout(
     _clear_refresh_cookie(response)
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=CurrentUserResponse)
 async def me(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
+) -> CurrentUserResponse:
     # A SUPER_ADMIN's own user_roles row is only reachable through its own
     # user row, which normal (non-bypass) tenant-scoped RLS on `users`
     # deliberately hides — see app/api/deps.py::get_current_user, which
@@ -145,7 +162,12 @@ async def me(
     # tenant-scoped query, per app/db/rls.py::rls_bypass).
     async with rls_bypass(db):
         roles = await user_service.get_user_role_names(db, current_user.id)
-    return UserResponse(
+    organization = (
+        await db.get(Organization, current_user.organization_id)
+        if current_user.organization_id is not None
+        else None
+    )
+    return CurrentUserResponse(
         id=current_user.id,
         organization_id=current_user.organization_id,
         email=current_user.email,
@@ -153,4 +175,5 @@ async def me(
         is_active=current_user.is_active,
         created_at=current_user.created_at,
         roles=roles,
+        organization_name=organization.name if organization is not None else None,
     )

@@ -11,6 +11,7 @@ import type {
   EmployeeResponse,
 } from "../../../types/teamHierarchy";
 import { useAuth } from "../../auth/AuthContext";
+import { OrgChart } from "./OrgChart";
 import {
   createDepartment,
   createEmployee,
@@ -39,7 +40,7 @@ const EMPTY_EMPLOYEE_FORM = {
 type EmployeeFormState = typeof EMPTY_EMPLOYEE_FORM;
 
 /**
- * "SIGVITAS → Departments → Employees" hierarchy view (SIGVITAS platform
+ * "<organization> → Departments → Employees" hierarchy view (SIGVITAS platform
  * overhaul § 9-12). Org Admin gets full CRUD; Recruiter/HR see the same
  * tree read-only — the frontend hides manage controls for UX only, the
  * backend's `department.manage`/`employee.manage` permissions are the
@@ -239,7 +240,7 @@ export function DepartmentsHierarchy() {
       <div className="page-header">
         <div>
           <p className="muted" style={{ marginBottom: "0.25rem" }}>
-            SIGVITAS &rarr; Departments
+            {currentUser?.organization_name ?? "Your organization"} &rarr; Departments
           </p>
           <p className="muted">Configurable departments and the employees within them.</p>
         </div>
@@ -249,6 +250,12 @@ export function DepartmentsHierarchy() {
           </button>
         )}
       </div>
+
+      <OrgChart
+        organizationName={currentUser?.organization_name ?? "Your organization"}
+        departments={departments}
+        employees={employeesQuery.data ?? []}
+      />
 
       {departments.length === 0 ? (
         <div className="empty-state">

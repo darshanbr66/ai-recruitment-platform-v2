@@ -15,6 +15,7 @@ import { CampusDriveDetailPage } from "../features/recruiter/campusDrives/Campus
 import { CampusDrivesPage } from "../features/recruiter/campusDrives/CampusDrivesPage";
 import { CandidateDetailPage } from "../features/recruiter/candidates/CandidateDetailPage";
 import { CandidatesPage } from "../features/recruiter/candidates/CandidatesPage";
+import { EmailPage } from "../features/recruiter/email/EmailPage";
 import { JobsPage } from "../features/recruiter/jobs/JobsPage";
 import { OverviewPage } from "../features/recruiter/overview/OverviewPage";
 import { ReportsPage } from "../features/recruiter/reports/ReportsPage";
@@ -65,6 +66,7 @@ export function AppRoutes() {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="activities" element={<ActivitiesPage />} />
+        <Route path="email" element={<EmailPage />} />
       </Route>
 
       <Route

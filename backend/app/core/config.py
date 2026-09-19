@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,6 +57,18 @@ class Settings(BaseSettings):
     # MongoDB deployment to exist.
     mongodb_uri: str | None = None
     mongodb_database: str = "ai_recruitment"
+
+    # Outbound email. SMTP is preferred when fully configured; Resend is the
+    # legacy fallback (see app/integrations/email/__init__.py). The SMTP
+    # password is a SecretStr so it can never leak through a repr/log of
+    # Settings — it is only unwrapped inside the SMTP provider at send time.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from_email: str | None = None
+    smtp_from_name: str = "AI Recruitment Platform"
+    smtp_use_tls: bool = True
 
     resend_api_key: str | None = None
     email_from: str | None = None

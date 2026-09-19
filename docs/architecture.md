@@ -139,8 +139,12 @@ Authentication:
   dropped the role check.
 - Refresh tokens: opaque, stored server-side only as a hash
   (`UserRefreshToken` / `CandidateRefreshToken`), delivered via `httpOnly`,
-  `Secure`, `SameSite=Strict` cookie. Rotation on every use; reuse of a
-  revoked token revokes the whole token family (breach detection).
+  `Secure` cookie — `SameSite=None` in production (the SPA on Vercel and the
+  API on Render are different sites, and a `Strict`/`Lax` cookie is never sent
+  on that cross-site refresh call), `SameSite=Lax` in local development.
+  Rotation on every use; reuse of a revoked token revokes the whole token
+  family (breach detection) — which is why the frontend funnels every refresh
+  through one in-flight request (`frontend/src/features/auth/AuthContext.tsx`).
 - Assessment invitation access is a **third, separate mechanism** — a bearer
   token in the invitation URL, not a login session. See `docs/assessment.md`.
 

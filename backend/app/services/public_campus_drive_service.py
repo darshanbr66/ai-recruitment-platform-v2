@@ -16,12 +16,10 @@ from app.integrations.storage import ResumeStorage
 from app.models.application import ApplicationSource, ApplicationStatus
 from app.models.campus_drive import CampusDrive, CampusDriveStatus
 from app.models.candidate import Candidate, CandidateSource
-from app.models.organization import Organization
 from app.services import (
     application_service,
     assessment_service,
     candidate_service,
-    notification_service,
     resume_service,
 )
 
@@ -128,13 +126,6 @@ async def apply_to_drive(
     reloaded = await application_service.get_application(db, application.id)
     assert reloaded is not None
 
-    organization = await db.get(Organization, drive.organization_id)
-    if organization is not None:
-        await notification_service.send_application_confirmation(
-            to=reloaded.candidate.email,
-            candidate_name=reloaded.candidate.full_name,
-            job_title=reloaded.job.title,
-            organization_name=organization.name,
-        )
-
+    # No email is sent here — candidate email is manual-only. The candidate
+    # takes the assessment straight from `invitation_link` in this response.
     return reloaded, invitation_link

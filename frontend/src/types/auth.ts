@@ -26,6 +26,8 @@ export interface UserResponse {
   is_active: boolean;
   created_at: string;
   roles: string[];
+  /** Only populated by `GET /auth/me`; null for a SUPER_ADMIN. */
+  organization_name?: string | null;
 }
 
 export interface UserCreateRequest {

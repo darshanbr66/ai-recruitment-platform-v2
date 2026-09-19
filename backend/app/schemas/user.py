@@ -53,3 +53,12 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     roles: list[str] = Field(default_factory=list)
+
+
+class CurrentUserResponse(UserResponse):
+    """`GET /auth/me` only — the signed-in user plus their organization's
+    display name, so the UI can label tenant-scoped screens without
+    hardcoding a tenant or making a second request. `None` for a
+    SUPER_ADMIN, who belongs to no organization."""
+
+    organization_name: str | None = None

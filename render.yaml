@@ -59,6 +59,22 @@ services:
         value: ai_recruitment
       # Optional integrations — the app runs correctly with these unset
       # (email/AI screening report "not configured" rather than failing).
+      # Outbound email (SMTP). SMTP_PASSWORD is a secret: fill it in the
+      # Render dashboard only — never in this file.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: AI Recruitment Platform
+      - key: SMTP_USE_TLS
+        value: "true"
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM

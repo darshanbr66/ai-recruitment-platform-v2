@@ -57,6 +57,30 @@ class ForbiddenError(AppError):
     code = "forbidden"
 
 
+class UnprocessableError(AppError):
+    """The request was well-formed but can't be acted on as written (e.g. an
+    email that still contains unfilled placeholders)."""
+
+    status_code = 422
+    code = "validation_error"
+
+
+class ServiceUnavailableError(AppError):
+    """A required capability isn't configured on this deployment (e.g. no
+    SMTP settings) — a server-side condition the caller cannot fix."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "service_unavailable"
+
+
+class BadGatewayError(AppError):
+    """An upstream provider (e.g. the SMTP server) failed or refused the
+    request."""
+
+    status_code = status.HTTP_502_BAD_GATEWAY
+    code = "bad_gateway"
+
+
 def _error_body(code: str, message: str, *, details: list[dict[str, str]] | None = None) -> dict[str, Any]:
     body: dict[str, Any] = {
         "error": {
