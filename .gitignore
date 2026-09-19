@@ -31,3 +31,9 @@ Thumbs.db
 
 # Alembic (keep migration scripts, ignore local sqlite/dev artifacts if any)
 backend/*.db
+
+# Data-migration dumps/backups (local <-> Render) — contain real password
+# hashes/PII, never committed. See docs/deployment.md if a repeatable
+# migration script is added later.
+backend/*.dump
+backend/local_data_only_*.sql
