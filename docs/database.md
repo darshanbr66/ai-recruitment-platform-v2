@@ -112,10 +112,22 @@ status (DRAFT/OPEN/ON_HOLD/CLOSED/WITHDRAWN), openings_count, created_by
 
 ### 3.4 Resumes
 
-**resumes**
+**resumes** (planned shape below; see "Implementation status" note)
 `id, organization_id, candidate_id, storage_key, original_filename,
 content_type, size_bytes, checksum_sha256, status
 (UPLOADED/PROCESSING/PROCESSED/FAILED), uploaded_at, processed_at`
+
+**Implementation status**: the actual `resumes` table
+(`app/models/resume.py`) is simpler — no `status`/`checksum_sha256`
+columns, and the storage identifier column is named `storage_path` (plus
+a `storage_provider` column added when MongoDB GridFS was introduced as a
+storage backend alongside local disk). `storage_path`/`storage_provider`
+together are the opaque, provider-specific key into whichever
+`ResumeStorage` implementation wrote the file
+(`app/integrations/storage/`) — a relative disk path for `"local"`, a
+GridFS ObjectId for `"mongodb_gridfs"`. Either way this table stays
+metadata-only; file bytes never live in Postgres. `resume_documents` /
+`resume_chunks` below are still Phase 5 future work, not yet built.
 
 **resume_documents**
 `id, resume_id, extracted_text, extraction_engine, extracted_at`

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.integrations.storage import LocalResumeStorage, ResumeStorage
+from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.models.campus_drive import CampusDriveStatus
 from app.models.organization import Organization
 from app.schemas.public_campus_drive import (
@@ -16,10 +16,6 @@ from app.schemas.public_campus_drive import (
 from app.services import public_campus_drive_service
 
 router = APIRouter(prefix="/campus-drive", tags=["public-campus-drive"])
-
-
-def _get_resume_storage() -> ResumeStorage:
-    return LocalResumeStorage()
 
 
 @router.get("/{token}", response_model=PublicCampusDriveView | PublicCampusDriveUnavailable)
@@ -52,7 +48,7 @@ async def apply_to_campus_drive(
     phone: str | None = Form(default=None, max_length=32),
     resume: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    storage: ResumeStorage = Depends(_get_resume_storage),
+    storage: ResumeStorage = Depends(get_resume_storage),
 ) -> PublicCampusDriveApplicationResult:
     resume_bytes = await resume.read()
     application, invitation_link = await public_campus_drive_service.apply_to_drive(

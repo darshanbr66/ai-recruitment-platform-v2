@@ -13,14 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError, NotFoundError
 from app.integrations.ai import AIProviderError, get_llm_provider
 from app.integrations.ai.extraction import extract_resume_text
-from app.integrations.storage import ResumeStorage, StorageError
+from app.integrations.storage import StorageError, get_resume_storage_for_provider
 from app.models.screening import ScreeningRun, ScreeningStatus
 from app.services import application_service
 
 
 async def run_screening(
     db: AsyncSession,
-    storage: ResumeStorage,
     *,
     organization_id: uuid.UUID,
     application_id: uuid.UUID,
@@ -47,6 +46,7 @@ async def run_screening(
     await db.flush()
 
     try:
+        storage = get_resume_storage_for_provider(application.resume.storage_provider)
         resume_bytes = await storage.read(application.resume.storage_path)
         resume_text = extract_resume_text(
             content=resume_bytes, filename=application.resume.original_filename

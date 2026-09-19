@@ -13,15 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError
 from app.db.rls import set_tenant_context
 from app.db.session import get_db
-from app.integrations.storage import LocalResumeStorage, ResumeStorage
+from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.schemas.public import PublicApplicationResult
 from app.services import organization_service, public_application_service
 
 router = APIRouter(prefix="/organizations/{slug}/jobs", tags=["public-applications"])
-
-
-def _get_resume_storage() -> ResumeStorage:
-    return LocalResumeStorage()
 
 
 @router.post("/{job_id}/apply", response_model=PublicApplicationResult, status_code=201)
@@ -33,7 +29,7 @@ async def apply_to_job(
     phone: str | None = Form(default=None, max_length=32),
     resume: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    storage: ResumeStorage = Depends(_get_resume_storage),
+    storage: ResumeStorage = Depends(get_resume_storage),
 ) -> PublicApplicationResult:
     organization = await organization_service.get_organization_by_slug(db, slug)
     if organization is None:

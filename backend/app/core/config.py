@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +42,22 @@ class Settings(BaseSettings):
     max_resume_size_mb: int = 10
     allowed_resume_extensions: tuple[str, ...] = (".pdf", ".doc", ".docx")
 
+    # Resume *file bytes* storage backend (CLAUDE.md § 2: "Resume storage !=
+    # DB blob") — see app/integrations/storage. "local" keeps the existing
+    # disk-based dev behavior; "mongodb_gridfs" is the production backend,
+    # selected via RESUME_STORAGE_PROVIDER on Render (docs/deployment.md
+    # § 11). This is independent of MongoDB's *database* config below,
+    # which is only meaningful when this is "mongodb_gridfs".
+    resume_storage_provider: Literal["local", "mongodb_gridfs"] = "local"
+
+    # MongoDB is used ONLY for resume file bytes via GridFS — never for
+    # candidate/application/organization data, which stays in Postgres
+    # (CLAUDE.md § 1). Unset by default: a bare `Settings()` for local
+    # development on the "local" storage provider must not require a
+    # MongoDB deployment to exist.
+    mongodb_uri: str | None = None
+    mongodb_database: str = "ai_recruitment"
+
     resend_api_key: str | None = None
     email_from: str | None = None
 
@@ -54,6 +71,14 @@ class Settings(BaseSettings):
     # someone has actually installed and started Ollama locally.
     ollama_base_url: str | None = None
     ollama_model: str = "llama3.1"
+
+    @model_validator(mode="after")
+    def _validate_mongodb_configured_when_selected(self) -> "Settings":
+        if self.resume_storage_provider == "mongodb_gridfs" and not self.mongodb_uri:
+            raise ValueError(
+                "MONGODB_URI is required when RESUME_STORAGE_PROVIDER=mongodb_gridfs."
+            )
+        return self
 
     @property
     def is_production(self) -> bool:

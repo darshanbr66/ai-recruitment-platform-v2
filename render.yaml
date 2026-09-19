@@ -44,10 +44,19 @@ services:
         sync: false
       - key: FRONTEND_BASE_URL
         sync: false
+      # Production resume-file storage: MongoDB GridFS, not local disk
+      # (Render's default web-service filesystem is ephemeral — see
+      # docs/deployment.md § 11).
+      - key: RESUME_STORAGE_PROVIDER
+        value: mongodb_gridfs
       - key: RESUME_STORAGE_DIR
         value: uploads/resumes
       - key: MAX_RESUME_SIZE_MB
         value: "10"
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: ai_recruitment
       # Optional integrations — the app runs correctly with these unset
       # (email/AI screening report "not configured" rather than failing).
       - key: RESEND_API_KEY

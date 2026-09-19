@@ -365,3 +365,12 @@ reviewer confirmation" status these carried after Phase 0):
 4. **Single React SPA for all three surfaces** — confirmed.
 5. **Background worker/queue: Arq + Redis** — confirmed; see § 12. Not yet
    scaffolded (nothing to run until Phase 5).
+6. **Resume file bytes: MongoDB GridFS in production, local disk in
+   development** — confirmed. Selected per-request behind the existing
+   `ResumeStorage` interface (`app/integrations/storage/`) via
+   `RESUME_STORAGE_PROVIDER`; see `docs/deployment.md` § 11. Postgres
+   remains the sole system of record for candidate/application/resume
+   *metadata* — this decision only moves where raw file bytes live, never
+   any relational data (CLAUDE.md § 1-2). Uses PyMongo's async
+   `AsyncMongoClient` (not Motor), one process-wide client managed by
+   `app.main`'s lifespan (`app/db/mongo.py`).

@@ -36,12 +36,19 @@ async def save_resume(
     original_filename: str,
     content_type: str,
     content: bytes,
+    uploaded_by_user_id: uuid.UUID | None = None,
 ) -> Resume:
     validate_resume_upload(filename=original_filename, content=content)
 
     try:
         saved = await storage.save(
-            organization_id=organization_id, original_filename=original_filename, content=content
+            organization_id=organization_id,
+            candidate_id=candidate_id,
+            application_id=application_id,
+            original_filename=original_filename,
+            content_type=content_type,
+            content=content,
+            uploaded_by_user_id=uploaded_by_user_id,
         )
     except StorageError as exc:
         raise AppError(str(exc), code="storage_error") from exc
@@ -53,6 +60,7 @@ async def save_resume(
         original_filename=original_filename,
         stored_filename=saved.stored_filename,
         storage_path=saved.storage_path,
+        storage_provider=saved.storage_provider,
         content_type=content_type,
         size_bytes=saved.size_bytes,
     )

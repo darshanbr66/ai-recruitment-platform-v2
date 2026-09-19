@@ -76,8 +76,11 @@ nothing sensitive is stored in the Blueprint file itself.
 | `LOG_LEVEL` | No (default `INFO`) | |
 | `CORS_ALLOW_ORIGINS` | Yes | JSON array, e.g. `["https://<your-vercel-domain>"]`. See § 5. |
 | `FRONTEND_BASE_URL` | Yes | The same Vercel origin — used to build assessment/campus-drive links shared with candidates. |
-| `RESUME_STORAGE_DIR` | No (default `uploads/resumes`) | See § 9 — ephemeral on Render's default filesystem. |
+| `RESUME_STORAGE_PROVIDER` | Recommended | Set to `mongodb_gridfs` in production. See § 11. |
+| `RESUME_STORAGE_DIR` | No (default `uploads/resumes`) | Only used when `RESUME_STORAGE_PROVIDER=local`. Ephemeral on Render's default filesystem — see § 11. |
 | `MAX_RESUME_SIZE_MB` | No (default `10`) | |
+| `MONGODB_URI` | Yes, if `RESUME_STORAGE_PROVIDER=mongodb_gridfs` | Connection string for the MongoDB deployment storing resume files (e.g. an Atlas cluster). Never commit the real value. |
+| `MONGODB_DATABASE` | No (default `ai_recruitment`) | Database name within the MongoDB deployment; the `resumes` GridFS bucket is created inside it. |
 | `RESEND_API_KEY` / `EMAIL_FROM` | No | Optional. Unset → email sends report "not configured" rather than failing or faking success. |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | No | Optional, free/local AI screening — not reachable from Render, only useful if you run Ollama somewhere Render can reach it. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No | Optional paid AI screening providers. Do not set unless you intend to enable AI screening. |
@@ -223,7 +226,8 @@ the fresh process.
 ## 10. Test the production application
 
 1. `GET /healthz` → `{"status":"ok"}`.
-2. `GET /readyz` → `{"status":"ok","database":"ok"}`.
+2. `GET /readyz` → `{"status":"ok","database":"ok","mongodb":"ok"}` (the
+   `mongodb` key is only present when `RESUME_STORAGE_PROVIDER=mongodb_gridfs`).
 3. Log in as the super admin created in § 4, create the SIGVITAS
    organization + admin via `/api/v1/admin/organizations`.
 4. Log in as that org admin from the deployed frontend; confirm CORS
@@ -232,47 +236,59 @@ the fresh process.
    `HttpOnly`, `SameSite=Strict`).
 5. Create a job, publish it, open the public career site
    (`https://<vercel-domain>/org/<slug>`), submit a test application,
-   confirm the resume upload succeeds and is retrievable — then read § 11
-   below before relying on that upload surviving a redeploy.
+   confirm the resume upload succeeds and is retrievable — see § 11 for
+   the `RESUME_STORAGE_PROVIDER=mongodb_gridfs` variables this depends on
+   in production.
 6. Refresh the browser on a deep link (e.g. `/recruiter/applications`) to
    confirm Vercel's SPA rewrite (`frontend/vercel.json`) is working — it
    should render the app, not a 404.
 
 ---
 
-## 11. File / resume storage — known limitation
+## 11. File / resume storage
 
-**Current implementation**: `LocalResumeStorage`
-(`app/integrations/storage/local.py`) writes resume files to local disk
-under `RESUME_STORAGE_DIR`. This is explicitly documented in the code as
-"local disk now, S3-compatible later" (CLAUDE.md § 2), behind a
-`ResumeStorage` abstract interface (`app/integrations/storage/base.py`)
-that every caller depends on — no route or service touches the filesystem
-directly.
+Resume file *bytes* live behind the `ResumeStorage` abstract interface
+(`app/integrations/storage/base.py`) that every route/service depends on —
+no route or service touches a filesystem or database driver directly.
+Two implementations exist, selected by `RESUME_STORAGE_PROVIDER`:
 
-**Render's default web-service filesystem is ephemeral**: files written
-to it do not survive a redeploy or restart, and are not shared across
-instances if the service is ever scaled beyond one. Deploying as-is means
-**uploaded resumes will eventually be lost** — this is called out here
-deliberately rather than silently shipped.
+- **`local`** (`app/integrations/storage/local.py`) — writes to local disk
+  under `RESUME_STORAGE_DIR`. Development default. **Render's default
+  web-service filesystem is ephemeral**: files written to it do not
+  survive a redeploy/restart and are not shared across instances — never
+  use this in production.
+- **`mongodb_gridfs`** (`app/integrations/storage/mongo_gridfs.py`) —
+  **the production setting.** Stores resume bytes in a MongoDB GridFS
+  bucket named `resumes`, addressed by the bucket file's ObjectId. Postgres
+  remains the system of record for everything else (`resumes.storage_path`
+  holds only that opaque ObjectId string; `resumes.storage_provider`
+  records which backend wrote it, so resumes uploaded before this setting
+  changed keep resolving against `local` correctly — CLAUDE.md § 2:
+  "Resume storage != DB blob").
 
-Two ways forward, neither implemented as part of this preparation task
-(per instructions: no new storage provider was added without asking):
+**Required Render environment variables for production**:
 
-1. **Interim**: attach a
-   [Render persistent disk](https://render.com/docs/disks) to the web
-   service (e.g. mounted at `/var/data/resumes`) and set
-   `RESUME_STORAGE_DIR=/var/data/resumes`. No code change needed — the
-   existing `LocalResumeStorage` just points at a path that now survives
-   restarts. Limitation: a Render disk is tied to a single service
-   instance, so this doesn't support horizontal scaling.
-2. **Proper fix**: implement an S3-compatible `ResumeStorage` (e.g.
-   backed by Cloudflare R2, AWS S3, or Backblaze B2) and select it via a
-   new settings flag, exactly the seam `app/integrations/storage/__init__.py`
-   already describes. This is the natural next step, not something to
-   improvise without a decision on which provider/credentials to use.
+```
+RESUME_STORAGE_PROVIDER=mongodb_gridfs
+MONGODB_URI=<your MongoDB connection string — set in the Render dashboard, never in Git>
+MONGODB_DATABASE=ai_recruitment
+```
 
-**Before going live with real candidate applications, pick one of these —
+Any MongoDB deployment reachable from Render works (e.g. a free-tier
+[MongoDB Atlas](https://www.mongodb.com/atlas) cluster). Create the
+cluster, allow network access from Render (or use Atlas's "allow from
+anywhere" for a first deploy, then tighten it), and paste its connection
+string into `MONGODB_URI` in the Render dashboard as a secret.
+
+The MongoDB client is created once at process startup (`app/db/mongo.py`,
+wired into `app.main`'s lifespan) — never per request — and pinged during
+startup and by `/readyz`. `/readyz` only checks MongoDB when
+`RESUME_STORAGE_PROVIDER=mongodb_gridfs`; it never checks it while
+`local` is selected, since that configuration has no MongoDB dependency
+to be ready.
+
+**Before going live with real candidate applications, confirm
+`RESUME_STORAGE_PROVIDER=mongodb_gridfs` and `MONGODB_URI` are both set —
 do not deploy the default local-disk configuration and assume resumes are
 safe.**
 

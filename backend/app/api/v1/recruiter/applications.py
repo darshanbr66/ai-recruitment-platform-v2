@@ -7,13 +7,13 @@ docs/recruitment-workflow.md."""
 import uuid
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.core.exceptions import ConflictError, NotFoundError
 from app.db.session import get_db
-from app.integrations.storage import LocalResumeStorage, ResumeStorage, StorageError
+from app.integrations.storage import StorageError, get_resume_storage_for_provider
 from app.models.application import Application, ApplicationStatus
 from app.models.organization import Organization
 from app.models.user import User
@@ -35,10 +35,6 @@ from app.services import (
 )
 
 router = APIRouter(prefix="/applications", tags=["recruiter-applications"])
-
-
-def _get_resume_storage() -> ResumeStorage:
-    return LocalResumeStorage()
 
 
 def _to_response(application: Application) -> ApplicationResponse:
@@ -133,23 +129,26 @@ async def download_resume(
     application_id: uuid.UUID,
     _: User = Depends(require_permission("application.read")),
     db: AsyncSession = Depends(get_db),
-    storage: ResumeStorage = Depends(_get_resume_storage),
-) -> Response:
+) -> StreamingResponse:
     application = await application_service.get_application(db, application_id)
     if application is None or application.resume is None:
         raise NotFoundError("No resume found for this application.")
 
     resume = application.resume
     try:
-        content = await storage.read(resume.storage_path)
+        storage = get_resume_storage_for_provider(resume.storage_provider)
+        chunks = await storage.open_stream(resume.storage_path)
     except StorageError as exc:
         raise NotFoundError("The resume file could not be found in storage.") from exc
 
     safe_name = resume.original_filename.replace('"', "")
-    return Response(
-        content=content,
+    return StreamingResponse(
+        chunks,
         media_type=resume.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Content-Length": str(resume.size_bytes),
+        },
     )
 
 

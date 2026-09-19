@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,10 +9,30 @@ from app.api.v1.router import api_router
 from app.core.asyncio_compat import configure_event_loop_policy
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
+from app.db.mongo import connect_mongo, disconnect_mongo
 
 configure_event_loop_policy()
+
+logger = get_logger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """MongoDB (resume-file storage backend) is only ever needed when
+    `RESUME_STORAGE_PROVIDER=mongodb_gridfs` — local development on the
+    "local" provider must not require a MongoDB deployment to start the
+    app. The client is created once here, not per request (app/db/mongo.py).
+    """
+    settings = get_settings()
+    if settings.resume_storage_provider == "mongodb_gridfs":
+        await connect_mongo()
+    try:
+        yield
+    finally:
+        if settings.resume_storage_provider == "mongodb_gridfs":
+            await disconnect_mongo()
 
 
 def create_app() -> FastAPI:
@@ -20,6 +43,7 @@ def create_app() -> FastAPI:
         title="AI Recruitment Platform API",
         version="0.1.0",
         debug=settings.debug,
+        lifespan=_lifespan,
     )
 
     app.add_middleware(RequestContextMiddleware)
