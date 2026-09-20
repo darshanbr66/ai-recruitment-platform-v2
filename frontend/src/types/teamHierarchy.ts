@@ -75,6 +75,13 @@ export interface EmployeeMoveRequest {
   department_id: string | null;
 }
 
+/** The complete desired order of one department's (or the Unassigned group's)
+ * active employees. The stored position numbers are internal to the backend
+ * and never reach the client — order is expressed by position in this list. */
+export interface EmployeeReorderRequest {
+  employee_ids: string[];
+}
+
 export interface EmployeeDeactivateRequest {
   reason?: string | null;
 }

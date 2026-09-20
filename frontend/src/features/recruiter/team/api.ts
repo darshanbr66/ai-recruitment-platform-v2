@@ -7,6 +7,7 @@ import type {
   EmployeeCreateRequest,
   EmployeeDeactivateRequest,
   EmployeeMoveRequest,
+  EmployeeReorderRequest,
   EmployeeResponse,
   EmployeeUpdateRequest,
 } from "../../../types/teamHierarchy";
@@ -67,6 +68,15 @@ export function updateEmployee(
 export function moveEmployee(employeeId: string, payload: EmployeeMoveRequest, accessToken: string) {
   return apiClient.post<EmployeeResponse>(
     `/api/v1/recruiter/employees/${employeeId}/move`,
+    payload,
+    accessToken,
+  );
+}
+
+export function reorderEmployees(employeeIds: string[], accessToken: string) {
+  const payload: EmployeeReorderRequest = { employee_ids: employeeIds };
+  return apiClient.patch<EmployeeResponse[]>(
+    "/api/v1/recruiter/employees/reorder",
     payload,
     accessToken,
   );

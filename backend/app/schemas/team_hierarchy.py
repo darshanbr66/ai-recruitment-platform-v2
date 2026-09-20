@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.team_hierarchy import EmploymentStatus
 
@@ -61,6 +61,22 @@ class EmployeeUpdateRequest(BaseModel):
 
 class EmployeeMoveRequest(BaseModel):
     department_id: uuid.UUID | None = None
+
+
+class EmployeeReorderRequest(BaseModel):
+    """The complete, desired order of one department's active employees
+    (or of the Unassigned group), first to last. The position an employee
+    holds is the position of their id in this list — clients never send or
+    see the stored `display_order` numbers."""
+
+    employee_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+    @field_validator("employee_ids")
+    @classmethod
+    def _reject_duplicates(cls, value: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("employee_ids must not contain duplicates.")
+        return value
 
 
 class EmployeeDeactivateRequest(BaseModel):

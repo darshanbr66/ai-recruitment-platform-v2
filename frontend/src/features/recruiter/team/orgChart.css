@@ -213,6 +213,61 @@ button.org-node:focus-visible {
   color: var(--color-text-muted);
 }
 
+/* --- reordering (org admins only; absent from the DOM for everyone else) --- */
+
+.org-reorder-hint {
+  font-size: 0.8rem;
+  margin-right: auto;
+}
+
+.org-employee-reorderable {
+  /* room for the handle so it never overlaps a long name */
+  padding-right: 1.6rem;
+  cursor: grab;
+}
+
+.org-drag-handle {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  padding: 0.1rem 0.15rem;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  letter-spacing: -0.1em;
+  cursor: grab;
+  user-select: none;
+}
+
+.org-drag-handle:hover {
+  color: var(--color-text);
+}
+
+.org-drag-handle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.org-drag-handle[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: progress;
+}
+
+.org-employee-dragging {
+  opacity: 0.45;
+}
+
+/* where the dragged employee will land: a bar just above / below the card */
+.org-employee-drop-before {
+  box-shadow: 0 -4px 0 -1px var(--color-primary);
+}
+
+.org-employee-drop-after {
+  box-shadow: 0 4px 0 -1px var(--color-primary);
+}
+
 .org-empty-note {
   margin: var(--org-gap) 0 0;
   font-size: 0.8rem;

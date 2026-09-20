@@ -126,6 +126,19 @@ as it goes. This full chain was verified locally (`alembic downgrade base`
 head`) during the SIGVITAS platform work — see git history — with no
 manual intervention required.
 
+**Employee display order (`a7b8c9d0e1f2`, added after that verification).**
+Adds `employees.display_order`, the hidden position an employee holds within
+their (organization, department) — the org chart sorts by it and org admins
+rearrange it via `PATCH /api/v1/recruiter/employees/reorder`. Existing
+employees are numbered in creation order (`created_at`, then `id`), not
+alphabetically. Its upgrade/downgrade/upgrade round trip and backfill are
+covered by `backend/tests/test_employee_display_order_migration.py`. The column
+is `NOT NULL` with no default, so **run this migration before the matching
+backend code goes live**: code that selects the column fails every employee
+query with `UndefinedColumn` on a database that doesn't have it yet, whereas
+migrating first only makes employee *creation* by the previous code version
+fail until the deploy finishes.
+
 After migrating, create the platform super admin (needed to bootstrap the
 first organization via `/api/v1/admin/organizations`):
 

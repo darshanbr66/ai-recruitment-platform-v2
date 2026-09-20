@@ -21,9 +21,11 @@ import {
   listEmployees,
   moveEmployee,
   reactivateEmployee,
+  reorderEmployees,
   updateDepartment,
   updateEmployee,
 } from "./api";
+import { applyEmployeeOrder } from "./employeeOrder";
 
 const DEPARTMENTS_KEY = ["recruiter", "departments"];
 const EMPLOYEES_KEY = ["recruiter", "employees"];
@@ -205,6 +207,32 @@ export function DepartmentsHierarchy() {
     },
   });
 
+  // Reordering is optimistic: the chart reflects the drop immediately, the
+  // order is persisted by the API, and if that fails the previous order is
+  // put back and the user is told. Either way the list is refetched, so what
+  // stays on screen is always what the server stored.
+  const reorderMutation = useMutation({
+    mutationFn: (orderedIds: string[]) => reorderEmployees(orderedIds, token),
+    onMutate: async (orderedIds) => {
+      await queryClient.cancelQueries({ queryKey: EMPLOYEES_KEY });
+      const previous = queryClient.getQueryData<EmployeeResponse[]>(EMPLOYEES_KEY);
+      if (previous) {
+        queryClient.setQueryData(EMPLOYEES_KEY, applyEmployeeOrder(previous, orderedIds));
+      }
+      return { previous };
+    },
+    onError: (err, _orderedIds, context) => {
+      if (context?.previous) queryClient.setQueryData(EMPLOYEES_KEY, context.previous);
+      showToast(
+        err instanceof ApiError ? err.message : "Could not save the new order. It was restored.",
+        "error",
+      );
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: EMPLOYEES_KEY });
+    },
+  });
+
   const statusMutation = useMutation({
     mutationFn: (employee: EmployeeResponse) =>
       employee.employment_status === "ACTIVE"
@@ -255,6 +283,10 @@ export function DepartmentsHierarchy() {
         organizationName={currentUser?.organization_name ?? "Your organization"}
         departments={departments}
         employees={employeesQuery.data ?? []}
+        // Only offered to users who can manage employees; the backend
+        // enforces `employee.manage` regardless.
+        onReorder={canManage ? (_departmentId, orderedIds) => reorderMutation.mutate(orderedIds) : undefined}
+        isSavingOrder={reorderMutation.isPending}
       />
 
       {departments.length === 0 ? (

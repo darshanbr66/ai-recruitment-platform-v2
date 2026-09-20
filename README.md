@@ -17,8 +17,11 @@ edits it if needed, previews it, and sends. Applying, assigning an assessment
 and changing a status never send email on their own. The same composer is also
 available as a general **Email** page for messages that aren't tied to an
 application. The Team page shows a live organization chart built from the
-organization's departments and employees, and an org admin can delete activity
-entries in bulk (a selection, or every entry of their own organization).
+organization's departments and employees. Employees appear in a stored order —
+new employees are added at the end of their department, and an org admin can
+drag them (or use the arrow keys on the drag handle) to rearrange a department;
+the position itself is internal and never shown. An org admin can also delete
+activity entries in bulk (a selection, or every entry of their own organization).
 
 Local test accounts are in [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md).
 No candidate portal (self-service login/profile) yet — candidates interact

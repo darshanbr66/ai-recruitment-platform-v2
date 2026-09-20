@@ -18,6 +18,7 @@ from app.schemas.team_hierarchy import (
     EmployeeCreateRequest,
     EmployeeDeactivateRequest,
     EmployeeMoveRequest,
+    EmployeeReorderRequest,
     EmployeeResponse,
     EmployeeUpdateRequest,
 )
@@ -67,6 +68,24 @@ async def list_employees(
         db, current_user.organization_id, department_id=department_id
     )
     return await _to_responses(db, employees)
+
+
+# Declared before the `/{employee_id}` routes so "reorder" is never parsed as
+# an employee id.
+@router.patch("/reorder", response_model=list[EmployeeResponse])
+async def reorder_employees(
+    payload: EmployeeReorderRequest,
+    current_user: User = Depends(require_permission("employee.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> list[EmployeeResponse]:
+    assert current_user.organization_id is not None
+    reordered = await employee_service.reorder_employees(
+        db,
+        organization_id=current_user.organization_id,
+        actor=current_user,
+        employee_ids=payload.employee_ids,
+    )
+    return await _to_responses(db, reordered)
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)
