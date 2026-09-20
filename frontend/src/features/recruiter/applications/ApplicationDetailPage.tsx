@@ -8,6 +8,10 @@ import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModal";
 import { SkeletonLines } from "../../../shared/components/Skeleton";
+import { BackLink } from "../../../shared/components/BackLink";
+import { PipelineTrack } from "../../../shared/components/PipelineTrack";
+import { useToast } from "../../../shared/components/ToastContext";
+import { humanizeStatus, statusTone, toneBadgeClass } from "../../../shared/lib/statusTone";
 import { Spinner } from "../../../shared/components/Spinner";
 import { APPLICATION_TRANSITIONS, type ApplicationStatus } from "../../../types/recruitment";
 import type { EmailTemplateKey } from "../../../types/email";
@@ -54,12 +58,6 @@ const MONITORING_EVENT_LABELS: Record<MonitoringEventType, string> = {
   CONNECTION_RESTORED: "Connection restored",
 };
 
-const TERMINAL_BADGE: Partial<Record<ApplicationStatus, string>> = {
-  SELECTED: "badge-active",
-  REJECTED: "badge-inactive",
-  HIRED: "badge-active",
-};
-
 const RECOMMENDATION_BADGE: Record<string, string> = {
   STRONG_MATCH: "badge-active",
   POSSIBLE_MATCH: "badge-active",
@@ -74,6 +72,7 @@ export function ApplicationDetailPage() {
   const { accessToken } = useAuth();
   const token = accessToken as string;
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -137,9 +136,13 @@ export function ApplicationDetailPage() {
 
   const statusMutation = useMutation({
     mutationFn: (status: ApplicationStatus) => changeApplicationStatus(applicationId, status, token),
-    onSuccess: () => {
+    onSuccess: (_data, status) => {
+      showToast(`Moved to ${humanizeStatus(status)}.`, "success");
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications", applicationId] });
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications"] });
+    },
+    onError: (err) => {
+      showToast(err instanceof ApiError ? err.message : "Could not update the status.", "error");
     },
   });
 
@@ -266,9 +269,7 @@ export function ApplicationDetailPage() {
 
   return (
     <div className="stack-lg">
-      <p>
-        <Link to="/recruiter/applications">&larr; Back to applications</Link>
-      </p>
+      <BackLink to="/recruiter/applications">Back to applications</BackLink>
 
       <div className="page-header">
         <div>
@@ -281,9 +282,7 @@ export function ApplicationDetailPage() {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <span className={`badge ${TERMINAL_BADGE[application.status] ?? "badge-active"}`}>
-            {application.status}
-          </span>
+          <span className={toneBadgeClass(statusTone(application.status))}>{application.status}</span>
           {nextStatuses.length > 0 && (
             <select
               value=""
@@ -320,6 +319,10 @@ export function ApplicationDetailPage() {
       </div>
 
       {emailFeedback && <Alert variant="success">{emailFeedback}</Alert>}
+
+      <section className="card pipeline-card" aria-label="Pipeline progress">
+        <PipelineTrack status={application.status} />
+      </section>
 
       <div className="detail-grid">
         <div className="stack-lg" style={{ gap: "1.5rem" }}>

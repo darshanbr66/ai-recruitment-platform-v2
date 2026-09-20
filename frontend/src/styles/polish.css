@@ -1,0 +1,640 @@
+/*
+ * Cross-product polish, found by looking at the real pages one after another:
+ * the details that made separate screens feel like separate products.
+ * Loaded last, so where it refines an earlier rule it wins deliberately.
+ */
+
+/* --- controls that were still the browser's defaults ------------------------- */
+
+select {
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%238a97ad' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.3;
+  appearance: none;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+select:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Disabled means "not yet", not "broken": a quiet, flat button (a primary
+   action that is waiting on input used to look like a washed-out CTA). */
+.btn-primary:disabled {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+  box-shadow: none;
+  opacity: 1;
+  border: 1px solid var(--color-border);
+}
+
+/* Team tabs and any other tablist made of buttons: one segmented control. */
+.btn-group[role="tablist"] {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+}
+
+.btn-group[role="tablist"] .btn {
+  padding: 0.4rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn-group[role="tablist"] .btn:hover:not(:disabled) {
+  color: var(--color-text);
+  background: transparent;
+  box-shadow: none;
+}
+
+.btn-group[role="tablist"] .btn[aria-selected="true"] {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+}
+
+/* --- page headings: consistent, tighter rhythm ------------------------------- */
+
+.page-header h1 {
+  margin-bottom: 0.15rem;
+}
+
+.page-header p {
+  margin: 0;
+}
+
+.page-header + .muted,
+.stack-lg > p.muted {
+  margin: 0;
+}
+
+/* --- tables: actions step back until you reach for them ------------------------ */
+
+.data-table td .btn-sm {
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.data-table td .btn-ghost.btn-sm,
+.data-table td .btn-danger.btn-sm {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.data-table tbody tr:hover .btn-ghost.btn-sm,
+.data-table tbody tr:focus-within .btn-ghost.btn-sm {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.data-table tbody tr:hover .btn-danger.btn-sm,
+.data-table tbody tr:focus-within .btn-danger.btn-sm {
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+.data-table td .btn-ghost.btn-sm:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+}
+
+.data-table td .btn-danger.btn-sm:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+}
+
+/* --- feedback when something changes ------------------------------------------- */
+
+.row-flash td {
+  animation: row-flash 1.6s var(--ease-out);
+}
+
+@keyframes row-flash {
+  0%,
+  35% {
+    background-color: var(--color-primary-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.badge-pop {
+  animation: badge-pop var(--dur-slow) var(--ease-out);
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* --- pipeline track --------------------------------------------------------------- */
+
+.pipeline-card {
+  padding: 1.25rem 1.5rem 1rem;
+}
+
+/* the track itself scrolls sideways on narrow screens */
+.pipeline {
+  overflow-x: auto;
+  padding: 0.25rem 0;
+  scrollbar-width: none;
+}
+.pipeline::-webkit-scrollbar {
+  display: none;
+}
+
+.pipeline-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(5.25rem, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pipeline-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+/* the connector arriving from the previous stage */
+.pipeline-stage:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 0.85rem;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background:
+    linear-gradient(var(--color-primary), var(--color-primary)) no-repeat left / 0% 100%,
+    var(--color-border-strong);
+  transition: background-size var(--dur-slow) var(--ease-out);
+}
+
+.pipeline-stage.is-done:not(:first-child)::before,
+.pipeline-stage.is-current:not(:first-child)::before {
+  background-size: 100% 100%;
+}
+
+.pipeline-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 2px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 0.72rem;
+  font-weight: var(--weight-strong);
+  transition:
+    background-color var(--dur-slow) var(--ease-out),
+    border-color var(--dur-slow) var(--ease-out),
+    color var(--dur-slow) var(--ease-out);
+}
+
+.pipeline-stage.is-done .pipeline-node {
+  border-color: var(--color-primary-solid);
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
+}
+
+.pipeline-stage.is-current .pipeline-node {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-ring);
+  animation: node-arrive var(--dur-slow) var(--ease-out);
+}
+
+.pipeline-stage.is-final.is-current .pipeline-node {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  box-shadow: 0 0 0 4px var(--color-accent-soft);
+}
+
+@keyframes node-arrive {
+  0% {
+    transform: scale(0.7);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.pipeline-stage.is-current .pipeline-label {
+  color: var(--color-text);
+  font-weight: var(--weight-strong);
+}
+
+.pipeline-detail {
+  margin-top: -0.25rem;
+  color: var(--color-primary);
+  font-size: 0.7rem;
+  font-weight: var(--weight-medium);
+}
+
+.pipeline.is-rejected .pipeline-stage {
+  opacity: 0.5;
+}
+
+.pipeline-terminal {
+  margin: 0.9rem 0 0;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  font-size: var(--text-label);
+}
+
+/* compact: a thin progress bar with the stage name, for lists */
+.pipeline-mini {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+}
+
+.pipeline-mini-track {
+  flex: 0 0 6rem;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+}
+
+.pipeline-mini-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+.pipeline-mini.is-hired .pipeline-mini-fill {
+  background: var(--color-accent);
+}
+
+.pipeline-mini.is-rejected .pipeline-mini-fill {
+  width: 0 !important;
+}
+
+/* --- candidate profile header ---------------------------------------------------------- */
+
+.profile-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-facts a.chip {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.profile-facts a.chip:hover {
+  border-color: var(--color-primary);
+}
+
+/* --- activity stream ----------------------------------------------------------------------- */
+
+.stream-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.stream-day h3 {
+  margin: 0 0 0.75rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.stream-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stream-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.7rem 0.75rem 0.7rem 0.5rem;
+  border-radius: var(--radius-md);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+/* the line the events hang on */
+.stream-item::before {
+  content: "";
+  position: absolute;
+  left: var(--stream-line-x, calc(0.5rem + 1.1rem));
+  top: 2.6rem;
+  bottom: -0.7rem;
+  width: 1px;
+  background: var(--color-border-strong);
+}
+
+.stream-item:last-child::before {
+  display: none;
+}
+
+.stream-item:hover {
+  background: var(--color-bg-subtle);
+}
+
+.stream-list.has-checks {
+  --stream-line-x: calc(0.5rem + 1.05rem + 0.85rem + 1.1rem);
+}
+
+.stream-item.is-selected {
+  background: var(--color-primary-soft);
+}
+
+/* a deletion in flight: the entry recedes rather than vanishing */
+.stream-item.is-removing {
+  opacity: 0.4;
+  transform: translateX(6px);
+  pointer-events: none;
+}
+
+.stream-check {
+  margin-top: 0.55rem;
+}
+
+.stream-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.stream-node.tone-active {
+  border-color: var(--color-success-border);
+  background: var(--color-active-bg);
+  color: var(--color-active-text);
+}
+
+.stream-node.tone-danger {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.stream-node.tone-warn {
+  border-color: var(--color-border);
+  background: var(--color-warn-bg);
+  color: var(--color-warn-text);
+}
+
+.stream-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.stream-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: var(--weight-medium);
+}
+
+.stream-meta time {
+  white-space: nowrap;
+}
+
+.stream-meta {
+  margin: 0.15rem 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+.stream-desc {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-label);
+}
+
+.stream-item .btn {
+  align-self: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.stream-item:hover .btn,
+.stream-item:focus-within .btn {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .stream-item .btn {
+    opacity: 1;
+  }
+}
+
+/* --- email composer ------------------------------------------------------------------------------ */
+
+.composer-steps {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+}
+
+.composer-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.composer-steps li + li::before {
+  content: "";
+  width: 2rem;
+  height: 1px;
+  margin-right: 0.5rem;
+  background: var(--color-border-strong);
+}
+
+.composer-step-dot {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.composer-steps .is-current {
+  color: var(--color-text);
+}
+
+.composer-steps .is-current .composer-step-dot {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.composer-steps .is-done .composer-step-dot {
+  border-color: var(--color-primary-solid);
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
+}
+
+.composer-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0 0 1.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+  line-height: 1.5;
+}
+
+.composer-note svg {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: var(--color-primary);
+}
+
+/* the standalone email page: a readable measure, not a full-bleed form */
+.email-page-card {
+  max-width: 860px;
+}
+
+@media (max-width: 720px) {
+  .stream-item {
+    flex-wrap: wrap;
+  }
+
+  .stream-body {
+    flex: 1 1 12rem;
+  }
+
+  /* selection stays available on phones; Delete drops under the entry */
+  .stream-item .btn {
+    flex-basis: auto;
+    margin-left: 3.55rem; /* under the entry text, past the node */
+    opacity: 1;
+  }
+
+  .stream-list.has-checks .stream-item .btn {
+    margin-left: 5.65rem; /* ...and past the checkbox too */
+  }
+}
+
+/* Plain in-content links (a candidate's name, a job title): a hairline,
+ * offset underline that firms up on hover, instead of the browser default. */
+.detail-grid a:not([class]),
+.page-header a:not([class]),
+.card a:not([class]) {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  transition: text-decoration-color var(--dur-fast) var(--ease-out);
+}
+.detail-grid a:not([class]):hover,
+.page-header a:not([class]):hover,
+.card a:not([class]):hover {
+  text-decoration-color: currentColor;
+}

@@ -74,9 +74,9 @@
 
 .org-node-root {
   padding: 0.7rem 1.5rem;
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
+  background: var(--color-primary-solid);
+  border-color: var(--color-primary-solid);
+  color: var(--color-on-primary);
   font-size: 1rem;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -355,5 +355,122 @@ button.org-node:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .org-node {
     transition: none;
+  }
+}
+
+/* --- visual layer: depth, motion and the "network" feel ----------------------
+   Purely additive over the geometry above: none of these rules change how the
+   tree is laid out, only how its nodes look and arrive. */
+
+.org-node {
+  box-shadow: var(--shadow-card), var(--highlight-top);
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.org-node-root {
+  position: relative;
+  box-shadow:
+    0 10px 28px var(--color-primary-ring),
+    inset 0 1px 0 rgb(255 255 255 / 20%);
+}
+
+/* the organization "transmits": a slow ring, not a flashing light */
+.org-node-root::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 14px;
+  border: 1px solid var(--color-primary);
+  opacity: 0;
+  pointer-events: none;
+  animation: org-transmit 4.5s var(--ease-out) infinite;
+}
+
+@keyframes org-transmit {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.96);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+
+button.org-node:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-raised);
+}
+
+.org-node-dept[aria-expanded="true"] {
+  box-shadow: var(--shadow-raised);
+  background: linear-gradient(180deg, var(--color-primary-soft), transparent), var(--color-surface-raised);
+}
+
+/* Expanding a department: its list settles in, employees arrive in order. */
+.org-employees {
+  animation: org-grow var(--dur-slow) var(--ease-out) backwards;
+}
+
+.org-employee {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+.org-employee:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+@keyframes org-grow {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A signal travelling down each open department's line — the chart reads as
+   a live network. One tiny dot per open branch; still under reduced motion. */
+@media (min-width: 721px) {
+  .org-employees::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: calc(50% - 3px);
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-primary);
+    box-shadow: 0 0 8px var(--color-primary);
+    pointer-events: none;
+    animation: org-signal 3.6s var(--ease-in-out) infinite;
+  }
+}
+
+@keyframes org-signal {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  15%,
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    top: calc(100% - 1.2rem);
+    opacity: 0;
   }
 }

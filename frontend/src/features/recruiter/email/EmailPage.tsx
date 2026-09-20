@@ -40,7 +40,7 @@ export function EmailPage() {
       {lastSent && <Alert variant="success">{lastSent}</Alert>}
 
       {canSend && accessToken !== null && (
-        <section className="card">
+        <section className="card email-page-card">
           <EmailComposer
             key={composerKey}
             target={{ kind: "general" }}

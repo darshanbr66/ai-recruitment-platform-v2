@@ -1,0 +1,238 @@
+/*
+ * Recruiter dashboard ("command center"). Figures are the hero: large,
+ * tabular, one tone per meaning. Depth is layered — an ambient network behind
+ * the greeting, cards that lift only when they are links.
+ */
+
+.command-header {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding: 1.75rem 2rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(120deg, var(--color-primary-soft), transparent 55%),
+    var(--color-surface);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+}
+
+.command-header .network-backdrop {
+  z-index: -1;
+  opacity: 0.5;
+}
+
+.command-header h1 {
+  margin: 0.15rem 0 0.35rem;
+  font-size: clamp(1.6rem, 3vw, 2.15rem);
+}
+
+.command-header p {
+  margin: 0;
+}
+
+.command-header .eyebrow {
+  margin-bottom: 0.2rem;
+}
+
+.command-header-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/* --- key figures ------------------------------------------------------------ */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.stat-grid .stat-card,
+.skeleton-stat-grid .stat-card {
+  padding: 1.15rem 1.35rem 1.2rem;
+}
+
+.stat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.stat-icon {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: var(--radius-md);
+  background: var(--tone-soft, var(--color-primary-soft));
+  color: var(--tone-fg, var(--color-primary));
+}
+
+.stat-grid .stat-value {
+  font-size: 2.6rem;
+  margin-top: 0.15rem;
+}
+
+.stat-caption {
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+/* One accent line per figure — the tone says what kind of number this is. */
+.stat-grid .stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-grid .stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--tone-fg, var(--color-primary));
+  opacity: 0.85;
+}
+
+.stat-tone-brand {
+  --tone-soft: var(--color-primary-soft);
+  --tone-fg: var(--color-primary);
+}
+
+.stat-tone-success {
+  --tone-soft: var(--color-active-bg);
+  --tone-fg: var(--color-active-text);
+}
+
+.stat-tone-danger {
+  --tone-soft: var(--color-danger-bg);
+  --tone-fg: var(--color-danger-text);
+}
+
+.stat-tone-accent {
+  --tone-soft: var(--color-accent-soft);
+  --tone-fg: var(--color-accent);
+}
+
+.stat-tone-info {
+  --tone-soft: var(--color-info-bg);
+  --tone-fg: var(--color-info-text);
+}
+
+.stat-tone-neutral {
+  --tone-soft: var(--color-inactive-bg);
+  --tone-fg: var(--color-inactive-text);
+}
+
+/* --- pipeline bars ------------------------------------------------------------ */
+
+.bar-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.bar-row-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-grid .card h2 {
+  margin-bottom: 1rem;
+}
+
+/* --- quick actions ------------------------------------------------------------- */
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.module-card {
+  position: relative;
+  color: inherit;
+  text-decoration: none;
+}
+
+.module-icon {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin-bottom: 0.4rem;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.module-arrow {
+  position: absolute;
+  top: 1.1rem;
+  right: 1.1rem;
+  color: var(--color-text-muted);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
+}
+
+.module-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.module-card:hover .module-arrow {
+  color: var(--color-primary);
+  transform: translateX(3px);
+}
+
+@media (max-width: 1100px) {
+  .quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .stat-grid,
+  .skeleton-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .command-header {
+    padding: 1.25rem;
+  }
+
+  .command-header-cta {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .stat-grid .stat-value {
+    font-size: 2rem;
+  }
+
+  .stat-grid .stat-card {
+    padding: 0.95rem 1rem;
+  }
+
+  /* labels wrap to two lines here: reserve the room so figures line up */
+  .stat-grid .stat-head {
+    min-height: 2.6rem;
+  }
+
+  .quick-grid {
+    grid-template-columns: 1fr;
+  }
+}

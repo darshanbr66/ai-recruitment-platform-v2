@@ -1,7 +1,10 @@
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../features/auth/AuthContext";
-import { ThemeToggle } from "../features/theme/ThemeToggle";
+import { AppShell, type NavSection } from "./AppShell";
+
+const SECTIONS: NavSection[] = [
+  { items: [{ to: "/admin", label: "Organizations", icon: "graph", end: true }] },
+];
 
 /**
  * Platform-administration shell — structurally separate from the recruiter
@@ -14,7 +17,6 @@ import { ThemeToggle } from "../features/theme/ThemeToggle";
 export function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
 
   async function handleLogout() {
     await logout();
@@ -22,65 +24,14 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="app-shell">
-      <button
-        type="button"
-        className={`sidebar-overlay${menuOpen ? " open" : ""}`}
-        aria-hidden={!menuOpen}
-        onClick={() => setMenuOpen(false)}
-      />
-      <aside className={`sidebar sidebar-admin${menuOpen ? " open" : ""}`}>
-        <div className="sidebar-brand">
-          <span>Platform Administration</span>
-          <button
-            type="button"
-            className="sidebar-close"
-            aria-label="Close menu"
-            onClick={() => setMenuOpen(false)}
-          >
-            &times;
-          </button>
-        </div>
-        <nav className="sidebar-nav">
-          <NavLink
-            to="/admin"
-            end
-            className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
-            onClick={() => setMenuOpen(false)}
-          >
-            Organizations
-          </NavLink>
-        </nav>
-      </aside>
-
-      <div className="app-main">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button
-              type="button"
-              className="mobile-menu-button"
-              aria-label="Open menu"
-              onClick={() => setMenuOpen(true)}
-            >
-              &#9776;
-            </button>
-            <span className="topbar-title">Super Admin</span>
-          </div>
-          <div className="topbar-user">
-            <ThemeToggle />
-            <div className="user-badge">
-              <span className="user-name">{user?.full_name}</span>
-              <span className="user-roles">SUPER_ADMIN</span>
-            </div>
-            <button type="button" className="btn btn-ghost" onClick={() => void handleLogout()}>
-              Sign out
-            </button>
-          </div>
-        </header>
-        <main className="content">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+    <AppShell
+      variant="admin"
+      brandTitle="Platform Administration"
+      contextLabel="Super Admin"
+      sections={SECTIONS}
+      userName={user?.full_name}
+      userRole="SUPER_ADMIN"
+      onSignOut={() => void handleLogout()}
+    />
   );
 }

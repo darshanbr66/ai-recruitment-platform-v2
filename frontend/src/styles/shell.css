@@ -1,0 +1,480 @@
+/*
+ * Application shell (recruiter + admin): sidebar, top bar, scrolling content,
+ * phone tab bar. The frame never scrolls — only `.content` does — so the
+ * sidebar and top bar stay put on every page without per-page sticky rules.
+ */
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+/* --- sidebar ------------------------------------------------------------ */
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0.75rem;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem 1.4rem;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.logo-mark {
+  flex-shrink: 0;
+  border-radius: 9px;
+  box-shadow: 0 4px 12px var(--color-primary-ring);
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.sidebar-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.sidebar-close:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+}
+
+.sidebar-nav {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  flex: 1;
+}
+
+/* Groups are deliberately NOT positioned: the sliding indicator measures
+   each link's offset against the nav itself. */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sidebar-section-label {
+  padding: 0 0.75rem 0.3rem;
+  font-size: 0.68rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  opacity: 0.85;
+}
+
+/* One indicator that slides to the active item — position communicates
+   "you moved from here to there" better than a highlight that snaps. */
+.nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.nav-indicator::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 24%;
+  bottom: 24%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary);
+}
+
+.nav-indicator.ready {
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    height var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.sidebar-link {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.2;
+}
+
+.sidebar-link svg {
+  flex-shrink: 0;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.sidebar-link:hover {
+  color: var(--color-text);
+  background: var(--color-bg-subtle);
+}
+
+.sidebar-link:hover svg {
+  transform: scale(1.08);
+}
+
+.sidebar-link.active {
+  color: var(--color-primary);
+  font-weight: var(--weight-strong);
+  background: transparent;
+}
+
+.sidebar-link.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.sidebar-link.disabled:hover {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.sidebar-footer {
+  display: none;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem 0.5rem 0.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.sidebar-user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.sidebar-user-text .user-name,
+.sidebar-user-text .user-roles {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+/* --- main column --------------------------------------------------------- */
+
+.app-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Layered depth: a faint brand-tinted light from the top-right corner sits
+   behind the content, so the canvas isn't a flat sheet. */
+.app-main::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 24rem;
+  background: radial-gradient(50rem 22rem at 82% -9rem, var(--color-primary-soft), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.topbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-shrink: 0;
+  min-height: 4rem;
+  padding: 0.7rem 1.75rem;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.topbar-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.topbar-context {
+  font-size: 0.68rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.topbar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.mobile-menu-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-shrink: 0;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.user-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+
+.user-name {
+  font-size: 0.875rem;
+  font-weight: var(--weight-medium);
+}
+
+.user-roles {
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.75rem 2rem 3rem;
+  width: 100%;
+  scroll-padding-top: 1rem;
+}
+
+.content:focus {
+  outline: none;
+}
+
+/* Readable measure on very wide screens; the shell itself stays full-bleed. */
+.content > .page-transition {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+/* --- phone tab bar -------------------------------------------------------- */
+
+.tabbar {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: min(300px, 86vw);
+    transform: translateX(-100%);
+    transition: transform var(--dur-slow) var(--ease-out);
+    box-shadow: none;
+  }
+
+  .sidebar.open {
+    transform: none;
+    box-shadow: var(--shadow-popover);
+  }
+
+  .sidebar-close {
+    display: inline-flex;
+  }
+
+  .sidebar-footer {
+    display: flex;
+  }
+
+  .sidebar-overlay.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    border: 0;
+    padding: 0;
+    background: var(--color-overlay);
+    animation: overlay-in var(--dur-base) var(--ease-out);
+  }
+
+  .mobile-menu-button {
+    display: inline-flex;
+  }
+
+  .topbar {
+    min-height: 3.5rem;
+    padding: 0.6rem 1rem;
+  }
+
+  .topbar-context,
+  .user-chip .user-badge,
+  .topbar-signout {
+    display: none;
+  }
+
+  .content {
+    padding: 1rem 1rem 2rem;
+  }
+
+  /* room above the fixed tab bar (recruiter shell only — admin has none) */
+  .app-shell-recruiter .content {
+    padding-bottom: calc(var(--tabbar-height) + 1.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tabbar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    height: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .tabbar-link {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    border: none;
+    background: none;
+    color: var(--color-text-muted);
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: var(--weight-medium);
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tabbar-link.active {
+    color: var(--color-primary);
+  }
+
+  .tabbar-link.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 1.75rem;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--color-primary);
+    animation: tab-in var(--dur-base) var(--ease-out);
+  }
+
+  .tabbar-link:active svg {
+    transform: scale(0.9);
+  }
+
+  .tabbar-link svg {
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+}
+
+@keyframes tab-in {
+  from {
+    transform: scaleX(0.3);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}

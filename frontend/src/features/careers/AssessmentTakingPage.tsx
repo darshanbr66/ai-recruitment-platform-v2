@@ -3,8 +3,10 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
+import { Icon } from "../../shared/components/Icon";
+import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
 import type { MonitoringEventCreate } from "../../types/assessment";
-import { ThemeToggle } from "../theme/ThemeToggle";
+import { PublicHeader } from "../public/PublicHeader";
 import { MonitoringConsentScreen } from "./MonitoringConsentScreen";
 import { SubmissionSuccess } from "./SubmissionSuccess";
 import { useProctoring } from "./useProctoring";
@@ -71,6 +73,10 @@ export function AssessmentTakingPage() {
       ),
   });
 
+  const answeredCount = (invitationQuery.data?.questions ?? []).filter(
+    (question) => (answers[question.id] ?? []).length > 0,
+  ).length;
+
   function toggleOption(questionId: string, optionId: string, multi: boolean) {
     setAnswers((current) => {
       const existing = current[questionId] ?? [];
@@ -85,12 +91,10 @@ export function AssessmentTakingPage() {
   }
 
   return (
-    <div>
-      <header className="public-nav">
-        <span className="topbar-title">{invitationQuery.data?.organization_name ?? "Careers"}</span>
-        <ThemeToggle />
-      </header>
-      <div className="public-shell">
+    <div className="public-page assess-page">
+      <NetworkBackdrop seed={4} count={30} className="assess-backdrop" />
+      <PublicHeader title={invitationQuery.data?.organization_name ?? "Careers"} />
+      <div className="public-shell assess-shell">
         {invitationQuery.isPending && <p role="status">Loading assessment…</p>}
         {invitationQuery.isError && (
           <Alert>
@@ -108,6 +112,19 @@ export function AssessmentTakingPage() {
             <p className="muted">
               {invitationQuery.data.job_title} at {invitationQuery.data.organization_name}
             </p>
+            {invitationQuery.data.status !== "SUBMITTED" && (
+              <div className="assess-facts">
+                <span className="chip">
+                  <Icon name="clock" size={13} />
+                  {invitationQuery.data.duration_minutes} minutes
+                </span>
+                <span className="chip">
+                  <Icon name="assessments" size={13} />
+                  {invitationQuery.data.questions.length} question
+                  {invitationQuery.data.questions.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            )}
 
             {invitationQuery.data.status === "SUBMITTED" && (
               <Alert variant="success">You've already submitted this assessment. Thank you!</Alert>
@@ -139,20 +156,42 @@ export function AssessmentTakingPage() {
             {invitationQuery.data.status === "STARTED" && (
               <section className="stack-lg">
                 <p className="muted">{invitationQuery.data.instructions}</p>
+                <div
+                  className="assess-progress"
+                  role="progressbar"
+                  aria-label="Questions answered"
+                  aria-valuemin={0}
+                  aria-valuemax={invitationQuery.data.questions.length}
+                  aria-valuenow={answeredCount}
+                  aria-valuetext={`${answeredCount} of ${invitationQuery.data.questions.length} answered`}
+                >
+                  <span className="assess-progress-label">
+                    {answeredCount} of {invitationQuery.data.questions.length} answered
+                  </span>
+                  <span className="assess-progress-track" aria-hidden="true">
+                    <span
+                      className="assess-progress-fill"
+                      style={{
+                        width: `${
+                          invitationQuery.data.questions.length === 0
+                            ? 0
+                            : (answeredCount / invitationQuery.data.questions.length) * 100
+                        }%`,
+                      }}
+                    />
+                  </span>
+                </div>
                 {invitationQuery.data.questions.map((question, index) => (
-                  <div key={question.id} className="card">
+                  <div key={question.id} className="card question-card">
                     <p>
                       <strong>
                         {index + 1}. {question.prompt}
                       </strong>{" "}
                       <span className="muted">({question.points} pt{question.points === 1 ? "" : "s"})</span>
                     </p>
-                    <div className="stack-lg" style={{ gap: "0.4rem" }}>
+                    <div className="stack-lg choice-list">
                       {question.options.map((option) => (
-                        <label
-                          key={option.id}
-                          style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-                        >
+                        <label key={option.id} className="choice">
                           <input
                             type={question.type === "MCQ_MULTI" ? "checkbox" : "radio"}
                             name={question.id}

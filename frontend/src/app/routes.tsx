@@ -1,29 +1,55 @@
+import { lazy, Suspense, type ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { CandidatePlaceholderPage } from "../features/candidate/CandidatePlaceholderPage";
-import { AssessmentTakingPage } from "../features/careers/AssessmentTakingPage";
-import { CampusDriveApplyPage } from "../features/careers/CampusDriveApplyPage";
-import { CareersPage } from "../features/careers/CareersPage";
-import { JobDetailPage } from "../features/careers/JobDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
-import { OrganizationsPage } from "../features/admin/organizations/OrganizationsPage";
-import { ActivitiesPage } from "../features/recruiter/activities/ActivitiesPage";
-import { ApplicationDetailPage } from "../features/recruiter/applications/ApplicationDetailPage";
-import { ApplicationsPage } from "../features/recruiter/applications/ApplicationsPage";
-import { AssessmentDetailPage } from "../features/recruiter/assessments/AssessmentDetailPage";
-import { AssessmentsPage } from "../features/recruiter/assessments/AssessmentsPage";
-import { CampusDriveDetailPage } from "../features/recruiter/campusDrives/CampusDriveDetailPage";
-import { CampusDrivesPage } from "../features/recruiter/campusDrives/CampusDrivesPage";
-import { CandidateDetailPage } from "../features/recruiter/candidates/CandidateDetailPage";
-import { CandidatesPage } from "../features/recruiter/candidates/CandidatesPage";
-import { EmailPage } from "../features/recruiter/email/EmailPage";
-import { JobsPage } from "../features/recruiter/jobs/JobsPage";
-import { OverviewPage } from "../features/recruiter/overview/OverviewPage";
-import { ReportsPage } from "../features/recruiter/reports/ReportsPage";
 import { PublicHomePage } from "../features/public/PublicHomePage";
-import { UsersPage } from "../features/recruiter/users/UsersPage";
-import { AdminLayout } from "./AdminLayout";
+import { RouteFallback } from "../shared/components/RouteFallback";
 import { ProtectedRoute } from "./ProtectedRoute";
-import { RecruiterLayout } from "./RecruiterLayout";
+
+/**
+ * Route-level code splitting. The public home page (the first thing most
+ * visitors see) and the sign-in page ship in the main bundle; every other
+ * screen is its own chunk, fetched when its route is first visited. A
+ * candidate opening the landing page therefore never downloads the recruiter
+ * app, and the recruiter shell/pages load in parallel with sign-in.
+ */
+function page<T extends Record<string, ComponentType>>(
+  load: () => Promise<T>,
+  name: keyof T & string,
+) {
+  return lazy(async () => ({ default: (await load())[name] }));
+}
+
+const CandidatePlaceholderPage = page(() => import("../features/candidate/CandidatePlaceholderPage"), "CandidatePlaceholderPage");
+const AssessmentTakingPage = page(() => import("../features/careers/AssessmentTakingPage"), "AssessmentTakingPage");
+const CampusDriveApplyPage = page(() => import("../features/careers/CampusDriveApplyPage"), "CampusDriveApplyPage");
+const CareersPage = page(() => import("../features/careers/CareersPage"), "CareersPage");
+const JobDetailPage = page(() => import("../features/careers/JobDetailPage"), "JobDetailPage");
+const OrganizationsPage = page(() => import("../features/admin/organizations/OrganizationsPage"), "OrganizationsPage");
+const ActivitiesPage = page(() => import("../features/recruiter/activities/ActivitiesPage"), "ActivitiesPage");
+const ApplicationDetailPage = page(() => import("../features/recruiter/applications/ApplicationDetailPage"), "ApplicationDetailPage");
+const ApplicationsPage = page(() => import("../features/recruiter/applications/ApplicationsPage"), "ApplicationsPage");
+const AssessmentDetailPage = page(() => import("../features/recruiter/assessments/AssessmentDetailPage"), "AssessmentDetailPage");
+const AssessmentsPage = page(() => import("../features/recruiter/assessments/AssessmentsPage"), "AssessmentsPage");
+const CampusDriveDetailPage = page(() => import("../features/recruiter/campusDrives/CampusDriveDetailPage"), "CampusDriveDetailPage");
+const CampusDrivesPage = page(() => import("../features/recruiter/campusDrives/CampusDrivesPage"), "CampusDrivesPage");
+const CandidateDetailPage = page(() => import("../features/recruiter/candidates/CandidateDetailPage"), "CandidateDetailPage");
+const CandidatesPage = page(() => import("../features/recruiter/candidates/CandidatesPage"), "CandidatesPage");
+const EmailPage = page(() => import("../features/recruiter/email/EmailPage"), "EmailPage");
+const JobsPage = page(() => import("../features/recruiter/jobs/JobsPage"), "JobsPage");
+const OverviewPage = page(() => import("../features/recruiter/overview/OverviewPage"), "OverviewPage");
+const ReportsPage = page(() => import("../features/recruiter/reports/ReportsPage"), "ReportsPage");
+const UsersPage = page(() => import("../features/recruiter/users/UsersPage"), "UsersPage");
+const AdminLayout = page(() => import("./AdminLayout"), "AdminLayout");
+const RecruiterLayout = page(() => import("./RecruiterLayout"), "RecruiterLayout");
+
+/** Full-page pending state for public routes (the app shell has its own). */
+function PublicFallback() {
+  return (
+    <div className="public-shell">
+      <RouteFallback />
+    </div>
+  );
+}
 
 /**
  * Three route trees, kept structurally separate per docs/architecture.md
@@ -36,51 +62,53 @@ import { RecruiterLayout } from "./RecruiterLayout";
  */
 export function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<PublicHomePage />} />
-      <Route path="/org/:slug" element={<CareersPage />} />
-      <Route path="/org/:slug/jobs/:jobId" element={<JobDetailPage />} />
-      <Route path="/assessment/:token" element={<AssessmentTakingPage />} />
-      <Route path="/campus-drive/:token" element={<CampusDriveApplyPage />} />
-      <Route path="/candidate/*" element={<CandidatePlaceholderPage />} />
+    <Suspense fallback={<PublicFallback />}>
+      <Routes>
+        <Route path="/" element={<PublicHomePage />} />
+        <Route path="/org/:slug" element={<CareersPage />} />
+        <Route path="/org/:slug/jobs/:jobId" element={<JobDetailPage />} />
+        <Route path="/assessment/:token" element={<AssessmentTakingPage />} />
+        <Route path="/campus-drive/:token" element={<CampusDriveApplyPage />} />
+        <Route path="/candidate/*" element={<CandidatePlaceholderPage />} />
 
-      <Route path="/recruiter/login" element={<LoginPage />} />
-      <Route
-        path="/recruiter"
-        element={
-          <ProtectedRoute>
-            <RecruiterLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<OverviewPage />} />
-        <Route path="jobs" element={<JobsPage />} />
-        <Route path="candidates" element={<CandidatesPage />} />
-        <Route path="candidates/:candidateId" element={<CandidateDetailPage />} />
-        <Route path="applications" element={<ApplicationsPage />} />
-        <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
-        <Route path="assessments" element={<AssessmentsPage />} />
-        <Route path="assessments/:assessmentId" element={<AssessmentDetailPage />} />
-        <Route path="campus-drives" element={<CampusDrivesPage />} />
-        <Route path="campus-drives/:driveId" element={<CampusDriveDetailPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="activities" element={<ActivitiesPage />} />
-        <Route path="email" element={<EmailPage />} />
-      </Route>
+        <Route path="/recruiter/login" element={<LoginPage />} />
+        <Route
+          path="/recruiter"
+          element={
+            <ProtectedRoute>
+              <RecruiterLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<OverviewPage />} />
+          <Route path="jobs" element={<JobsPage />} />
+          <Route path="candidates" element={<CandidatesPage />} />
+          <Route path="candidates/:candidateId" element={<CandidateDetailPage />} />
+          <Route path="applications" element={<ApplicationsPage />} />
+          <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
+          <Route path="assessments" element={<AssessmentsPage />} />
+          <Route path="assessments/:assessmentId" element={<AssessmentDetailPage />} />
+          <Route path="campus-drives" element={<CampusDrivesPage />} />
+          <Route path="campus-drives/:driveId" element={<CampusDriveDetailPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="activities" element={<ActivitiesPage />} />
+          <Route path="email" element={<EmailPage />} />
+        </Route>
 
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute requireSuperAdmin>
-            <AdminLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<OrganizationsPage />} />
-      </Route>
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requireSuperAdmin>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<OrganizationsPage />} />
+        </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

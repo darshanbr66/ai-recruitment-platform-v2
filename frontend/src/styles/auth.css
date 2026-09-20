@@ -1,0 +1,112 @@
+/*
+ * Sign-in. Two calm halves: a brand panel that says what the product is (with
+ * the same ambient network as the dashboard), and the form. The panel is
+ * decorative and disappears on phones, where the form gets the whole screen.
+ */
+
+.auth-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  padding: 0;
+  background: var(--color-bg);
+}
+
+.auth-shell > .auth-card {
+  align-self: center;
+  justify-self: center;
+  width: calc(100% - 3rem);
+  max-width: 420px;
+  margin: 2rem 1.5rem;
+  padding: 2.25rem;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-raised), var(--highlight-top);
+  animation: rise-in var(--dur-slow) var(--ease-out) both;
+}
+
+.auth-card h1 {
+  margin-bottom: 0.4rem;
+}
+
+.auth-card form {
+  margin-top: 1.5rem;
+}
+
+.auth-card .btn-primary {
+  width: 100%;
+  padding-block: 0.75rem;
+}
+
+.auth-brand {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: 100vh;
+  padding: 4rem clamp(2rem, 5vw, 4.5rem);
+  overflow: hidden;
+  background:
+    radial-gradient(40rem 32rem at 30% 28%, var(--stage-glow), transparent 70%),
+    var(--stage-bg);
+  border-right: 1px solid var(--color-border);
+}
+
+.auth-brand .network-backdrop {
+  z-index: -1;
+  opacity: 0.9;
+  -webkit-mask-image: radial-gradient(ellipse at 40% 35%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(ellipse at 40% 35%, #000 0%, transparent 78%);
+}
+
+.auth-brand-inner {
+  max-width: 28rem;
+}
+
+.auth-brand h2 {
+  margin: 1.25rem 0 1.5rem;
+  font-size: clamp(1.6rem, 2.6vw, 2.25rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.auth-brand ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+}
+
+.auth-brand li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.auth-brand li svg {
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+
+/* the home link sits over the panel, so give it a readable pill */
+.auth-shell .auth-home-link {
+  z-index: 2;
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--color-border);
+}
+
+@media (max-width: 900px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-brand {
+    display: none;
+  }
+
+  .auth-shell > .auth-card {
+    margin-block: 5rem 2rem;
+  }
+}

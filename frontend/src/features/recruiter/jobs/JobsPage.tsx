@@ -4,6 +4,7 @@ import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
+import { EmptyState } from "../../../shared/components/EmptyState";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
@@ -123,6 +124,8 @@ export function JobsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [openingsError, setOpeningsError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<JobResponse | null>(null);
+  // The job whose status just changed: its row flashes and its badge pops once.
+  const [flashJobId, setFlashJobId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<JobResponse | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -177,7 +180,14 @@ export function JobsPage() {
     mutationFn: ({ jobId, status }: { jobId: string; status: JobStatus; label: string }) =>
       updateJob(jobId, { status }, token),
     onSuccess: (_data, variables) => {
-      showToast(`${variables.label} — done.`, "success");
+      const title = jobsQuery.data?.find((job) => job.id === variables.jobId)?.title;
+      const now = { OPEN: "open", ON_HOLD: "on hold", CLOSED: "closed", DRAFT: "a draft" }[variables.status as string];
+      showToast(
+        title && now ? `“${title}” is now ${now}.` : `${variables.label} — done.`,
+        "success",
+      );
+      setFlashJobId(variables.jobId);
+      window.setTimeout(() => setFlashJobId((current) => (current === variables.jobId ? null : current)), 1800);
       setPendingClose(null);
       void queryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY });
     },
@@ -287,10 +297,19 @@ export function JobsPage() {
       {jobsQuery.isSuccess && (
         <section className="stack-lg" style={{ gap: "1rem" }}>
           {jobsQuery.data.length === 0 ? (
-            <div className="empty-state">
-              <p className="empty-state-title">No jobs yet</p>
-              <p>Create your first requisition to start hiring.</p>
-            </div>
+            <EmptyState
+              icon="jobs"
+              title="No jobs yet"
+              action={
+                canManageJobs ? (
+                  <button type="button" className="btn btn-primary" onClick={openCreateForm}>
+                    Create your first job
+                  </button>
+                ) : undefined
+              }
+            >
+              Create your first requisition to start hiring.
+            </EmptyState>
           ) : (
             <>
               <div className="toolbar">
@@ -316,14 +335,17 @@ export function JobsPage() {
                   </thead>
                   <tbody>
                     {filteredJobs.map((job, index) => (
-                      <tr key={job.id}>
+                      <tr key={job.id} className={flashJobId === job.id ? "row-flash" : undefined}>
                         <td>{index + 1}</td>
                         <td>{job.title}</td>
                         <td>{job.department ?? "—"}</td>
                         <td>{job.location ?? "—"}</td>
                         <td>{job.openings_count}</td>
                         <td>
-                          <span className={`badge ${STATUS_BADGE_CLASS[job.status]}`}>
+                          <span
+                            key={job.status}
+                            className={`badge ${STATUS_BADGE_CLASS[job.status]}${flashJobId === job.id ? " badge-pop" : ""}`}
+                          >
                             {job.status}
                           </span>
                         </td>

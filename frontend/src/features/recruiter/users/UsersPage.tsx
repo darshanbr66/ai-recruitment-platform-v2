@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { ASSIGNABLE_ROLES, type AssignableRole, type UserResponse } from "../../../types/auth";
 import { Alert } from "../../../shared/components/Alert";
+import { EmptyState } from "../../../shared/components/EmptyState";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
@@ -199,10 +200,9 @@ export function UsersPage() {
       {activeTab === "accounts" && usersQuery.isSuccess && (
         <section>
           {usersQuery.data.length === 0 ? (
-            <div className="empty-state">
-              <p className="empty-state-title">No team members yet</p>
-              <p>Add your first teammate below.</p>
-            </div>
+            <EmptyState icon="user" title="No team members yet">
+              Add your first teammate below.
+            </EmptyState>
           ) : (
             <div className="table-scroll">
               <table className="data-table">

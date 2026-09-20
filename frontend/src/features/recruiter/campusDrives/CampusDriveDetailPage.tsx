@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { BackLink } from "../../../shared/components/BackLink";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { QrCode } from "../../../shared/components/QrCode";
@@ -185,7 +186,7 @@ export function CampusDriveDetailPage() {
   return (
     <div className="stack-lg">
       <p>
-        <Link to="/recruiter/campus-drives">&larr; Back to campus drives</Link>
+        <BackLink to="/recruiter/campus-drives">Back to campus drives</BackLink>
       </p>
 
       <div className="page-header">

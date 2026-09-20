@@ -1,0 +1,915 @@
+/*
+ * Public landing page. The hero is the product's one cinematic moment: a lit
+ * stage, the recruitment-intelligence network, and the message. Everything
+ * below it is calm and legible. Colours come from the theme tokens and the
+ * shared `--kind-*` palette, so light and dark are each designed, not inverted.
+ */
+
+.landing {
+  min-height: 100vh;
+  background: var(--color-bg);
+  overflow-x: clip;
+}
+
+/* --- navigation ----------------------------------------------------------- */
+
+.landing-nav {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem clamp(1rem, 4vw, 2.5rem);
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    padding var(--dur-base) var(--ease-out);
+}
+
+.landing-nav.is-scrolled {
+  padding-block: 0.6rem;
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  backdrop-filter: saturate(1.4) blur(14px);
+  border-bottom-color: var(--color-border);
+}
+
+.landing-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.landing-brand-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.1em;
+}
+
+.landing-nav-links {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.landing-nav-links a {
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+
+.landing-nav-links a:hover {
+  color: var(--color-text);
+  background: var(--color-bg-subtle);
+}
+
+.landing-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* --- hero ------------------------------------------------------------------ */
+
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  min-height: min(100vh, 900px);
+  min-height: min(100svh, 900px);
+  padding: 6.5rem clamp(1rem, 4vw, 2.5rem) 3.5rem;
+  background: var(--stage-bg);
+  overflow: hidden;
+}
+
+/* The lit stage: a soft brand glow and faint concentric guides, both centred
+   where the network sits. The guides fade out with a mask so they never end
+   in a hard edge. */
+.hero-stage {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background: radial-gradient(52rem 40rem at 72% 46%, var(--stage-glow), transparent 70%);
+}
+
+.hero-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-radial-gradient(
+    circle at 72% 46%,
+    transparent 0 4.5rem,
+    var(--stage-line) 4.5rem calc(4.5rem + 1px)
+  );
+  -webkit-mask-image: radial-gradient(circle at 72% 46%, #000 12%, transparent 68%);
+  mask-image: radial-gradient(circle at 72% 46%, #000 12%, transparent 68%);
+}
+
+.hero-scene {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.hero-scene-poster,
+.hero-scene-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hero-scene-poster {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 2%;
+  transition: opacity 700ms var(--ease-out) 250ms;
+}
+
+.hero-scene-canvas {
+  display: block;
+  opacity: 0;
+  transition: opacity 900ms var(--ease-out);
+}
+
+.hero-scene[data-scene-status="ready"] .hero-scene-canvas {
+  opacity: 1;
+}
+
+.hero-scene[data-scene-status="ready"] .hero-scene-poster {
+  opacity: 0;
+}
+
+/* --- the static poster (loading state, reduced motion, no-WebGL fallback) --- */
+
+.network-poster {
+  width: min(54%, 720px);
+  height: auto;
+  max-height: 80%;
+  overflow: visible;
+}
+
+.poster-particle {
+  fill: var(--kind-particle);
+  opacity: 0.55;
+}
+
+.poster-ring {
+  fill: none;
+  stroke-width: 0.018;
+  stroke-opacity: 0.4;
+}
+
+.poster-link {
+  stroke: var(--kind-candidate);
+  stroke-width: 0.012;
+  stroke-opacity: 0.3;
+}
+
+.poster-match {
+  stroke: var(--kind-match);
+  stroke-width: 0.03;
+  stroke-dasharray: 0.13 0.1;
+  stroke-opacity: 0.9;
+}
+
+.poster-node {
+  fill: var(--kind-candidate);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.poster-node[data-kind="job"] {
+  fill: var(--kind-job);
+}
+
+.poster-node[data-kind="skill"] {
+  fill: var(--kind-skill);
+}
+
+.poster-node[data-kind="assessment"] {
+  fill: var(--kind-assessment);
+}
+
+.poster-node[data-kind="organization"] {
+  fill: var(--kind-organization);
+}
+
+.poster-node[data-matched] {
+  fill: var(--kind-match);
+}
+
+.poster-core-body {
+  fill: var(--kind-ai);
+}
+
+.poster-core-wire {
+  fill: none;
+  stroke: var(--kind-ai);
+  stroke-width: 0.03;
+  stroke-opacity: 0.6;
+}
+
+/* A legend category lights up; everything else steps back. */
+.network-poster[data-highlight="candidate"] .poster-node:not([data-kind="candidate"]),
+.network-poster[data-highlight="job"] .poster-node:not([data-kind="job"]),
+.network-poster[data-highlight="skill"] .poster-node:not([data-kind="skill"]),
+.network-poster[data-highlight="assessment"] .poster-node:not([data-kind="assessment"]),
+.network-poster[data-highlight="organization"] .poster-node:not([data-kind="organization"]),
+.network-poster[data-highlight="ai"] .poster-node {
+  opacity: 0.14 !important;
+}
+
+/* --- hero content ------------------------------------------------------------ */
+
+.hero-inner {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.hero-copy {
+  max-width: 40rem;
+}
+
+.hero-eyebrow {
+  margin: 0 0 1.1rem;
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+}
+
+.hero-title {
+  margin: 0 0 1.25rem;
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: var(--weight-strong);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+.hero-accent {
+  display: block;
+  color: var(--color-primary);
+}
+
+.hero-sub {
+  max-width: 32rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: clamp(1.02rem, 1.4vw, 1.2rem);
+  line-height: 1.6;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hero-cta svg {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.hero-cta:hover svg {
+  transform: translateX(4px);
+}
+
+/* Proof points are plain text, not pills: the page has one set of buttons
+   (the CTAs) and one set of controls (the legend) — everything else is copy. */
+.hero-proof {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1.25rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.hero-proof li + li::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 1.25rem;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.hero-proof-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+/* Page-load entrance: the copy arrives in reading order, once. */
+.hero-eyebrow,
+.hero-title,
+.hero-sub,
+.hero-actions,
+.hero-proof {
+  animation: rise-in 700ms var(--ease-out) both;
+}
+
+.hero-title {
+  animation-delay: 80ms;
+}
+
+.hero-sub {
+  animation-delay: 170ms;
+}
+
+.hero-actions {
+  animation-delay: 260ms;
+}
+
+.hero-proof {
+  animation-delay: 350ms;
+}
+
+/* --- legend ---------------------------------------------------------------- */
+
+.hero-legend {
+  position: absolute;
+  right: clamp(1rem, 4vw, 2.5rem);
+  bottom: 1.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  max-width: 31rem;
+  animation: rise-in 700ms var(--ease-out) 450ms both;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.legend-item:hover,
+.legend-item[aria-pressed="true"] {
+  border-color: var(--color-border-strong);
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  color: var(--color-text);
+}
+
+.legend-item[aria-pressed="true"] {
+  border-color: var(--color-primary);
+}
+
+.legend-item:active {
+  transform: scale(0.97);
+}
+
+/* Swatch shapes echo the shapes in the scene, so the legend is readable
+   without colour: diamond = job, square = assessment, hexagon = organization. */
+.legend-swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--kind-candidate);
+}
+
+.legend-swatch[data-kind="job"] {
+  background: var(--kind-job);
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.9);
+}
+
+.legend-swatch[data-kind="skill"] {
+  background: var(--kind-skill);
+  width: 0.45rem;
+  height: 0.45rem;
+}
+
+.legend-swatch[data-kind="assessment"] {
+  background: var(--kind-assessment);
+  border-radius: 2px;
+}
+
+.legend-swatch[data-kind="organization"] {
+  background: var(--kind-organization);
+  border-radius: 0;
+  clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%);
+}
+
+.legend-swatch[data-kind="ai"] {
+  background: var(--kind-ai);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind-ai) 28%, transparent);
+}
+
+/* --- sections ----------------------------------------------------------------- */
+
+.landing-section {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(4rem, 9vw, 7rem) clamp(1rem, 4vw, 2.5rem);
+}
+
+/* Full-bleed alternating band without breaking the centred column. */
+.landing-section-alt {
+  position: relative;
+  isolation: isolate;
+}
+
+.landing-section-alt::before {
+  content: "";
+  position: absolute;
+  inset: 0 -100vmax;
+  z-index: -1;
+  background: var(--color-bg-subtle);
+}
+
+.section-eyebrow {
+  margin: 0 0 0.6rem;
+  color: var(--color-primary);
+  font-size: 0.72rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landing-section-title {
+  margin: 0 0 0.8rem;
+  font-size: clamp(1.75rem, 3.4vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.landing-section-sub {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 1.05rem;
+}
+
+.landing-more {
+  margin-top: 2rem;
+}
+
+/* role cards */
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 2.25rem;
+}
+
+.role-grid > .reveal {
+  display: flex;
+}
+
+.role-grid-empty {
+  grid-column: 1 / -1;
+}
+
+.role-card {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.35rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.role-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: var(--color-primary);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.role-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.role-card:hover::after {
+  transform: scaleX(1);
+}
+
+.role-card-skeleton {
+  pointer-events: none;
+}
+
+.role-card-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.role-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.role-card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  font-weight: var(--weight-strong);
+}
+
+.role-card-cta svg {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.role-card:hover .role-card-cta svg {
+  transform: translateX(4px);
+}
+
+/* hiring process: a spine of nodes */
+.process {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(2rem, 6vw, 4.5rem);
+  align-items: start;
+}
+
+.process-intro {
+  position: sticky;
+  top: 6rem;
+}
+
+.process-key {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.process-steps {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.process-steps::before {
+  content: "";
+  position: absolute;
+  left: 1.2rem;
+  top: 1.4rem;
+  bottom: 1.4rem;
+  width: 2px;
+  background: linear-gradient(var(--color-primary), var(--color-border-strong));
+  opacity: 0.55;
+}
+
+.process-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.process-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 2px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: 0 0 0 5px var(--color-bg-subtle);
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: var(--weight-strong);
+}
+
+.process-step:has(.process-tag-human) .process-node {
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.process-body {
+  padding-bottom: 0.4rem;
+}
+
+.process-body h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0;
+}
+
+.process-body p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-muted);
+}
+
+.process-tag {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: 0.66rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.process-tag-ai {
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+.process-tag-human {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+/* principle / feature cards */
+.principle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2.25rem;
+}
+
+.principle-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.principle-card {
+  padding: 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.principle-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.principle-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.principle-card p {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+}
+
+/* closing call to action */
+.landing-final-cta {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(4rem, 9vw, 7rem) 1rem;
+  background: var(--stage-bg);
+  text-align: center;
+}
+
+.landing-final-cta .network-backdrop {
+  z-index: -1;
+  opacity: 0.7;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse at 50% 50%, #000 0%, transparent 72%);
+}
+
+.landing-final-inner h2 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(2rem, 4.4vw, 3.1rem);
+  letter-spacing: -0.035em;
+}
+
+.landing-final-inner p {
+  margin: 0 0 1.75rem;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+}
+
+.landing-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.75rem clamp(1rem, 4vw, 2.5rem);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.875rem;
+}
+
+.landing-footer-links {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.landing-footer-links a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.landing-footer-links a:hover {
+  color: var(--color-text);
+}
+
+/* Assessment consent screen list (also used by the careers flow). */
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check-list li {
+  position: relative;
+  padding-left: 1.75rem;
+  font-size: 0.95rem;
+}
+
+.check-list li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
+  color: var(--color-active-text);
+  font-weight: 700;
+}
+
+/* --- tablet / phone: intentionally composed, not shrunk ------------------------ */
+
+/* Stacked hero (tablet and phone): copy first, then the network in a block of
+   its own. The scene never sits under text — legibility comes before spectacle. */
+@media (max-width: 1100px) {
+  .hero {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding-bottom: 1.5rem;
+  }
+
+  .hero-stage {
+    background: radial-gradient(38rem 30rem at 50% 82%, var(--stage-glow), transparent 70%);
+  }
+
+  .hero-stage::before {
+    background: repeating-radial-gradient(
+      circle at 50% 82%,
+      transparent 0 4.5rem,
+      var(--stage-line) 4.5rem calc(4.5rem + 1px)
+    );
+    -webkit-mask-image: radial-gradient(circle at 50% 82%, #000 12%, transparent 68%);
+    mask-image: radial-gradient(circle at 50% 82%, #000 12%, transparent 68%);
+  }
+
+  .hero-inner {
+    order: 1;
+  }
+
+  .hero-scene {
+    position: relative;
+    inset: auto;
+    order: 2;
+    height: clamp(19rem, 64vw, 32rem);
+    margin: 1.75rem auto 0;
+    width: 100%;
+    max-width: 44rem;
+  }
+
+  .hero-scene-poster {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .network-poster {
+    width: 100%;
+    max-height: 100%;
+  }
+
+  .hero-legend {
+    position: static;
+    justify-content: flex-start;
+    max-width: none;
+    margin-top: 2.25rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .process {
+    grid-template-columns: 1fr;
+  }
+
+  .process-intro {
+    position: static;
+  }
+
+  .principle-grid,
+  .principle-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .landing-nav-links {
+    display: none;
+  }
+
+  .hero {
+    align-items: flex-start;
+    padding-top: 5.75rem;
+    padding-bottom: 2.5rem;
+  }
+
+  .hero-actions .btn-lg {
+    flex: 1 1 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .legend-item {
+    padding: 0.35rem 0.65rem;
+  }
+
+  .hero-scene {
+    height: clamp(17rem, 78vw, 24rem);
+  }
+}

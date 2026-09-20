@@ -1,11 +1,14 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
 } from "react";
+import { useReducedMotion } from "../../../shared/hooks/useReducedMotion";
 import { Spinner } from "../../../shared/components/Spinner";
 import type { DepartmentResponse, EmployeeResponse } from "../../../types/teamHierarchy";
 import { moveEmployeeId, type DropPosition } from "./employeeOrder";
@@ -77,6 +80,9 @@ export function OrgChart({
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const handleToFocus = useRef<string | null>(null);
+  const reducedMotion = useReducedMotion();
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+  const lastLayout = useRef<{ order: string; boxes: Map<string, DOMRect>; branchOf: Map<string, string> } | null>(null);
 
   const branches = useMemo<Branch[]>(() => {
     const activeByDepartment = new Map<string | null, EmployeeResponse[]>();
@@ -106,6 +112,36 @@ export function OrgChart({
     }
     return result;
   }, [departments, employees]);
+
+  // When a department's order changes, cards glide from where they were to
+  // where they are now (FLIP) instead of teleporting. Measured after every
+  // commit so the "before" positions are always current; animated only for
+  // cards that stayed in the same department, and never for reduced motion.
+  useLayoutEffect(() => {
+    const order = branches.map((b) => `${b.key}:${b.employees.map((e) => e.id).join(",")}`).join("|");
+    const boxes = new Map<string, DOMRect>();
+    const branchOf = new Map<string, string>();
+    cardRefs.current.forEach((node, id) => boxes.set(id, node.getBoundingClientRect()));
+    branches.forEach((b) => b.employees.forEach((e) => branchOf.set(e.id, b.key)));
+
+    const previous = lastLayout.current;
+    lastLayout.current = { order, boxes, branchOf };
+    if (!previous || previous.order === order || reducedMotion) return;
+
+    boxes.forEach((box, id) => {
+      const before = previous.boxes.get(id);
+      const node = cardRefs.current.get(id);
+      if (!before || !node || previous.branchOf.get(id) !== branchOf.get(id)) return;
+      if (typeof node.animate !== "function") return;
+      const dx = before.left - box.left;
+      const dy = before.top - box.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      node.animate(
+        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
+        { duration: 260, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+      );
+    });
+  });
 
   // Reordering moves the card in the DOM, which can drop keyboard focus from
   // the handle that was just used — put it back.
@@ -269,6 +305,11 @@ export function OrgChart({
                         return (
                           <li
                             key={employee.id}
+                            ref={(node) => {
+                              if (node) cardRefs.current.set(employee.id, node);
+                              else cardRefs.current.delete(employee.id);
+                            }}
+                            style={{ "--i": index } as CSSProperties}
                             className={`org-employee${reorderable ? " org-employee-reorderable" : ""}${
                               isDragged ? " org-employee-dragging" : ""
                             }${dropClass}`}

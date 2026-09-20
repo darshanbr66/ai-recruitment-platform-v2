@@ -23,7 +23,7 @@ export function MonitoringConsentScreen({
         assessment, the following may be recorded with a timestamp and reviewed by the recruitment
         team:
       </p>
-      <ul className="landing-checklist">
+      <ul className="check-list">
         <li>Camera and microphone permission, and whether they become unavailable</li>
         <li>Camera/microphone device changes (e.g. unplugging a webcam)</li>
         <li>Switching away from this tab or window</li>

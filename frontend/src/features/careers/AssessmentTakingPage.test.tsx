@@ -106,3 +106,75 @@ describe("AssessmentTakingPage monitoring consent", () => {
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 });
+
+describe("AssessmentTakingPage focused experience", () => {
+  const twoQuestions: PublicInvitationView = {
+    ...sentInvitation,
+    status: "STARTED",
+    started_at: new Date().toISOString(),
+    questions: [
+      ...sentInvitation.questions,
+      {
+        id: "q2",
+        prompt: "3 + 3?",
+        type: "MCQ_SINGLE",
+        points: 1,
+        options: [
+          { id: "p1", label: "6" },
+          { id: "p2", label: "7" },
+        ],
+      },
+    ],
+  };
+
+  it("shows how many questions are answered, updating as the candidate answers", async () => {
+    vi.spyOn(careersApi, "getAssessmentInvitation").mockResolvedValue(twoQuestions);
+
+    renderPage();
+    const progress = await screen.findByRole("progressbar", { name: "Questions answered" });
+    expect(progress).toHaveAttribute("aria-valuemax", "2");
+    expect(progress).toHaveAttribute("aria-valuenow", "0");
+    expect(progress).toHaveAttribute("aria-valuetext", "0 of 2 answered");
+
+    fireEvent.click(screen.getByLabelText("4"));
+    expect(progress).toHaveAttribute("aria-valuenow", "1");
+    fireEvent.click(screen.getByLabelText("6"));
+    expect(progress).toHaveAttribute("aria-valuetext", "2 of 2 answered");
+
+    // changing an answer is not answering again
+    fireEvent.click(screen.getByLabelText("3"));
+    expect(progress).toHaveAttribute("aria-valuenow", "2");
+  });
+
+  it("states the allotted time and question count, but never invents a countdown that isn't enforced", async () => {
+    vi.spyOn(careersApi, "getAssessmentInvitation").mockResolvedValue(twoQuestions);
+
+    renderPage();
+    await screen.findByRole("progressbar");
+
+    expect(screen.getByText("30 minutes")).toBeInTheDocument();
+    expect(screen.getByText("2 questions")).toBeInTheDocument();
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+    expect(screen.queryByText(/remaining|time left/i)).not.toBeInTheDocument();
+  });
+
+  it("shows no progress or timer before the assessment has started", async () => {
+    vi.spyOn(careersApi, "getAssessmentInvitation").mockResolvedValue(sentInvitation);
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Before You Begin" });
+
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("presents each answer as a selectable tile that stays a real radio input", async () => {
+    vi.spyOn(careersApi, "getAssessmentInvitation").mockResolvedValue(twoQuestions);
+
+    renderPage();
+    await screen.findByRole("progressbar");
+
+    const four = screen.getByLabelText("4");
+    expect(four).toHaveAttribute("type", "radio");
+    expect(four.closest("label")).toHaveClass("choice");
+  });
+});

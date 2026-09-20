@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, type Location } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
+import { Icon, LogoMark } from "../../shared/components/Icon";
+import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "./AuthContext";
 
@@ -46,6 +48,26 @@ export function LoginPage() {
         &larr; Back to Home
       </Link>
       <ThemeToggle />
+
+      <aside className="auth-brand" aria-hidden="true">
+        <NetworkBackdrop seed={3} count={40} />
+        <div className="auth-brand-inner">
+          <LogoMark size={44} />
+          <h2>Recruitment intelligence, with people in the loop.</h2>
+          <ul>
+            <li>
+              <Icon name="sparkles" size={16} /> AI-assisted screening, always recruiter-reviewed
+            </li>
+            <li>
+              <Icon name="shield" size={16} /> Every decision traceable to its application
+            </li>
+            <li>
+              <Icon name="eye" size={16} /> Assessments with transparent monitoring
+            </li>
+          </ul>
+        </div>
+      </aside>
+
       <div className="auth-card">
         <p className="eyebrow">AI Recruitment Platform</p>
         <h1>Sign in</h1>

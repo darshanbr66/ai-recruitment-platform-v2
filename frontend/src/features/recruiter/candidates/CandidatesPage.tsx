@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { Modal } from "../../../shared/components/Modal";
+import { Avatar } from "../../../shared/components/Avatar";
+import { EmptyState } from "../../../shared/components/EmptyState";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
@@ -164,10 +166,9 @@ export function CandidatesPage() {
       {candidatesQuery.isSuccess && (
         <section className="stack-lg" style={{ gap: "1rem" }}>
           {candidatesQuery.data.length === 0 ? (
-            <div className="empty-state">
-              <p className="empty-state-title">No candidates yet</p>
-              <p>They'll show up here automatically once your career site starts receiving applications.</p>
-            </div>
+            <EmptyState icon="candidates" title="No candidates yet">
+              They'll show up here automatically once your career site starts receiving applications.
+            </EmptyState>
           ) : (
             <>
               <div className="toolbar">
@@ -200,7 +201,12 @@ export function CandidatesPage() {
                         onClick={() => navigate(`/recruiter/candidates/${candidate.id}`)}
                       >
                         <td>{index + 1}</td>
-                        <td>{candidate.full_name}</td>
+                        <td>
+                          <span className="person-cell">
+                            <Avatar name={candidate.full_name} />
+                            <span>{candidate.full_name}</span>
+                          </span>
+                        </td>
                         <td>{candidate.email}</td>
                         <td>{candidate.current_title ?? "—"}</td>
                         <td>{candidate.location ?? "—"}</td>

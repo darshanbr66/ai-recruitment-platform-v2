@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../../lib/apiClient";
 import type {
@@ -114,6 +114,9 @@ describe("EmailPage (general email)", () => {
     expect(screen.getByLabelText("Cc")).toBeInTheDocument();
     expect(screen.getByLabelText("Bcc")).toBeInTheDocument();
     expect(screen.getByLabelText("Template")).toHaveValue("");
+    expect(
+      within(screen.getByRole("list", { name: "Email steps" })).getByText("Compose").closest("li"),
+    ).toHaveAttribute("aria-current", "step");
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
     expect(compose).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
@@ -195,6 +198,10 @@ describe("EmailPage (general email)", () => {
     expect(frame.getAttribute("sandbox")).toBe("");
     expect(screen.getByText("boss@example.com")).toBeInTheDocument();
     expect(sendSpy).not.toHaveBeenCalled(); // previewing is not sending
+    // The step indicator follows the real step: composing is done, review is current.
+    const steps = screen.getByRole("list", { name: "Email steps" });
+    expect(within(steps).getByText("Review & send").closest("li")).toHaveAttribute("aria-current", "step");
+    expect(within(steps).getByText("Compose").closest("li")).not.toHaveAttribute("aria-current");
 
     fireEvent.click(screen.getByRole("button", { name: "Send email" }));
 

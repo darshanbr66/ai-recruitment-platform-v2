@@ -23,6 +23,10 @@ drag them (or use the arrow keys on the drag handle) to rearrange a department;
 the position itself is internal and never shown. An org admin can also delete
 activity entries in bulk (a selection, or every entry of their own organization).
 
+The visual language, motion rules, the lazy-loaded 3D landing hero (with its
+static fallback) and the accessibility approach are described in
+[`docs/design-system.md`](docs/design-system.md).
+
 Local test accounts are in [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md).
 No candidate portal (self-service login/profile) yet — candidates interact
 anonymously via the public apply flow and assessment invitation links.
@@ -137,7 +141,7 @@ npm run build
 Alembic, Pydantic v2, Pytest, Argon2id password hashing.
 
 **Frontend:** React 19, TypeScript, Vite, React Router, TanStack Query,
-Vitest.
+Vitest; Three.js (lazy-loaded, for the public landing hero only).
 
 ## Working on this project
 

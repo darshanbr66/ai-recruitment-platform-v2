@@ -289,3 +289,66 @@ describe("ActivitiesPage selection and bulk delete", () => {
     expect(await screen.findByText(/Showing the latest 4 of 250 entries/)).toBeInTheDocument();
   });
 });
+
+describe("ActivitiesPage timeline", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockRoles = ["ORG_ADMIN"];
+  });
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("groups entries under a heading per day, newest first", async () => {
+    const list = [
+      makeEntry(1, { created_at: new Date().toISOString() }),
+      makeEntry(2, { created_at: new Date(Date.now() - DAY).toISOString() }),
+      makeEntry(3, { created_at: new Date(Date.now() - 30 * DAY).toISOString() }),
+    ];
+    vi.spyOn(activitiesApi, "listActivities").mockResolvedValue(list);
+    vi.spyOn(activitiesApi, "countActivities").mockResolvedValue({ total: list.length });
+
+    renderPage();
+    await screen.findByText("Candidate 1");
+
+    const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(headings[0]).toBe("Today");
+    expect(headings[1]).toBe("Yesterday");
+    expect(headings).toHaveLength(3);
+    // The older date is written out rather than shown as a relative word.
+    expect(headings[2]).not.toMatch(/today|yesterday/i);
+  });
+
+  it("keeps two entries from the same day under one heading", async () => {
+    const list = [makeEntry(1), makeEntry(2)];
+    vi.spyOn(activitiesApi, "listActivities").mockResolvedValue(list);
+    vi.spyOn(activitiesApi, "countActivities").mockResolvedValue({ total: 2 });
+
+    renderPage();
+    await screen.findByText("Candidate 1");
+
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(1);
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("marks a selected entry", async () => {
+    vi.spyOn(activitiesApi, "listActivities").mockResolvedValue([makeEntry(1)]);
+    vi.spyOn(activitiesApi, "countActivities").mockResolvedValue({ total: 1 });
+
+    renderPage();
+    await screen.findByText("Candidate 1");
+    fireEvent.click(rowCheckbox(1));
+    expect(rowCheckbox(1).closest("li")).toHaveClass("is-selected");
+  });
+
+  it("hides selection and delete controls from users who cannot delete", async () => {
+    mockRoles = ["RECRUITER"];
+    vi.spyOn(activitiesApi, "listActivities").mockResolvedValue([makeEntry(1)]);
+    vi.spyOn(activitiesApi, "countActivities").mockResolvedValue({ total: 1 });
+
+    renderPage();
+    await screen.findByText("Candidate 1");
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+});

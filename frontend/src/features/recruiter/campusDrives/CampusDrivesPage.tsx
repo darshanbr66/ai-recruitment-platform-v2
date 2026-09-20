@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { EmptyState } from "../../../shared/components/EmptyState";
 import { Modal } from "../../../shared/components/Modal";
 import { QrCode } from "../../../shared/components/QrCode";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
@@ -230,10 +231,9 @@ export function CampusDrivesPage() {
 
       {drivesQuery.isSuccess &&
         (drivesQuery.data.length === 0 ? (
-          <div className="empty-state">
-            <p className="empty-state-title">No campus drives yet</p>
-            <p>Create one to start mass hiring for a specific job and college.</p>
-          </div>
+          <EmptyState icon="campus" title="No campus drives yet">
+            Create one to start mass hiring for a specific job and college.
+          </EmptyState>
         ) : (
           <div className="table-scroll">
             <table className="data-table">

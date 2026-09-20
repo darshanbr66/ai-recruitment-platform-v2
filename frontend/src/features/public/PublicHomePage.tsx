@@ -1,9 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { EmptyState } from "../../shared/components/EmptyState";
+import { Icon, type IconName } from "../../shared/components/Icon";
+import { Magnetic } from "../../shared/components/Magnetic";
+import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
+import { Reveal } from "../../shared/components/Reveal";
+import { Skeleton } from "../../shared/components/Skeleton";
 import { listOpenJobs } from "../careers/api";
-import { useReveal } from "../../shared/hooks/useReveal";
-import { ThemeToggle } from "../theme/ThemeToggle";
+import { HeroSection } from "./HeroSection";
+import { LandingNav } from "./LandingNav";
 
 /** The one organization this deployment actually serves — the public home
  * page is SIGVITAS' own careers site, not a generic multi-tenant landing
@@ -11,215 +16,225 @@ import { ThemeToggle } from "../theme/ThemeToggle";
  * multi-tenant-capable; only this page's copy and framing changes. */
 const SIGVITAS_SLUG = "sigvitas";
 
-function Reveal({ children, className = "" }: { children: ReactNode; className?: string }) {
-  const { ref, isVisible } = useReveal<HTMLDivElement>();
-  return (
-    <div ref={ref} className={`reveal ${isVisible ? "is-visible" : ""} ${className}`.trim()}>
-      {children}
-    </div>
-  );
-}
+/** Where a person, not the model, is the actor — marked in the pipeline. */
+type StepTag = "ai" | "human";
 
-const HIRING_STEPS: { title: string; description: string }[] = [
+const HIRING_STEPS: { title: string; description: string; tag?: StepTag }[] = [
   { title: "Explore openings", description: "Browse current roles across engineering, design, and more." },
   { title: "Apply", description: "Submit your application and resume — no account required." },
   { title: "Resume review", description: "Our team reviews your background against the role." },
-  { title: "Screening", description: "An initial pass — assisted by AI, always reviewed by a recruiter." },
+  {
+    title: "Screening",
+    description: "An initial pass — assisted by AI, always reviewed by a recruiter.",
+    tag: "ai",
+  },
   { title: "Assessment", description: "Some roles include a short skills assessment before the next round." },
   { title: "Interview", description: "Meet the team and talk through the role in more depth." },
-  { title: "Decision", description: "We follow up either way, as soon as we can." },
+  { title: "Decision", description: "We follow up either way, as soon as we can.", tag: "human" },
 ];
+
+const PRINCIPLES: { icon: IconName; title: string; text: string }[] = [
+  { icon: "sparkles", title: "Recruiter-assistive, never autonomous", text: "AI surfaces signal for a recruiter to review. It never makes a hiring decision on its own." },
+  { icon: "lock", title: "Your data stays tied to your application", text: "Every screening result stays traceable back to the application it belongs to." },
+  { icon: "user", title: "A person reviews every step that matters", text: "A recruiter makes the call — and it's always a person who follows up." },
+  { icon: "eye", title: "Monitoring is disclosed upfront", text: "If an assessment uses monitoring, you're told before you begin — never after." },
+];
+
+const CAMPUS: { icon: IconName; title: string; text: string }[] = [
+  {
+    icon: "campus",
+    title: "Apply with a drive link",
+    text: "If your college is running a SIGVITAS drive, you'll get a direct application link — no account needed.",
+  },
+  {
+    icon: "graph",
+    title: "Same hiring process",
+    text: "Campus applications go through the same review and assessment process as any other application.",
+  },
+  {
+    icon: "email",
+    title: "Clear updates",
+    text: "You'll hear from us at each step — and if a drive has closed, we'll let you know rather than leave you guessing.",
+  },
+];
+
+function RoleCardSkeleton() {
+  return (
+    <div className="role-card role-card-skeleton" aria-hidden="true">
+      <Skeleton height="1.1rem" width="62%" />
+      <Skeleton height="0.8rem" width="40%" />
+      <Skeleton height="1.6rem" width="5.5rem" style={{ borderRadius: 999, marginTop: "0.5rem" }} />
+    </div>
+  );
+}
 
 export function PublicHomePage() {
   const openJobsQuery = useQuery({
     queryKey: ["public", "jobs", SIGVITAS_SLUG, "preview"],
     queryFn: () => listOpenJobs(SIGVITAS_SLUG),
   });
-  const openJobs = (openJobsQuery.data ?? []).slice(0, 4);
+  const allOpenJobs = openJobsQuery.data ?? [];
+  const openJobs = allOpenJobs.slice(0, 6);
+  const careersPath = `/org/${SIGVITAS_SLUG}`;
 
   return (
     <div className="landing">
-      <header className="public-nav landing-nav">
-        <span className="topbar-title landing-brand">SIGVITAS</span>
-        <nav className="landing-nav-links">
-          <a href="#openings">Openings</a>
-          <a href="#campus">Campus</a>
-          <a href="#process">Hiring Process</a>
-        </nav>
-        <div className="landing-nav-actions">
-          <ThemeToggle />
-          <Link to="/recruiter/login" className="btn btn-ghost btn-sm">
-            Staff sign in
-          </Link>
-        </div>
-      </header>
+      <LandingNav />
 
-      <section className="landing-hero">
-        <div className="landing-hero-copy">
-          <p className="eyebrow">SIGVITAS Careers</p>
-          <h2 className="landing-hero-headline">Build what's next, with SIGVITAS.</h2>
-          <p className="landing-hero-sub">
-            Explore open roles, campus opportunities, and what it's actually like to work here —
-            then apply in minutes.
-          </p>
-          <div className="landing-hero-actions">
-            <Link to={`/org/${SIGVITAS_SLUG}`} className="btn btn-primary btn-lg">
-              Explore Open Roles
-            </Link>
-            <a href="#campus" className="btn btn-ghost btn-lg">
-              Campus Opportunities
-            </a>
-          </div>
-        </div>
-        <div className="landing-hero-visual" aria-hidden="true">
-          <div className="landing-mock-window">
-            <div className="landing-mock-titlebar">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="landing-mock-stats">
-              <div className="landing-mock-stat" />
-              <div className="landing-mock-stat" />
-              <div className="landing-mock-stat" />
-            </div>
-            <div className="landing-mock-bars">
-              <div className="landing-mock-bar" style={{ height: "40%" }} />
-              <div className="landing-mock-bar" style={{ height: "70%" }} />
-              <div className="landing-mock-bar" style={{ height: "55%" }} />
-              <div className="landing-mock-bar" style={{ height: "90%" }} />
-              <div className="landing-mock-bar" style={{ height: "65%" }} />
-            </div>
-          </div>
-        </div>
-      </section>
+      <HeroSection
+        careersPath={careersPath}
+        openRoleCount={openJobsQuery.isSuccess ? allOpenJobs.length : null}
+      />
 
       <section id="openings" className="landing-section">
         <Reveal>
-          <h2 className="landing-section-title">Current Openings</h2>
-          <p className="landing-section-sub muted">
-            A sample of what's open right now — see every role on our careers page.
+          <p className="section-eyebrow">Open now</p>
+          <h2 className="landing-section-title">Current openings</h2>
+          <p className="landing-section-sub">
+            A live look at what's open right now — see every role on our careers page.
           </p>
         </Reveal>
-        <div className="landing-feature-grid landing-feature-grid-3">
-          {openJobsQuery.isPending && (
-            <Reveal className="landing-feature-card">
-              <p className="muted">Loading current openings…</p>
-            </Reveal>
-          )}
+
+        <div className="role-grid">
+          {openJobsQuery.isPending && [0, 1, 2].map((i) => <RoleCardSkeleton key={i} />)}
           {openJobsQuery.isSuccess && openJobs.length === 0 && (
-            <Reveal className="landing-feature-card">
-              <p className="muted">No open roles right now — check back soon.</p>
-            </Reveal>
+            <div className="role-grid-empty">
+              <EmptyState icon="jobs" title="No open roles right now">
+                Check back soon — new openings are posted regularly.
+              </EmptyState>
+            </div>
           )}
-          {openJobs.map((job) => (
-            <Reveal key={job.id} className="landing-feature-card">
-              <h3>{job.title}</h3>
-              <p className="muted">
-                {[job.department, job.location].filter(Boolean).join(" · ") || "SIGVITAS"}
-              </p>
-              <Link to={`/org/${SIGVITAS_SLUG}/jobs/${job.id}`} className="btn btn-ghost btn-sm">
-                View role
+          {openJobs.map((job, index) => (
+            <Reveal key={job.id} delay={Math.min(index, 5) * 60}>
+              <Link to={`${careersPath}/jobs/${job.id}`} className="role-card">
+                <span className="role-card-title">{job.title}</span>
+                <span className="role-card-meta">
+                  {job.department && <span className="chip">{job.department}</span>}
+                  {job.location && (
+                    <span className="chip">
+                      <Icon name="pin" size={13} />
+                      {job.location}
+                    </span>
+                  )}
+                </span>
+                <span className="role-card-cta">
+                  View role <Icon name="arrow-right" size={16} />
+                </span>
               </Link>
             </Reveal>
           ))}
         </div>
-        <div style={{ marginTop: "1.5rem" }}>
-          <Link to={`/org/${SIGVITAS_SLUG}`} className="btn btn-primary">
+
+        <Reveal className="landing-more">
+          <Link to={careersPath} className="btn btn-primary">
             See all open roles
           </Link>
-        </div>
+        </Reveal>
       </section>
 
       <section id="process" className="landing-section landing-section-alt">
+        <div className="process">
+          <Reveal className="process-intro">
+            <p className="section-eyebrow">The path</p>
+            <h2 className="landing-section-title">Our hiring process</h2>
+            <p className="landing-section-sub">
+              One clear path, whether you're applying directly or through a campus drive.
+            </p>
+            <ul className="process-key" aria-label="Key">
+              <li>
+                <span className="process-tag process-tag-ai">AI-assisted</span> a step where AI helps
+                a recruiter
+              </li>
+              <li>
+                <span className="process-tag process-tag-human">Human decision</span> a step only a
+                person can take
+              </li>
+            </ul>
+          </Reveal>
+
+          <ol className="process-steps">
+            {HIRING_STEPS.map((step, index) => (
+              <Reveal as="li" key={step.title} className="process-step" delay={index * 55} direction="right">
+                <span className="process-node" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <div className="process-body">
+                  <h3>
+                    {step.title}
+                    {step.tag === "ai" && <span className="process-tag process-tag-ai">AI-assisted</span>}
+                    {step.tag === "human" && <span className="process-tag process-tag-human">Human decision</span>}
+                  </h3>
+                  <p>{step.description}</p>
+                </div>
+              </Reveal>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section id="ai" className="landing-section">
         <Reveal>
-          <h2 className="landing-section-title">Our hiring process</h2>
-          <p className="landing-section-sub muted">
-            One clear path, whether you're applying directly or through a campus drive.
+          <p className="section-eyebrow">How we review applications</p>
+          <h2 className="landing-section-title">AI assists our recruiters. It never decides.</h2>
+          <p className="landing-section-sub">
+            We use AI to help our team get through applications faster — surfacing signal for a
+            recruiter to review, never making a hiring decision on its own. Every screening result
+            stays traceable back to your application, and a person always makes the call.
           </p>
         </Reveal>
-        <div className="landing-workflow">
-          {HIRING_STEPS.map((step, index) => (
-            <Reveal key={step.title} className="landing-workflow-step">
-              <span className="landing-workflow-index">{index + 1}</span>
-              <div>
-                <h3>{step.title}</h3>
-                <p className="muted">{step.description}</p>
-              </div>
+        <div className="principle-grid">
+          {PRINCIPLES.map((item, index) => (
+            <Reveal key={item.title} className="principle-card" delay={index * 70}>
+              <span className="principle-icon">
+                <Icon name={item.icon} size={20} />
+              </span>
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
             </Reveal>
           ))}
         </div>
       </section>
 
-      <section id="ai" className="landing-section">
-        <Reveal className="landing-split">
-          <div>
-            <p className="eyebrow">How we review applications</p>
-            <h2 className="landing-section-title">AI assists our recruiters. It never decides.</h2>
-            <p className="muted">
-              We use AI to help our team get through applications faster — surfacing signal for a
-              recruiter to review, never making a hiring decision on its own. Every screening result
-              stays traceable back to your application, and a person always makes the call.
-            </p>
-          </div>
-          <ul className="landing-checklist">
-            <li>Recruiter-assistive, never autonomous</li>
-            <li>Your data stays tied to your application</li>
-            <li>A person reviews every step that matters</li>
-            <li>Assessment monitoring is disclosed upfront, never hidden</li>
-          </ul>
-        </Reveal>
-      </section>
-
       <section id="campus" className="landing-section landing-section-alt">
         <Reveal>
+          <p className="section-eyebrow">Campus</p>
           <h2 className="landing-section-title">Campus hiring</h2>
-          <p className="landing-section-sub muted">
+          <p className="landing-section-sub">
             SIGVITAS runs dedicated campus drives with colleges — watch for a drive link shared by
             your placement office, or check back here for upcoming opportunities.
           </p>
         </Reveal>
-        <div className="landing-feature-grid landing-feature-grid-3">
-          <Reveal className="landing-feature-card">
-            <h3>Apply with a drive link</h3>
-            <p className="muted">
-              If your college is running a SIGVITAS drive, you'll get a direct application link —
-              no account needed.
-            </p>
-          </Reveal>
-          <Reveal className="landing-feature-card">
-            <h3>Same hiring process</h3>
-            <p className="muted">
-              Campus applications go through the same review and assessment process as any other
-              application.
-            </p>
-          </Reveal>
-          <Reveal className="landing-feature-card">
-            <h3>Clear updates</h3>
-            <p className="muted">
-              You'll hear from us at each step — and if a drive has closed, we'll let you know
-              rather than leave you guessing.
-            </p>
-          </Reveal>
+        <div className="principle-grid principle-grid-3">
+          {CAMPUS.map((item, index) => (
+            <Reveal key={item.title} className="principle-card" delay={index * 70}>
+              <span className="principle-icon">
+                <Icon name={item.icon} size={20} />
+              </span>
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+            </Reveal>
+          ))}
         </div>
       </section>
 
       <section className="landing-final-cta">
-        <Reveal>
+        <NetworkBackdrop seed={11} count={26} />
+        <Reveal className="landing-final-inner">
           <h2>Ready to apply?</h2>
-          <p className="muted">Explore open roles at SIGVITAS and submit your application today.</p>
-          <div className="landing-hero-actions">
-            <Link to={`/org/${SIGVITAS_SLUG}`} className="btn btn-primary btn-lg">
+          <p>Explore open roles at SIGVITAS and submit your application today.</p>
+          <Magnetic>
+            <Link to={careersPath} className="btn btn-primary btn-lg">
               Explore Open Roles
+              <Icon name="arrow-right" size={18} />
             </Link>
-          </div>
+          </Magnetic>
         </Reveal>
       </section>
 
       <footer className="landing-footer">
         <span>SIGVITAS Careers</span>
-        <nav className="landing-footer-links">
-          <Link to={`/org/${SIGVITAS_SLUG}`}>Open roles</Link>
+        <nav className="landing-footer-links" aria-label="Footer">
+          <Link to={careersPath}>Open roles</Link>
           <Link to="/recruiter/login">Staff sign in</Link>
         </nav>
         <span className="muted">&copy; {new Date().getFullYear()} SIGVITAS</span>

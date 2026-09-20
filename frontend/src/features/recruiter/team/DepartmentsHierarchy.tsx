@@ -3,7 +3,8 @@ import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { Modal } from "../../../shared/components/Modal";
-import { SkeletonLines } from "../../../shared/components/Skeleton";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { SkeletonList, SkeletonOrgChart } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import type {
@@ -247,7 +248,12 @@ export function DepartmentsHierarchy() {
   });
 
   if (departmentsQuery.isPending || employeesQuery.isPending) {
-    return <SkeletonLines count={4} />;
+    return (
+      <div className="stack-lg" role="status" aria-label="Loading organization">
+        <SkeletonOrgChart />
+        <SkeletonList rows={3} />
+      </div>
+    );
   }
 
   if (departmentsQuery.isError) {
@@ -290,10 +296,9 @@ export function DepartmentsHierarchy() {
       />
 
       {departments.length === 0 ? (
-        <div className="empty-state">
-          <p className="empty-state-title">No departments yet</p>
-          <p>Create your first department to start building the org chart.</p>
-        </div>
+        <EmptyState icon="team" title="No departments yet">
+          Create your first department to start building the org chart.
+        </EmptyState>
       ) : (
         <div className="stack-lg" style={{ gap: "0.75rem" }}>
           {departments.map((dept) => {

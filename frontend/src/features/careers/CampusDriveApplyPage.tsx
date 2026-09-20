@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
-import { ThemeToggle } from "../theme/ThemeToggle";
+import { PublicHeader } from "../public/PublicHeader";
 import { applyToCampusDrive, getCampusDriveByToken } from "./api";
 
 export function CampusDriveApplyPage() {
@@ -41,12 +41,7 @@ export function CampusDriveApplyPage() {
 
   return (
     <div>
-      <header className="public-nav">
-        <Link to="/" className="topbar-title" style={{ textDecoration: "none", color: "inherit" }}>
-          {driveQuery.data?.kind === "drive" ? driveQuery.data.organization_name : "Careers"}
-        </Link>
-        <ThemeToggle />
-      </header>
+      <PublicHeader title={driveQuery.data?.kind === "drive" ? driveQuery.data.organization_name : "Careers"} />
       <div className="public-shell">
         {driveQuery.isPending && <p role="status">Loading drive details…</p>}
         {driveQuery.isError && (

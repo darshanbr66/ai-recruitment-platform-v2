@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { EmptyState } from "../../../shared/components/EmptyState";
 import { Modal } from "../../../shared/components/Modal";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
@@ -122,10 +123,9 @@ export function AssessmentsPage() {
 
       {assessmentsQuery.isSuccess &&
         (assessmentsQuery.data.length === 0 ? (
-          <div className="empty-state">
-            <p className="empty-state-title">No assessments yet</p>
-            <p>Create one to start screening candidates with skills tests.</p>
-          </div>
+          <EmptyState icon="assessments" title="No assessments yet">
+            Create one to start screening candidates with skills tests.
+          </EmptyState>
         ) : (
           <div className="table-scroll">
             <table className="data-table">

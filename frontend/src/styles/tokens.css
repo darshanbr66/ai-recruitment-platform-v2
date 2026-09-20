@@ -1,0 +1,272 @@
+/*
+ * Design tokens — the single source of truth for colour, depth, type and motion.
+ *
+ * Identity ("Signal"): a talent graph — people, jobs and skills as nodes,
+ * matches as edges. One brand hue (signal blue), one warm "human" accent used
+ * at most once per view, and cool ink neutrals. Semantic colours (success,
+ * warning, danger, info, neutral) carry meaning only — never decoration.
+ *
+ * The pre-existing token names (--color-bg, --color-surface, --color-primary,
+ * --color-*-bg/-text/-border …) are kept so every existing rule inherits the
+ * new palette. New tokens are additive.
+ *
+ * Theme wiring is unchanged: an explicit `data-theme` wins; with none stamped
+ * the page follows the OS via `prefers-color-scheme`. Dark is designed, not
+ * inverted — deeper ink, hairline borders, a lit top edge on raised surfaces.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* --- type -------------------------------------------------------------- */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI",
+    Roboto, "Helvetica Neue", sans-serif;
+  --font-display: "Segoe UI Variable Display", "SF Pro Display", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* Scale: title / section / card / body / label / meta. Three weights only. */
+  --text-meta: 0.75rem;
+  --text-label: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-card-title: 1rem;
+  --text-section: 1.125rem;
+  --text-page-title: 1.75rem;
+  --text-display: clamp(2.5rem, 5vw, 4rem);
+  --text-metric: 2rem;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-strong: 600;
+
+  /* --- shape ------------------------------------------------------------- */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* --- motion ------------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 380ms;
+
+  /* --- layout ------------------------------------------------------------ */
+  --sidebar-width: 248px;
+  --tabbar-height: 3.75rem;
+
+  /* --- light palette ----------------------------------------------------- */
+  --color-bg: #f3f5f9;
+  --color-bg-subtle: #eaeef5;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-border: #e1e6ee;
+  --color-border-strong: #cdd6e3;
+  --color-text: #0e1522;
+  --color-text-muted: #586377;
+
+  /* Brand. `primary` is for text/links/accents; `primary-solid` is the fill
+     behind white text (buttons, active nav) — kept separate so both themes
+     clear WCAG AA for each use. */
+  --color-primary: #1f56e8;
+  --color-primary-hover: #1846c4;
+  --color-primary-solid: #1f56e8;
+  --color-primary-solid-hover: #1846c4;
+  --color-on-primary: #ffffff;
+  --color-primary-soft: rgb(31 86 232 / 8%);
+  --color-primary-ring: rgb(31 86 232 / 32%);
+
+  /* The human accent: amber. A dot, a ring, a highlight — never body text. */
+  --color-accent: #f0a020;
+  --color-accent-soft: rgb(240 160 32 / 14%);
+  --color-accent-text: #8a5300;
+
+  --color-danger: #b91c1c;
+  --color-danger-bg: #fef2f2;
+  --color-danger-text: #b91c1c;
+  --color-danger-border: #fecaca;
+  --color-success-bg: #f0fdf4;
+  --color-success-text: #15803d;
+  --color-success-border: #bbf7d0;
+  --color-active-bg: #ecfdf5;
+  --color-active-text: #047857;
+  --color-inactive-bg: #eef1f6;
+  --color-inactive-text: #4b5566;
+  --color-warn-bg: #fffbeb;
+  --color-warn-text: #b45309;
+  --color-info-bg: #eff4ff;
+  --color-info-text: #1846c4;
+  --color-info-border: #c7d7fe;
+
+  --color-overlay: rgb(9 12 19 / 48%);
+  --color-skeleton-base: #e7ecf4;
+  --color-skeleton-shine: #f6f8fc;
+
+  /* Depth. Hairline + soft ambient; raised for hover, popover for floating UI. */
+  --shadow-card: 0 1px 2px rgb(14 21 34 / 5%);
+  --shadow-raised: 0 6px 18px rgb(14 21 34 / 8%), 0 1px 3px rgb(14 21 34 / 6%);
+  --shadow-popover: 0 18px 44px rgb(14 21 34 / 18%), 0 2px 6px rgb(14 21 34 / 8%);
+  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 70%);
+
+  /* Public landing stage (behind the 3D scene) */
+  --stage-bg: #eef2fa;
+  --stage-glow: rgb(31 86 232 / 14%);
+  --stage-line: rgb(14 21 34 / 8%);
+
+  /* Talent-graph categories (public hero: 3D scene, SVG poster, legend). The
+     single source for both renderers, so they always agree per theme. */
+  --kind-candidate: #2456e6;
+  --kind-job: #0e8fb3;
+  --kind-skill: #64748b;
+  --kind-assessment: #0f9d76;
+  --kind-organization: #56657e;
+  --kind-ai: #3d6bf5;
+  --kind-match: #c97300;
+  --kind-particle: #8a97ad;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #090c13;
+    --color-bg-subtle: #0d1220;
+    --color-surface: #0f1420;
+    --color-surface-raised: #151b2a;
+    --color-border: #1f2738;
+    --color-border-strong: #2d3852;
+    --color-text: #e8ecf5;
+    --color-text-muted: #94a0b8;
+
+    --color-primary: #7da2ff;
+    --color-primary-hover: #a3bcff;
+    --color-primary-solid: #3d6bf5;
+    --color-primary-solid-hover: #3865ee;
+    --color-on-primary: #ffffff;
+    --color-primary-soft: rgb(125 162 255 / 12%);
+    --color-primary-ring: rgb(125 162 255 / 42%);
+
+    --color-accent: #fbbf24;
+    --color-accent-soft: rgb(251 191 36 / 14%);
+    --color-accent-text: #fcd34d;
+
+    --color-danger: #f87171;
+    --color-danger-bg: #2a1416;
+    --color-danger-text: #f87171;
+    --color-danger-border: #4c1d1d;
+    --color-success-bg: #12251a;
+    --color-success-text: #4ade80;
+    --color-success-border: #14532d;
+    --color-active-bg: #0f2a20;
+    --color-active-text: #34d399;
+    --color-inactive-bg: #1a2132;
+    --color-inactive-text: #94a0b8;
+    --color-warn-bg: #2a2110;
+    --color-warn-text: #fbbf24;
+    --color-info-bg: #0f1c3a;
+    --color-info-text: #93b4ff;
+    --color-info-border: #1e3a8a;
+
+    --color-overlay: rgb(3 5 10 / 68%);
+    --color-skeleton-base: #182033;
+    --color-skeleton-shine: #232d45;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 35%);
+    --shadow-raised: 0 8px 22px rgb(0 0 0 / 45%), 0 1px 3px rgb(0 0 0 / 40%);
+    --shadow-popover: 0 20px 48px rgb(0 0 0 / 60%), 0 2px 8px rgb(0 0 0 / 40%);
+    --highlight-top: inset 0 1px 0 rgb(255 255 255 / 5%);
+
+    --stage-bg: #070a11;
+    --stage-glow: rgb(61 107 245 / 22%);
+    --stage-line: rgb(232 236 245 / 7%);
+
+    --kind-candidate: #7da2ff;
+    --kind-job: #38bdf8;
+    --kind-skill: #94a3b8;
+    --kind-assessment: #34d399;
+    --kind-organization: #8b9bb5;
+    --kind-ai: #a3bcff;
+    --kind-match: #fbbf24;
+    --kind-particle: #64748b;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #090c13;
+  --color-bg-subtle: #0d1220;
+  --color-surface: #0f1420;
+  --color-surface-raised: #151b2a;
+  --color-border: #1f2738;
+  --color-border-strong: #2d3852;
+  --color-text: #e8ecf5;
+  --color-text-muted: #94a0b8;
+
+  --color-primary: #7da2ff;
+  --color-primary-hover: #a3bcff;
+  --color-primary-solid: #3d6bf5;
+  --color-primary-solid-hover: #3865ee;
+  --color-on-primary: #ffffff;
+  --color-primary-soft: rgb(125 162 255 / 12%);
+  --color-primary-ring: rgb(125 162 255 / 42%);
+
+  --color-accent: #fbbf24;
+  --color-accent-soft: rgb(251 191 36 / 14%);
+  --color-accent-text: #fcd34d;
+
+  --color-danger: #f87171;
+  --color-danger-bg: #2a1416;
+  --color-danger-text: #f87171;
+  --color-danger-border: #4c1d1d;
+  --color-success-bg: #12251a;
+  --color-success-text: #4ade80;
+  --color-success-border: #14532d;
+  --color-active-bg: #0f2a20;
+  --color-active-text: #34d399;
+  --color-inactive-bg: #1a2132;
+  --color-inactive-text: #94a0b8;
+  --color-warn-bg: #2a2110;
+  --color-warn-text: #fbbf24;
+  --color-info-bg: #0f1c3a;
+  --color-info-text: #93b4ff;
+  --color-info-border: #1e3a8a;
+
+  --color-overlay: rgb(3 5 10 / 68%);
+  --color-skeleton-base: #182033;
+  --color-skeleton-shine: #232d45;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 35%);
+  --shadow-raised: 0 8px 22px rgb(0 0 0 / 45%), 0 1px 3px rgb(0 0 0 / 40%);
+  --shadow-popover: 0 20px 48px rgb(0 0 0 / 60%), 0 2px 8px rgb(0 0 0 / 40%);
+  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 5%);
+
+  --stage-bg: #070a11;
+  --stage-glow: rgb(61 107 245 / 22%);
+  --stage-line: rgb(232 236 245 / 7%);
+  --kind-candidate: #7da2ff;
+  --kind-job: #38bdf8;
+  --kind-skill: #94a3b8;
+  --kind-assessment: #34d399;
+  --kind-organization: #8b9bb5;
+  --kind-ai: #a3bcff;
+  --kind-match: #fbbf24;
+  --kind-particle: #64748b;
+}
+
+/* Reduced motion: keep every state change, drop the movement. Individual
+   components still ship their own static fallbacks; this is the safety net
+   that guarantees nothing animates for a user who asked it not to. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

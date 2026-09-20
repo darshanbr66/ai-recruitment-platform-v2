@@ -1,9 +1,13 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Confirmation dialog. For especially destructive actions pass
  * `requireTypedText`: the confirm button then stays disabled until the user
  * types that exact text, so it can't be triggered by a stray click or Enter.
+ *
+ * Portalled into `document.body` for the same reason as `Modal`: it must be
+ * positioned against the viewport, not against whatever page it was opened from.
  */
 export function ConfirmDialog({
   title,
@@ -27,7 +31,7 @@ export function ConfirmDialog({
   const [typed, setTyped] = useState("");
   const confirmationSatisfied = requireTypedText === undefined || typed === requireTypedText;
 
-  return (
+  return createPortal(
     <div className="dialog-overlay" role="presentation" onClick={onCancel}>
       <div
         className="dialog-card"
@@ -65,6 +69,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { Icon, type IconName } from "../../../shared/components/Icon";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { useToast } from "../../../shared/components/ToastContext";
 import type { ActivityResponse } from "../../../types/activity";
@@ -54,6 +56,53 @@ function formatTimestamp(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function dayLabel(value: string): string {
+  const day = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (day.toDateString() === today.toDateString()) return "Today";
+  if (day.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return day.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+/** The list arrives newest-first; consecutive entries from one calendar day
+ * share a heading. `index` is the entry's position in the full list, which
+ * the selection controls' accessible names have always used. */
+function groupByDay(activities: ActivityResponse[]) {
+  const groups: { key: string; label: string; items: { activity: ActivityResponse; index: number }[] }[] = [];
+  activities.forEach((activity, index) => {
+    const key = new Date(activity.created_at).toDateString();
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push({ activity, index });
+    else groups.push({ key, label: dayLabel(activity.created_at), items: [{ activity, index }] });
+  });
+  return groups;
+}
+
+/** A glyph for the kind of thing that happened — the node on the timeline. */
+function iconForAction(action: string): IconName {
+  if (action.endsWith("_DELETED")) return "trash";
+  if (action === "LOGIN" || action === "LOGOUT") return "user";
+  if (action.startsWith("EMAIL")) return "email";
+  if (action.startsWith("ASSESSMENT")) return "assessments";
+  if (action.startsWith("APPLICATION")) return "applications";
+  if (action.startsWith("JOB")) return "jobs";
+  if (action.startsWith("CAMPUS")) return "campus";
+  if (action.startsWith("CANDIDATE")) return "candidates";
+  if (action.startsWith("EMPLOYEE") || action.startsWith("DEPARTMENT")) return "team";
+  return "activities";
+}
+
+function nodeTone(action: string): string {
+  const badge = actionBadgeClass(action);
+  return badge === "badge-active" ? "active" : badge === "badge-danger" ? "danger" : badge === "badge-warn" ? "warn" : "neutral";
 }
 
 /** Header checkbox for "select all visible", with the mixed state when only
@@ -306,75 +355,76 @@ export function ActivitiesPage() {
             )}
 
           {visibleActivities.length === 0 ? (
-            <div className="empty-state">
-              <p className="empty-state-title">No activity recorded yet</p>
-              <p>Deletions, edits, and status changes will show up here as they happen.</p>
-            </div>
+            <EmptyState icon="activities" title="No activity recorded yet">
+              Deletions, edits, and status changes will show up here as they happen.
+            </EmptyState>
           ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {canDelete && (
-                      <th style={{ width: "2.5rem" }}>
-                        <SelectAllCheckbox
-                          checked={allVisibleSelected}
-                          indeterminate={selectedIds.length > 0 && !allVisibleSelected}
-                          onChange={toggleSelectAllVisible}
-                        />
-                      </th>
-                    )}
-                    <th>#</th>
-                    <th>Time</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Entity</th>
-                    <th>Reason</th>
-                    <th>Details</th>
-                    {canDelete && <th aria-label="Actions" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleActivities.map((activity, index) => (
-                    <tr key={activity.id}>
-                      {canDelete && (
-                        <td>
-                          <input
-                            type="checkbox"
-                            aria-label={`Select activity ${index + 1}: ${
-                              activity.entity_label ?? activity.entity_type
-                            }`}
-                            checked={selected.has(activity.id)}
-                            onChange={() => toggleSelected(activity.id)}
-                          />
-                        </td>
-                      )}
-                      <td>{index + 1}</td>
-                      <td>{formatTimestamp(activity.created_at)}</td>
-                      <td>{activity.actor_name ?? "—"}</td>
-                      <td>
-                        <span className={`badge ${actionBadgeClass(activity.action)}`}>
-                          {formatActionLabel(activity.action)}
-                        </span>
-                      </td>
-                      <td>{activity.entity_label ?? activity.entity_type}</td>
-                      <td>{activity.reason ?? "—"}</td>
-                      <td className="muted">{activity.description ?? "—"}</td>
-                      {canDelete && (
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setPendingDelete(activity)}
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="stream">
+              {canDelete && (
+                <div className="stream-head">
+                  <SelectAllCheckbox
+                    checked={allVisibleSelected}
+                    indeterminate={selectedIds.length > 0 && !allVisibleSelected}
+                    onChange={toggleSelectAllVisible}
+                  />
+                  <span>Select all shown</span>
+                </div>
+              )}
+              {groupByDay(visibleActivities).map((group) => (
+                <section key={group.key} className="stream-day" aria-label={group.label}>
+                  <h3>{group.label}</h3>
+                  <ol className={`stream-list${canDelete ? " has-checks" : ""}`}>
+                    {group.items.map(({ activity, index }) => {
+                      // A deletion in flight: the entry recedes instead of vanishing.
+                      const removing =
+                        (deleteMutation.isPending && deleteMutation.variables === activity.id) ||
+                        (deleteSelectedMutation.isPending && selected.has(activity.id));
+                      return (
+                        <li
+                          key={activity.id}
+                          className={`stream-item${selected.has(activity.id) ? " is-selected" : ""}${removing ? " is-removing" : ""}`}
+                        >
+                          {canDelete && (
+                            <input
+                              type="checkbox"
+                              className="stream-check"
+                              aria-label={`Select activity ${index + 1}: ${
+                                activity.entity_label ?? activity.entity_type
+                              }`}
+                              checked={selected.has(activity.id)}
+                              onChange={() => toggleSelected(activity.id)}
+                            />
+                          )}
+                          <span className={`stream-node tone-${nodeTone(activity.action)}`} aria-hidden="true">
+                            <Icon name={iconForAction(activity.action)} size={16} />
+                          </span>
+                          <div className="stream-body">
+                            <div className="stream-title">
+                              <span className={`badge ${actionBadgeClass(activity.action)}`}>
+                                {formatActionLabel(activity.action)}
+                              </span>
+                              <span className="stream-entity">{activity.entity_label ?? activity.entity_type}</span>
+                            </div>
+                            <p className="stream-meta">
+                              {activity.actor_name ?? "System"} ·{" "}
+                              <time dateTime={activity.created_at} title={formatTimestamp(activity.created_at)}>
+                                {formatTime(activity.created_at)}
+                              </time>
+                              {activity.reason ? ` · Reason: ${activity.reason}` : ""}
+                            </p>
+                            {activity.description && <p className="stream-desc">{activity.description}</p>}
+                          </div>
+                          {canDelete && (
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPendingDelete(activity)}>
+                              Delete
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              ))}
             </div>
           )}
         </section>

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { BackLink } from "../../../shared/components/BackLink";
 import { SkeletonLines } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
@@ -97,7 +98,7 @@ export function AssessmentDetailPage() {
   return (
     <div className="stack-lg">
       <p>
-        <Link to="/recruiter/assessments">&larr; Back to assessments</Link>
+        <BackLink to="/recruiter/assessments">Back to assessments</BackLink>
       </p>
 
       {assessmentQuery.isPending && <SkeletonLines count={6} />}

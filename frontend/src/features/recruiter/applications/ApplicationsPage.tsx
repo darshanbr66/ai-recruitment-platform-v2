@@ -4,7 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { Modal } from "../../../shared/components/Modal";
+import { EmptyState } from "../../../shared/components/EmptyState";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
+import { statusTone, toneBadgeClass } from "../../../shared/lib/statusTone";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import type { ApplicationResponse } from "../../../types/recruitment";
@@ -15,12 +17,6 @@ import { listJobs } from "../jobs/api";
 import { createApplication, deleteApplication, listApplications } from "./api";
 
 const APPLICATIONS_QUERY_KEY = ["recruiter", "applications"];
-
-const TERMINAL_BADGE: Partial<Record<ApplicationStatus, string>> = {
-  SELECTED: "badge-active",
-  REJECTED: "badge-inactive",
-  HIRED: "badge-active",
-};
 
 export function ApplicationsPage() {
   const { accessToken } = useAuth();
@@ -206,15 +202,13 @@ export function ApplicationsPage() {
           )}
 
           {applicationsQuery.data.length === 0 ? (
-            <div className="empty-state">
-              <p className="empty-state-title">No applications yet</p>
-              <p>Use "+ Link candidate to job" above to add one, or wait for candidates to apply.</p>
-            </div>
+            <EmptyState icon="inbox" title="No applications yet">
+              Use "+ Link candidate to job" above to add one, or wait for candidates to apply.
+            </EmptyState>
           ) : filteredApplications.length === 0 ? (
-            <div className="empty-state">
-              <p className="empty-state-title">No applications match these filters</p>
-              <p>Try clearing the search, status, or job filter.</p>
-            </div>
+            <EmptyState icon="search" title="No applications match these filters">
+              Try clearing the search, status, or job filter.
+            </EmptyState>
           ) : (
             <div className="table-scroll">
               <table className="data-table">
@@ -241,9 +235,7 @@ export function ApplicationsPage() {
                       <td>{application.candidate_full_name}</td>
                       <td>{application.job_title}</td>
                       <td>
-                        <span
-                          className={`badge ${TERMINAL_BADGE[application.status] ?? "badge-active"}`}
-                        >
+                        <span className={toneBadgeClass(statusTone(application.status))}>
                           {application.status}
                         </span>
                       </td>

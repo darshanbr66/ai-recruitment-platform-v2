@@ -1,9 +1,16 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /** Generic dialog surface — dimmed backdrop, background not interactive
  * while open, Escape-to-close, click-outside-to-close. Reuses the same
  * `.dialog-overlay`/`.dialog-card` styling as ConfirmDialog so every modal
- * in the app looks and behaves the same way. */
+ * in the app looks and behaves the same way.
+ *
+ * Rendered into `document.body` through a portal, never inline. Inline, the
+ * `position: fixed` overlay resolves against the nearest ancestor that has a
+ * transform (the page-transition wrapper keeps one after its entrance), so
+ * the dialog would be positioned — and scroll — with the page's content
+ * instead of the viewport. */
 export function Modal({
   title,
   onClose,
@@ -23,14 +30,13 @@ export function Modal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div className="dialog-overlay" role="presentation" onClick={onClose}>
       <div
-        className="dialog-card"
+        className={wide ? "dialog-card dialog-card-wide" : "dialog-card"}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        style={wide ? { maxWidth: "640px", maxHeight: "90vh", overflowY: "auto" } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="page-header" style={{ marginBottom: "1rem" }}>
@@ -43,6 +49,7 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

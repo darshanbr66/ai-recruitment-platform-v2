@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { Icon } from "../../../shared/components/Icon";
 import { Spinner } from "../../../shared/components/Spinner";
 import type {
   EmailComposeRequest,
@@ -310,15 +311,36 @@ export function EmailComposer({
 
   return (
     <>
+      <ol className="composer-steps" aria-label="Email steps">
+        <li className={step === "edit" ? "is-current" : "is-done"} aria-current={step === "edit" ? "step" : undefined}>
+          <span className="composer-step-dot" aria-hidden="true">
+            {step === "edit" ? 1 : <Icon name="check" size={11} />}
+          </span>
+          Compose
+        </li>
+        <li className={step === "preview" ? "is-current" : undefined} aria-current={step === "preview" ? "step" : undefined}>
+          <span className="composer-step-dot" aria-hidden="true">
+            2
+          </span>
+          Review &amp; send
+        </li>
+      </ol>
+
       {target.kind === "application" ? (
-        <p className="muted" style={{ marginTop: 0 }}>
-          To: {target.candidateName} &lt;{target.candidateEmail}&gt; — sent only when you click Send.
-          Nothing is emailed automatically.
+        <p className="composer-note">
+          <Icon name="shield" size={16} />
+          <span>
+            To: {target.candidateName} &lt;{target.candidateEmail}&gt; — sent only when you click Send.
+            Nothing is emailed automatically.
+          </span>
         </p>
       ) : (
-        <p className="muted" style={{ marginTop: 0 }}>
-          Sent from your organization's mailing account; replies come to you. Nothing is sent until
-          you click Send, and every send is recorded in Activities.
+        <p className="composer-note">
+          <Icon name="shield" size={16} />
+          <span>
+            Sent from your organization's mailing account; replies come to you. Nothing is sent until
+            you click Send, and every send is recorded in Activities.
+          </span>
         </p>
       )}
 
