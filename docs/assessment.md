@@ -73,6 +73,44 @@ existing `assessment.read` permission, and both described to recruiters in
 neutral, non-accusatory language (an event is something *observed*, never
 an automatic accusation of misconduct).
 
+## 0.1 Inviter notifications (in-app)
+
+When a candidate **starts** and when they **submit** an assessment, the one
+staff user who sent that invitation (`assessment_invitations.invited_by_user_id`
+— for a campus drive, the drive's creator) gets an in-app notification:
+"*<candidate> has started/submitted the <assessment> assessment.*" It is shown
+as a toast in the recruiter portal. It is **not** an email and not a broadcast:
+other recruiters, other admins and other organizations never receive it, and an
+invitation whose inviter was removed (or is inactive, or not in the
+organization) notifies no one.
+
+- **Source of truth is the backend.** It is created inside the existing
+  authoritative transitions in `assessment_public_service`: `start_attempt`
+  (only on the `SENT -> STARTED` transition) and `submit_attempt` (after the
+  result and the existing `ASSESSMENT_COMPLETED` activity are written). The
+  candidate's browser is never involved in deciding whether to notify.
+- **Once per event.** A reload, a repeat/StrictMode `start` call, or a second
+  `submit` (rejected as `already_submitted`) never reaches the notification
+  code, and the unique `(assessment_invitation_id, type)` index makes a racing
+  duplicate insert a no-op (`ON CONFLICT DO NOTHING`). A retest is a new
+  invitation row, so it notifies again.
+- **Never breaks the candidate.** The insert runs in a savepoint; a database
+  failure is logged (`In-app notification could not be stored`, error type
+  only) and swallowed, so a notification problem cannot lose submitted answers.
+- **Privacy.** `NotificationResponse` carries only id, type, title, message,
+  timestamps — the message names the candidate and the assessment title, and
+  nothing else (no email, token, score or invitation id).
+- **Audit is unchanged.** Submission still writes `ASSESSMENT_COMPLETED` to
+  Activities; starting has always been recorded by `started_at` and the
+  `ASSESSMENT_STARTED` application status history. Notifications are additional.
+- **Delivery is polling.** There is no server-push channel in this stack, so
+  `NotificationToaster` (mounted in `RecruiterLayout` only) polls
+  `GET /recruiter/notifications` every 30 s while the tab is visible, shows each
+  new row with the existing toast (title + message), and acknowledges it via
+  `POST /recruiter/notifications/read` so it is not delivered again. A backlog
+  larger than five is folded into one summary toast. There is no bell/history UI
+  yet: an acknowledged notification is retained in the table but not listed.
+
 ## 1. Design goal
 
 Assessments are a reusable domain, independent of *why* a candidate was

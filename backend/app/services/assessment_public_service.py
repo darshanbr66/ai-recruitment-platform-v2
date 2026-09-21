@@ -26,9 +26,10 @@ from app.models.assessment import (
     InvitationStatus,
     Question,
 )
+from app.models.notification import NotificationType
 from app.models.organization import Organization
 from app.schemas.public_assessment import MonitoringEventCreate
-from app.services import activity_service, application_service
+from app.services import activity_service, application_service, in_app_notification_service
 
 _INVALID_MESSAGE = "This invitation link is no longer valid."
 
@@ -82,6 +83,17 @@ async def start_attempt(db: AsyncSession, token: str) -> AssessmentInvitation:
         if application is not None:
             await application_service.change_status(
                 db, application, to_status=ApplicationStatus.ASSESSMENT_STARTED, actor_user_id=None
+            )
+            # Inside the SENT -> STARTED transition on purpose: a reload,
+            # StrictMode double-call or repeat request finds STARTED and never
+            # reaches this line (and the notification's unique index backs it
+            # up under a race).
+            await in_app_notification_service.notify_inviter_of_assessment_event(
+                db,
+                invitation=invitation,
+                notification_type=NotificationType.ASSESSMENT_STARTED,
+                candidate_name=application.candidate.full_name,
+                assessment_title=invitation.assessment.title,
             )
 
     return invitation
@@ -151,6 +163,15 @@ async def submit_attempt(
                 f"{application.candidate.full_name} completed \"{assessment.title}\" "
                 f"(attempt {invitation.attempt_number}): {percentage}% — {'passed' if passed else 'failed'}."
             ),
+        )
+        # A second submit is rejected above (`already_submitted`), so this
+        # runs once per invitation; the unique index covers a concurrent race.
+        await in_app_notification_service.notify_inviter_of_assessment_event(
+            db,
+            invitation=invitation,
+            notification_type=NotificationType.ASSESSMENT_SUBMITTED,
+            candidate_name=application.candidate.full_name,
+            assessment_title=assessment.title,
         )
 
     return result

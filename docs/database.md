@@ -265,6 +265,19 @@ created_at`
 Body content is not stored (templates are code/config, not DB rows) unless a
 future audit requirement demands it.
 
+**notifications** (implemented — migration `b2c3d4e5f6a7`)
+In-app notifications, distinct from outbound email above.
+`id, organization_id, recipient_user_id -> users (ON DELETE CASCADE), type
+(enum notification_type: ASSESSMENT_STARTED / ASSESSMENT_SUBMITTED), title,
+message, assessment_invitation_id NULL -> assessment_invitations (ON DELETE
+CASCADE), read_at NULL (NULL = not yet acknowledged), created_at, updated_at`
+Tenant-owned with the standard `tenant_isolation` RLS policy. Unique index
+`uq_notifications_invitation_type (assessment_invitation_id, type)` makes
+"once per invitation and event" a database guarantee; a partial index on
+`(recipient_user_id, created_at) WHERE read_at IS NULL` serves the poller.
+Rows are only ever addressed to one user, so unlike `activities` they are not
+an org-wide log.
+
 ## 4. Key relationships (summary)
 
 ```

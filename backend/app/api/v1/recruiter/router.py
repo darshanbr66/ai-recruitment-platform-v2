@@ -12,6 +12,7 @@ from app.api.v1.recruiter.employees import router as employees_router
 from app.api.v1.recruiter.general_email import router as general_email_router
 from app.api.v1.recruiter.jobs import router as jobs_router
 from app.api.v1.recruiter.notes import router as notes_router
+from app.api.v1.recruiter.notifications import router as notifications_router
 from app.api.v1.recruiter.reports import router as reports_router
 from app.api.v1.recruiter.screening import router as screening_router
 from app.api.v1.recruiter.users import router as users_router
@@ -32,3 +33,4 @@ router.include_router(departments_router)
 router.include_router(employees_router)
 router.include_router(email_templates_router)
 router.include_router(general_email_router)
+router.include_router(notifications_router)

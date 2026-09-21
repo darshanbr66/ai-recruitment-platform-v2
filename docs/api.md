@@ -107,6 +107,12 @@ DELETE        /api/v1/recruiter/activities/bulk               (activity.delete; 
                                                                 returns {"deleted": n} — only rows of the caller's org)
 DELETE        /api/v1/recruiter/activities/all                (activity.delete; body {"confirm": true} required;
                                                                 deletes every entry of the caller's own org)
+GET           /api/v1/recruiter/notifications                 (any signed-in org user; the caller's own UNREAD in-app
+                                                                notifications, newest first, `limit` 1-50 default 20;
+                                                                SUPER_ADMIN -> 403)
+POST          /api/v1/recruiter/notifications/read            (body {"ids": [...]} max 100; acknowledges only the
+                                                                caller's own unread rows, returns {"updated": n};
+                                                                idempotent, foreign/unknown ids are ignored)
 GET           /api/v1/recruiter/email-templates               (application.email.send; each template lists `fields`
                                                                 for an application email and `general_fields` — null
                                                                 when it needs an application — for a general email)

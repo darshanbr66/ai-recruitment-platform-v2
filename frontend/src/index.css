@@ -793,6 +793,11 @@ fieldset.field legend {
   line-height: 1.4;
 }
 
+.toast-title {
+  display: block;
+  font-weight: 600;
+}
+
 .toast-close {
   background: none;
   border: none;

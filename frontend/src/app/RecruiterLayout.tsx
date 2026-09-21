@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../features/auth/AuthContext";
+import { NotificationToaster } from "../features/recruiter/notifications/NotificationToaster";
 import { AppShell, type NavItem, type NavSection } from "./AppShell";
 
 const WORKSPACE_ITEMS: NavItem[] = [
@@ -64,15 +65,18 @@ export function RecruiterLayout() {
   ];
 
   return (
-    <AppShell
-      brandTitle="AI Recruitment Platform"
-      contextLabel="Recruiter Portal"
-      sections={sections}
-      upcoming={UPCOMING_NAV_ITEMS}
-      tabs={TAB_ITEMS}
-      userName={user?.full_name}
-      userRole={user?.roles.join(", ") ?? ""}
-      onSignOut={() => void handleLogout()}
-    />
+    <>
+      <NotificationToaster />
+      <AppShell
+        brandTitle="AI Recruitment Platform"
+        contextLabel="Recruiter Portal"
+        sections={sections}
+        upcoming={UPCOMING_NAV_ITEMS}
+        tabs={TAB_ITEMS}
+        userName={user?.full_name}
+        userRole={user?.roles.join(", ") ?? ""}
+        onSignOut={() => void handleLogout()}
+      />
+    </>
   );
 }

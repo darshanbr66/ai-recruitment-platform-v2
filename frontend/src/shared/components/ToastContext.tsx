@@ -6,10 +6,12 @@ interface Toast {
   id: number;
   message: string;
   variant: ToastVariant;
+  title?: string;
 }
 
 interface ToastContextValue {
-  showToast: (message: string, variant?: ToastVariant) => void;
+  /** `title` is optional: a short bold heading above the message. */
+  showToast: (message: string, variant?: ToastVariant, title?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -25,9 +27,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, variant: ToastVariant = "info") => {
+    (message: string, variant: ToastVariant = "info", title?: string) => {
       const id = nextId.current++;
-      setToasts((current) => [...current, { id, message, variant }]);
+      setToasts((current) => [...current, { id, message, variant, title }]);
       setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
     },
     [dismiss],
@@ -39,7 +41,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast-${toast.variant}`}>
-            <span>{toast.message}</span>
+            <span>
+              {toast.title ? <strong className="toast-title">{toast.title}</strong> : null}
+              {toast.message}
+            </span>
             <button
               type="button"
               className="toast-close"

@@ -25,6 +25,7 @@ from app.models.campus_drive import CampusDrive, CampusDriveStatus
 from app.models.candidate import Candidate, CandidateSource
 from app.models.job import Job, JobStatus
 from app.models.note import Note
+from app.models.notification import Notification, NotificationType
 from app.models.organization import Organization
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.resume import Resume
@@ -65,6 +66,8 @@ __all__ = [
     "CampusDrive",
     "CampusDriveStatus",
     "Note",
+    "Notification",
+    "NotificationType",
     "Department",
     "Employee",
     "EmploymentStatus",

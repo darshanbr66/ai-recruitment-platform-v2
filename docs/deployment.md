@@ -126,6 +126,14 @@ as it goes. This full chain was verified locally (`alembic downgrade base`
 head`) during the SIGVITAS platform work — see git history — with no
 manual intervention required.
 
+**In-app notifications (`b2c3d4e5f6a7`).** Adds the `notifications` table and
+`notification_type` enum (tenant RLS, unique `(assessment_invitation_id, type)`);
+no existing table is altered. Run it **before** the matching backend goes live:
+the notification insert is failure-tolerant (a missing table is logged and the
+candidate's assessment still works), but the recruiter portal's poll of
+`GET /api/v1/recruiter/notifications` would return 500 until it exists.
+Verified locally with an `upgrade` / `downgrade -1` / `upgrade` round trip.
+
 **Employee display order (`a7b8c9d0e1f2`, added after that verification).**
 Adds `employees.display_order`, the hidden position an employee holds within
 their (organization, department) — the org chart sorts by it and org admins
