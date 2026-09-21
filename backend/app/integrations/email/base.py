@@ -56,6 +56,7 @@ class UnconfiguredEmailProvider(EmailProvider):
         bcc: Sequence[str] = (),
     ) -> None:
         raise EmailNotConfiguredError(
-            "Email is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, "
-            "SMTP_PASSWORD and SMTP_FROM_EMAIL on the server to enable outbound email."
+            "Email is not configured. Set RESEND_API_KEY and EMAIL_FROM (production), or "
+            "SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_EMAIL (local "
+            "development), on the server to enable outbound email."
         )

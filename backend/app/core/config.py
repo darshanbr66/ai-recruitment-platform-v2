@@ -58,10 +58,13 @@ class Settings(BaseSettings):
     mongodb_uri: str | None = None
     mongodb_database: str = "ai_recruitment"
 
-    # Outbound email. SMTP is preferred when fully configured; Resend is the
-    # legacy fallback (see app/integrations/email/__init__.py). The SMTP
-    # password is a SecretStr so it can never leak through a repr/log of
-    # Settings — it is only unwrapped inside the SMTP provider at send time.
+    # Outbound email. Resend (HTTPS) is used when RESEND_API_KEY and EMAIL_FROM
+    # are set — it is the production provider, since hosts like Render's free
+    # web services block outbound SMTP ports. Otherwise SMTP is used when fully
+    # configured (local development). See app/integrations/email/__init__.py.
+    # The SMTP password and Resend API key are SecretStr so they can never
+    # leak through a repr/log of Settings — each is only unwrapped inside its
+    # provider at send time.
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -70,7 +73,9 @@ class Settings(BaseSettings):
     smtp_from_name: str = "AI Recruitment Platform"
     smtp_use_tls: bool = True
 
-    resend_api_key: str | None = None
+    # `email_from` is the Resend sender: a verified-domain address, optionally
+    # with a display name, e.g. `SIGVITAS <hr@yourdomain.com>`.
+    resend_api_key: SecretStr | None = None
     email_from: str | None = None
 
     anthropic_api_key: str | None = None

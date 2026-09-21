@@ -10,7 +10,7 @@ org/tenant isolation via Postgres RLS), Jobs/Candidates/Applications CRUD
 and pipeline, a public career site with resume upload, AI-assisted resume
 screening, MCQ assessments with token-based candidate access (no login
 required), campus drives, application notes, live reports, and outbound
-template-based candidate email over SMTP. Email is **manual only**: a
+template-based candidate email (Resend over HTTPS in production, SMTP for local development). Email is **manual only**: a
 recruiter picks one of six professional HTML templates (application received,
 interview invitation, assessment invitation, next steps, rejection, general),
 edits it if needed, previews it, and sends. Applying, assigning an assessment
@@ -105,7 +105,7 @@ rather than faking success/results:
 | Variable | Enables |
 |---|---|
 | `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_TLS` (default `true`) | Outbound email over SMTP for the recruiter's manual "Send Email" / "Send Assessment Invitation" actions (nothing is emailed automatically). `SMTP_PASSWORD` is a secret — keep it in your local `.env` / the host's secret store only, never in source or `.env.example`. With any of host/username/password/from-address missing, sends fail with a clear `email_not_configured` error. |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Legacy alternative to SMTP (via [Resend](https://resend.com)); only used when SMTP is not fully configured. |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email over HTTPS via [Resend](https://resend.com) — **the production provider** (hosts like Render's free web services block outbound SMTP ports). When both are set, Resend is used in preference to SMTP. `RESEND_API_KEY` is a secret. `EMAIL_FROM` must be an address on a domain verified in Resend, e.g. `SIGVITAS <hr@yourdomain.com>`. Leave both empty locally to keep using SMTP. |
 | `OLLAMA_BASE_URL` (+ `OLLAMA_MODEL`) | AI-assisted resume screening via a **free, local** [Ollama](https://ollama.com) model — no API key, nothing leaves your machine. Preferred over the paid options below when set. |
 | `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening via a paid cloud provider, if you'd rather not run Ollama. Only used when `OLLAMA_BASE_URL` isn't set. |
 

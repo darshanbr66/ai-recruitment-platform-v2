@@ -20,9 +20,22 @@ __all__ = [
 
 
 def get_email_provider() -> EmailProvider:
-    """SMTP when fully configured, else Resend (legacy), else an
-    always-raising provider — never a fake success."""
+    """Resend (HTTPS) when RESEND_API_KEY and EMAIL_FROM are set, else SMTP
+    when fully configured, else an always-raising provider — never a fake
+    success.
+
+    Resend wins when both are configured on purpose: production hosts such as
+    Render's free web services block outbound SMTP ports, so a deployment that
+    has both must use the HTTPS path. Local development configures only SMTP
+    and is unaffected; to use SMTP on a machine that also has Resend keys,
+    leave RESEND_API_KEY empty."""
     settings = get_settings()
+    if (
+        settings.resend_api_key is not None
+        and settings.resend_api_key.get_secret_value()
+        and settings.email_from
+    ):
+        return ResendEmailProvider(api_key=settings.resend_api_key, from_email=settings.email_from)
     if (
         settings.smtp_host
         and settings.smtp_username
@@ -39,6 +52,4 @@ def get_email_provider() -> EmailProvider:
             from_name=settings.smtp_from_name,
             use_tls=settings.smtp_use_tls,
         )
-    if settings.resend_api_key and settings.email_from:
-        return ResendEmailProvider(api_key=settings.resend_api_key, from_email=settings.email_from)
     return UnconfiguredEmailProvider()

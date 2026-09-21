@@ -81,18 +81,19 @@ nothing sensitive is stored in the Blueprint file itself.
 | `MAX_RESUME_SIZE_MB` | No (default `10`) | |
 | `MONGODB_URI` | Yes, if `RESUME_STORAGE_PROVIDER=mongodb_gridfs` | Connection string for the MongoDB deployment storing resume files (e.g. an Atlas cluster). Never commit the real value. |
 | `MONGODB_DATABASE` | No (default `ai_recruitment`) | Database name within the MongoDB deployment; the `resumes` GridFS bucket is created inside it. |
-| `SMTP_HOST` | For email | SMTP server, e.g. `smtp.gmail.com`. |
+| `RESEND_API_KEY` | **For email in production** | **Secret** — a Resend API key (`re_…`); set only in the Render dashboard (`sync: false`). Render's free web services block outbound SMTP (ports 25/465/587), so production email must use Resend's HTTPS API. Never commit it. |
+| `EMAIL_FROM` | **For email in production** | The Resend `From:` — an address on a domain you have **verified in Resend**, optionally with a display name: `SIGVITAS <hr@yourdomain.com>`. |
+| `SMTP_HOST` | Local development only | SMTP server, e.g. `smtp.gmail.com`. Ignored whenever `RESEND_API_KEY` + `EMAIL_FROM` are both set. |
 | `SMTP_PORT` | No (default `587`) | `587` = STARTTLS, `465` = implicit TLS. |
 | `SMTP_USERNAME` | For email | SMTP login (also usually the from address). |
 | `SMTP_PASSWORD` | For email | **Secret** — set only in the Render dashboard (`sync: false` in `render.yaml`). For Gmail this must be an app password. Never commit it, never put it in `.env.example`. |
 | `SMTP_FROM_EMAIL` | For email | The `From:` address. |
 | `SMTP_FROM_NAME` | No (default `AI Recruitment Platform`) | Display name on the `From:` header. |
 | `SMTP_USE_TLS` | No (default `true`) | STARTTLS on non-465 ports. |
-| `RESEND_API_KEY` / `EMAIL_FROM` | No | Legacy alternative to SMTP; only used when SMTP is not fully configured. |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | No | Optional, free/local AI screening — not reachable from Render, only useful if you run Ollama somewhere Render can reach it. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No | Optional paid AI screening providers. Do not set unless you intend to enable AI screening. |
 
-Email is optional: with neither SMTP nor Resend configured, the manual send
+Email is optional: with neither Resend nor SMTP configured, the manual send
 action returns a `503 email_not_configured` error rather than failing
 silently or faking success.
 
@@ -330,11 +331,44 @@ safe.**
 
 ## 12. Email — production behavior
 
-Outbound email goes through `app/integrations/email/get_email_provider()`:
-SMTP when `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD` and
-`SMTP_FROM_EMAIL` are all set, else Resend (legacy) when
-`RESEND_API_KEY`/`EMAIL_FROM` are set, else an always-raising "not
-configured" provider.
+Outbound email goes through `app/integrations/email/get_email_provider()`,
+which picks, in this order:
+
+1. **Resend** (HTTPS, `api.resend.com`) when `RESEND_API_KEY` and `EMAIL_FROM`
+   are both set — the production provider.
+2. **SMTP** when `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD` and
+   `SMTP_FROM_EMAIL` are all set — local development.
+3. Otherwise an always-raising "not configured" provider (`503`, never a fake
+   success).
+
+**Why production uses Resend.** Render's free web services block outbound
+traffic to SMTP ports 25, 465 and 587
+([changelog](https://render.com/changelog/free-web-services-will-no-longer-allow-outbound-traffic-to-smtp-ports)),
+so Gmail SMTP fails there with `SMTP send failed` / `error_type: OSError` (a
+`502 email_delivery_failed`) even though it works locally. Resend is a plain
+HTTPS POST, which is not blocked, and keeps the free tier free (Resend's free
+plan: 100 emails/day, 3,000/month, up to 3 verified domains). Resend is
+preferred whenever both are configured, so leaving the old `SMTP_*` variables
+on Render is harmless; the SMTP provider is kept for local development.
+
+**Required Render variables** (Environment tab, then **Save and deploy** —
+"Save only" does not restart the service, and settings are read at startup):
+
+| Variable | Value |
+|---|---|
+| `RESEND_API_KEY` | An API key from the Resend dashboard (API Keys). A "sending access" key is enough. |
+| `EMAIL_FROM` | `SIGVITAS <hr@yourdomain.com>` — the domain must be verified in Resend (Domains -> add the DNS records it shows, wait for "Verified"). |
+
+**Sender-domain requirement.** Until a domain is verified, Resend only lets an
+account send test mail *to its own address* and rejects anything else with a
+`403 validation_error`, which the app reports as "The email service refused the
+sender or recipient address." A free-mail address (e.g. `@gmail.com`) cannot be
+verified, so it cannot be the `EMAIL_FROM`.
+
+**Diagnosing a failure.** Failed Resend sends log
+`"message": "Resend send failed"` with `provider`, `status_code` and Resend's
+`error_name` (or `error_type` for a network failure) — never the API key, the
+recipients or the message body.
 
 - **Manual only.** Candidate email is sent only by an explicit recruiter/admin
   action on the application page: **Send Email** (any template) or **Send
@@ -357,8 +391,8 @@ configured" provider.
 - **HTML.** One shared table-based layout (company header, content, optional
   button, footer with recruiter contact), inline CSS only — no images,
   scripts or external resources — with a plain-text alternative. The message
-  is sent from the configured SMTP address with the sending recruiter as
-  `Reply-To`.
+  is sent from the configured sender address (`EMAIL_FROM` on Resend,
+  `SMTP_FROM_EMAIL` on SMTP) with the sending recruiter as `Reply-To`.
 - **General email.** The **Email** page (`/recruiter/email`, visible to
   ORG_ADMIN and RECRUITER) sends the same templates to addresses the sender
   types, with no application: `POST /api/v1/recruiter/email/{compose,preview,send}`
@@ -366,21 +400,23 @@ configured" provider.
   optional Cc/Bcc — at most 10 each, 20 in total) are validated as bare email
   addresses, de-duplicated across the three fields, and never accepted from
   anywhere but the request body; the company name always comes from the signed-in
-  user's organization and the SMTP account is never client-selectable. The
+  user's organization and the sending account is never client-selectable. The
   Assessment invitation template needs an application (it carries a personal
   link) and is unavailable there; templates that mention a role ask for it, and
   the recipient defaults to "Sir or Madam" when no name is given. Sends are
   audited as `GENERAL_EMAIL_SENT` / `GENERAL_EMAIL_FAILED` (recipients and
-  subject, not the body). No configuration change: it uses the same `SMTP_*`
-  settings.
+  subject, not the body). No configuration change: it uses whichever provider
+  is configured above.
 - **Honest failures.** Not configured -> `503` with code
-  `email_not_configured`; the SMTP server rejecting the credentials or the
-  message -> `502` with code `email_delivery_failed`. Both attempts are
+  `email_not_configured`; the provider (Resend or the SMTP server) rejecting the
+  credentials or the message, or being unreachable -> `502` with code
+  `email_delivery_failed`. Both attempts are
   recorded in Activities (`CANDIDATE_EMAIL_FAILED` / `CANDIDATE_EMAIL_SENT`).
   Nothing is ever reported as sent when it was not.
-- **No credentials in code.** `SMTP_PASSWORD` is read from the environment
-  into a `SecretStr`, is never logged, never returned by any endpoint, and is
-  absent from `.env.example`. Set it only in the Render dashboard.
+- **No credentials in code.** `RESEND_API_KEY` and `SMTP_PASSWORD` are read
+  from the environment into `SecretStr`s, are never logged, never returned by
+  any endpoint, and are absent from `.env.example`. Set them only in the
+  Render dashboard.
 
 ## 13. AI provider — production behavior
 

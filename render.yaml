@@ -59,8 +59,12 @@ services:
         value: ai_recruitment
       # Optional integrations — the app runs correctly with these unset
       # (email/AI screening report "not configured" rather than failing).
-      # Outbound email (SMTP). SMTP_PASSWORD is a secret: fill it in the
-      # Render dashboard only — never in this file.
+      # Outbound email. PRODUCTION uses Resend over HTTPS: set RESEND_API_KEY
+      # and EMAIL_FROM below (Render's free web services block outbound SMTP
+      # ports 25/465/587, so the SMTP_* variables cannot work there). Resend is
+      # preferred whenever both are configured. SMTP_* is kept for local
+      # development. Every secret is filled in the Render dashboard only —
+      # never in this file.
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

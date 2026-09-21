@@ -175,7 +175,10 @@ export function ApplicationDetailPage() {
         token,
       ),
     onSuccess: () => {
-      closeRetestForm();
+      // Not `closeRetestForm()`: it refuses to close while the mutation is
+      // pending, and `onSuccess` runs before the mutation leaves that state.
+      dismissRetestForm();
+      showToast("Retest created — the new assessment link is ready.", "success");
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessment-invitation", applicationId] });
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessment-attempts", applicationId] });
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications", applicationId] });
@@ -195,15 +198,22 @@ export function ApplicationDetailPage() {
     setShowRetestForm(true);
   }
 
-  function closeRetestForm() {
-    if (retestMutation.isPending) return;
+  function dismissRetestForm() {
     setShowRetestForm(false);
     setRetestReason("");
     setRetestError(null);
   }
 
+  /** User-initiated close (Cancel, Escape, backdrop): blocked while a request
+   * is in flight so it can't be abandoned half-sent. */
+  function closeRetestForm() {
+    if (retestMutation.isPending) return;
+    dismissRetestForm();
+  }
+
   function handleRetestSubmit(event: FormEvent) {
     event.preventDefault();
+    if (retestMutation.isPending) return;
     if (retestReason.trim().length === 0) {
       setRetestError("A reason for the retest is required.");
       return;
