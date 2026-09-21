@@ -91,3 +91,11 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # Sigvi, the public AI assistant (docs/sigvi.md). Set GEMINI_API_KEY in
+      # the Render dashboard; without it the assistant reports "temporarily
+      # unavailable" and nothing else is affected. The SIGVI_* tuning
+      # variables are optional (defaults in app/core/config.py).
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite

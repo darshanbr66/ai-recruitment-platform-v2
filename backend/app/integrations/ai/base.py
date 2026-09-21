@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -43,3 +45,56 @@ class LLMProvider(ABC):
     async def screen_candidate(
         self, *, resume_text: str, job_title: str, job_description: str
     ) -> ScreeningVerdict: ...
+
+
+# --- Conversational (chat) capability ---------------------------------------
+# A separate capability interface from `LLMProvider` (screening), sharing the
+# same error hierarchy and factory pattern: a vendor that can chat need not be
+# able to screen, and the screening providers stay untouched. The errors below
+# are *internal* — callers map them to friendly user-facing messages and never
+# forward their text (it may carry upstream detail).
+
+
+class AIProviderAuthError(AIProviderError):
+    """The provider rejected our credentials (missing/invalid/revoked key)."""
+
+
+class AIProviderRateLimitError(AIProviderError):
+    """The provider's quota / rate limit was hit."""
+
+
+class AIProviderTimeoutError(AIProviderError):
+    """The provider did not respond within the configured timeout."""
+
+
+class AIProviderUnavailableError(AIProviderError):
+    """The provider is unreachable or returned a server-side / unexpected error."""
+
+
+class AIProviderEmptyResponseError(AIProviderError):
+    """The provider answered successfully but with no usable text."""
+
+
+class AIProviderBlockedError(AIProviderError):
+    """The provider's own safety system declined to answer."""
+
+
+@dataclass(frozen=True)
+class ChatMessage:
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatProvider(ABC):
+    #: Short provider identifier, for logs.
+    name: str
+    #: Model identifier, for logs.
+    model: str
+
+    @abstractmethod
+    async def generate(
+        self, *, system_prompt: str, messages: list[ChatMessage], max_output_tokens: int
+    ) -> str:
+        """Returns the assistant's reply text for the conversation so far
+        (`messages` ends with the user's latest turn). Raises an
+        `AIProviderError` subclass on any failure — never fabricates text."""

@@ -49,6 +49,13 @@ submission.
 Only published (`status=OPEN`) jobs, minimal fields (title, department,
 location, employment_type, description, requirements summary).
 
+```
+POST /api/v1/public/ai/chat        (JSON)   -- Sigvi, the public AI assistant
+```
+Anonymous, rate-limited, stateless: `{message, conversation_id?, history?,
+organization_slug?}` -> `{conversation_id, message, sources[], jobs[]}`. Full
+contract, limits and error codes in `docs/sigvi.md` § 3.
+
 ### Candidate
 ```
 POST /api/v1/candidate/auth/register

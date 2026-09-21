@@ -20,6 +20,9 @@ for _name in (
     "SMTP_FROM_EMAIL",
     "RESEND_API_KEY",
     "EMAIL_FROM",
+    # Same rule for the Sigvi assistant: no test may ever reach the real
+    # Gemini API, whatever a developer's .env holds.
+    "GEMINI_API_KEY",
 ):
     os.environ[_name] = ""
 

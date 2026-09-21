@@ -2,6 +2,7 @@ import { lazy, Suspense, type ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
 import { PublicHomePage } from "../features/public/PublicHomePage";
+import { SigviLayer } from "../features/sigvi/SigviLayer";
 import { RouteFallback } from "../shared/components/RouteFallback";
 import { ProtectedRoute } from "./ProtectedRoute";
 
@@ -64,9 +65,13 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<PublicFallback />}>
       <Routes>
-        <Route path="/" element={<PublicHomePage />} />
-        <Route path="/org/:slug" element={<CareersPage />} />
-        <Route path="/org/:slug/jobs/:jobId" element={<JobDetailPage />} />
+        {/* The Sigvi assistant appears on these three pages only — never on
+            the assessment / campus-drive pages, nor in the staff app. */}
+        <Route element={<SigviLayer />}>
+          <Route path="/" element={<PublicHomePage />} />
+          <Route path="/org/:slug" element={<CareersPage />} />
+          <Route path="/org/:slug/jobs/:jobId" element={<JobDetailPage />} />
+        </Route>
         <Route path="/assessment/:token" element={<AssessmentTakingPage />} />
         <Route path="/campus-drive/:token" element={<CampusDriveApplyPage />} />
         <Route path="/candidate/*" element={<CandidatePlaceholderPage />} />

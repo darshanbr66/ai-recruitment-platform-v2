@@ -231,6 +231,11 @@ Key properties:
   `DocumentExtractor` as abstract interfaces. Concrete adapters (e.g. an
   OpenAI-backed or local-model-backed implementation) are selected by
   configuration, never imported directly by domain services.
+- **Sigvi (built ahead of the screening phases)**: the public assistant is the
+  first consumer of this layer — a `ChatProvider` capability interface
+  (`integrations/ai/`, Gemini adapter) and a swappable `KnowledgeRetriever`
+  (`app/knowledge/`, keyword matching today; embeddings + pgvector are its
+  intended replacement). See `docs/sigvi.md`.
 - No orchestration framework (LangChain/LangGraph) is assumed. If added
   later, it lives entirely inside `integrations/ai/`; `services/screening/`
   continues to depend only on the interfaces above.

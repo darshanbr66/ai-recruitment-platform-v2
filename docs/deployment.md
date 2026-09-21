@@ -92,6 +92,9 @@ nothing sensitive is stored in the Blueprint file itself.
 | `SMTP_USE_TLS` | No (default `true`) | STARTTLS on non-465 ports. |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | No | Optional, free/local AI screening — not reachable from Render, only useful if you run Ollama somewhere Render can reach it. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No | Optional paid AI screening providers. Do not set unless you intend to enable AI screening. |
+| `GEMINI_API_KEY` | **For the Sigvi assistant** | **Secret** — a Google Gemini API key (free tier: <https://aistudio.google.com/apikey>); set only in the Render dashboard (`sync: false`). Unset ⇒ Sigvi answers "temporarily unavailable"; nothing else is affected. Never commit it. |
+| `GEMINI_MODEL` | No (default `gemini-3.5-flash-lite`) | The Gemini model Sigvi uses. |
+| `SIGVI_*` | No | `SIGVI_REQUEST_TIMEOUT_SECONDS`, `SIGVI_MAX_OUTPUT_TOKENS`, `SIGVI_ORGANIZATION_SLUG`, `SIGVI_RATE_LIMIT_PER_MINUTE`, `SIGVI_GLOBAL_RATE_LIMIT_PER_MINUTE` — see `docs/sigvi.md` § 9. |
 
 Email is optional: with neither Resend nor SMTP configured, the manual send
 action returns a `503 email_not_configured` error rather than failing
@@ -426,6 +429,19 @@ AI-assisted screening returns a clear "not configured" error rather than
 failing startup or fabricating a result. **Do not set any AI provider
 key as part of this deployment** unless you've decided to enable AI
 screening — the platform is fully usable without it.
+
+### Sigvi (the public AI assistant)
+
+Sigvi is separate from screening and uses Google Gemini. To enable it on
+Render: **Environment tab → add `GEMINI_API_KEY` (a key from Google AI Studio)
+→ Save and deploy.** That is the only required change; `GEMINI_MODEL` defaults
+to `gemini-3.5-flash-lite` and the `SIGVI_*` limits have safe defaults. No
+database migration is needed and no Vercel change is needed (the browser calls
+the existing API base URL). Without the key the assistant shows "temporarily
+unavailable" and the site works as before. After deploying, ask Sigvi a
+question on the home page to confirm; a `403`/"API key" upstream message in the
+logs means the key is wrong, a `429` means the free-tier quota. See
+`docs/sigvi.md`.
 
 ## 14. Security posture at deployment time
 

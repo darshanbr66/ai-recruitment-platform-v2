@@ -1,0 +1,529 @@
+/*
+ * Sigvi — the public AI assistant.
+ *
+ * Built only from the design tokens (tokens.css), so it follows the theme with
+ * no rules of its own. Only transform/opacity animate. Reduced motion needs no
+ * special case here: tokens.css collapses every animation/transition duration
+ * globally, so the panel and messages simply appear.
+ */
+
+.sigvi {
+  --sigvi-gap: 1.25rem;
+  position: fixed;
+  right: var(--sigvi-gap);
+  bottom: var(--sigvi-gap);
+  z-index: 80;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+}
+
+/* --- launcher -------------------------------------------------------------- */
+
+.sigvi-launcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 3rem;
+  padding: 0.35rem 1.05rem 0.35rem 0.35rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-label);
+  font-weight: var(--weight-strong);
+  cursor: pointer;
+  box-shadow: var(--shadow-raised), var(--highlight-top);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+/* A quiet ring that invites a first look, three times, then rests. */
+.sigvi-launcher::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 2px solid var(--color-primary);
+  opacity: 0;
+  pointer-events: none;
+  animation: sigvi-ring 2.4s var(--ease-out) 1.2s 3;
+}
+
+.sigvi-launcher:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-popover), var(--highlight-top);
+}
+
+.sigvi-launcher:active {
+  transform: translateY(0);
+}
+
+/* While the panel is open the launcher steps aside (the panel has its own
+   Close). It becomes hidden only after it has faded, and visible instantly, so
+   focus can return to it the moment the panel closes. */
+.sigvi[data-open="true"] .sigvi-launcher {
+  opacity: 0;
+  transform: scale(0.9);
+  visibility: hidden;
+  pointer-events: none;
+  transition-property: transform, opacity, visibility;
+  transition-delay: 0s, 0s, var(--dur-base);
+}
+
+/* --- panel ----------------------------------------------------------------- */
+
+.sigvi-panel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(25.5rem, calc(100vw - 2 * var(--sigvi-gap)));
+  height: min(40rem, calc(100vh - 2 * var(--sigvi-gap)));
+  height: min(40rem, calc(100dvh - 2 * var(--sigvi-gap)));
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover), var(--highlight-top);
+  transform-origin: bottom right;
+  opacity: 0;
+  transform: translateY(14px) scale(0.96);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+.sigvi[data-open="true"] .sigvi-panel {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+/* Phones: a full-screen sheet rising from the bottom edge. */
+.sigvi-panel[data-layout="sheet"] {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: 100vh;
+  height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  transform-origin: bottom center;
+  transform: translateY(24px);
+}
+
+.sigvi[data-open="true"] .sigvi-panel[data-layout="sheet"] {
+  transform: none;
+}
+
+.sigvi-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 0.85rem 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(180deg, var(--color-primary-soft), transparent);
+}
+
+.sigvi-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sigvi-title {
+  margin: 0;
+  font-size: var(--text-card-title);
+}
+
+.sigvi-subtitle {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.sigvi-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.sigvi-icon-btn:hover:not(:disabled) {
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+}
+
+.sigvi-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* --- conversation ---------------------------------------------------------- */
+
+.sigvi-log {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-bg-subtle);
+}
+
+.sigvi-row {
+  display: flex;
+  gap: 0.5rem;
+  animation: sigvi-rise var(--dur-base) var(--ease-out) both;
+}
+
+.sigvi-row-user {
+  justify-content: flex-end;
+}
+
+.sigvi-avatar {
+  flex: none;
+  margin-top: 0.1rem;
+}
+
+.sigvi-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: calc(100% - 2rem);
+}
+
+.sigvi-bubble {
+  max-width: 100%;
+  padding: 0.6rem 0.85rem;
+  border-radius: 1rem;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sigvi-bubble-assistant {
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 0.3rem;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.sigvi-bubble-user {
+  max-width: 85%;
+  border-bottom-right-radius: 0.3rem;
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
+  white-space: pre-wrap;
+}
+
+.sigvi-bubble p {
+  margin: 0 0 0.45rem;
+}
+
+.sigvi-bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.sigvi-bubble ul,
+.sigvi-bubble ol {
+  margin: 0 0 0.45rem;
+  padding-left: 1.15rem;
+}
+
+.sigvi-bubble li + li {
+  margin-top: 0.2rem;
+}
+
+.sigvi-welcome p:first-child {
+  font-size: var(--text-card-title);
+}
+
+.sigvi-sources {
+  margin: 0;
+  padding-left: 0.2rem;
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.sigvi-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-left: 2.1rem;
+  animation: sigvi-rise var(--dur-slow) var(--ease-out) 80ms both;
+}
+
+.sigvi-chip {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.sigvi-chip:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  transform: translateY(-1px);
+}
+
+.sigvi-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* --- job cards ------------------------------------------------------------- */
+
+.sigvi-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sigvi-job {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.sigvi-job-title {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-body);
+}
+
+.sigvi-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.sigvi-job-summary {
+  margin: 0 0 0.6rem;
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.sigvi-job-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* --- thinking & error ------------------------------------------------------ */
+
+.sigvi-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+.sigvi-dots {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.sigvi-dots span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: sigvi-dot 1.2s ease-in-out infinite;
+}
+
+.sigvi-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.sigvi-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.sigvi-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  font-size: var(--text-label);
+  animation: sigvi-rise var(--dur-base) var(--ease-out) both;
+}
+
+.sigvi-error p {
+  margin: 0;
+}
+
+/* --- composer -------------------------------------------------------------- */
+
+.sigvi-composer {
+  padding: 0.75rem 0.85rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.sigvi-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.sigvi-input {
+  flex: 1;
+  min-width: 0;
+  max-height: 7.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+}
+
+.sigvi-input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.sigvi-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.sigvi-send {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.sigvi-send:hover:not(:disabled) {
+  background: var(--color-primary-solid-hover);
+  transform: translateY(-1px);
+}
+
+.sigvi-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sigvi-footnote {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.15rem 0.75rem;
+  margin: 0.45rem 0 0;
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.sigvi-counter {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- phones ---------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .sigvi {
+    --sigvi-gap: 1rem;
+    bottom: calc(var(--sigvi-gap) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 16px keeps iOS from zooming the page when the box is focused. */
+  .sigvi-input {
+    font-size: 1rem;
+  }
+
+  .sigvi-footnote > :first-child {
+    display: none;
+  }
+}
+
+/* --- motion ---------------------------------------------------------------- */
+
+/* The global reduced-motion rule collapses durations but not delays, so the
+   invitation ring's start delay would still linger — drop it outright. */
+@media (prefers-reduced-motion: reduce) {
+  .sigvi-launcher::after {
+    animation: none;
+  }
+}
+
+@keyframes sigvi-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes sigvi-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes sigvi-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22, 1.45);
+  }
+}

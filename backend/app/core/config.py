@@ -89,6 +89,23 @@ class Settings(BaseSettings):
     ollama_base_url: str | None = None
     ollama_model: str = "llama3.1"
 
+    # Sigvi — the public AI assistant (POST /api/v1/public/ai/chat). Gemini is
+    # the chat provider (free tier is enough for development/demo use); the
+    # key is a SecretStr so it can never leak through a repr/log of Settings.
+    # Unset means "assistant unavailable", never a canned/fake answer.
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-3.5-flash-lite"
+    sigvi_request_timeout_seconds: float = 20.0
+    sigvi_max_output_tokens: int = 700
+    # The careers site Sigvi answers about when the request names no
+    # organization (this deployment serves one: docs/architecture.md).
+    sigvi_organization_slug: str = "sigvitas"
+    # In-process limits (per instance): per client, and across all clients —
+    # the global cap protects the provider's free-tier quota even if a caller
+    # rotates client identifiers.
+    sigvi_rate_limit_per_minute: int = 8
+    sigvi_global_rate_limit_per_minute: int = 40
+
     @model_validator(mode="after")
     def _validate_mongodb_configured_when_selected(self) -> "Settings":
         if self.resume_storage_provider == "mongodb_gridfs" and not self.mongodb_uri:

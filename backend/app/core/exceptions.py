@@ -73,6 +73,21 @@ class ServiceUnavailableError(AppError):
     code = "service_unavailable"
 
 
+class TooManyRequestsError(AppError):
+    """The caller (or the upstream provider on their behalf) is being rate
+    limited; retrying shortly is the right response."""
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "rate_limited"
+
+
+class GatewayTimeoutError(AppError):
+    """An upstream provider did not answer in time."""
+
+    status_code = status.HTTP_504_GATEWAY_TIMEOUT
+    code = "gateway_timeout"
+
+
 class BadGatewayError(AppError):
     """An upstream provider (e.g. the SMTP server) failed or refused the
     request."""

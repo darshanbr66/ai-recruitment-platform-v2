@@ -170,3 +170,15 @@ Structured logs with request-correlation IDs, `/healthz` and `/readyz`, and
 business-event logs feeding the audit table cover the initial build (see
 `docs/architecture.md` § 11). A metrics/tracing stack is deferred to Phase 12
 and only added if a concrete operational need justifies it.
+
+## 10. Public AI assistant (Sigvi)
+
+`POST /api/v1/public/ai/chat` is anonymous, so its safety comes from what the
+model can reach and from input/rate limits rather than from authentication:
+the model receives only curated public knowledge and public fields of OPEN
+jobs (no tools, no queries, no tenant/candidate/recruiter/admin data); input,
+history and output are bounded; requests are rate limited per client and
+globally; replies are validated (prompt marker / key-shaped text / configured
+key are never returned); provider errors are never forwarded; the Gemini key is
+a `SecretStr` sent in a header; conversation text is never logged or stored.
+Details and known limits: `docs/sigvi.md` §§ 5, 7, 10.

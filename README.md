@@ -65,6 +65,8 @@ intentionally simplified for the local MVP — see each doc for specifics).
   secure invitation mechanics, evaluation.
 - [`docs/ai-screening.md`](docs/ai-screening.md) — resume intelligence and
   AI screening pipeline, provider abstraction.
+- [`docs/sigvi.md`](docs/sigvi.md) — Sigvi, the public AI assistant: API,
+  knowledge layer, provider, security, frontend, operations.
 - [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md) — local test/demo
   login credentials for every role.
 
@@ -108,6 +110,7 @@ rather than faking success/results:
 | `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email over HTTPS via [Resend](https://resend.com) — **the production provider** (hosts like Render's free web services block outbound SMTP ports). When both are set, Resend is used in preference to SMTP. `RESEND_API_KEY` is a secret. `EMAIL_FROM` must be an address on a domain verified in Resend, e.g. `SIGVITAS <hr@yourdomain.com>`. Leave both empty locally to keep using SMTP. |
 | `OLLAMA_BASE_URL` (+ `OLLAMA_MODEL`) | AI-assisted resume screening via a **free, local** [Ollama](https://ollama.com) model — no API key, nothing leaves your machine. Preferred over the paid options below when set. |
 | `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening via a paid cloud provider, if you'd rather not run Ollama. Only used when `OLLAMA_BASE_URL` isn't set. |
+| `GEMINI_API_KEY` (+ `GEMINI_MODEL`, `SIGVI_*`) | **Sigvi**, the public AI assistant on the careers site, via Google Gemini's free tier ([get a key](https://aistudio.google.com/apikey)). Without it the assistant says it's temporarily unavailable; the rest of the site is unaffected. `GEMINI_API_KEY` is a secret. See [`docs/sigvi.md`](docs/sigvi.md). |
 
 Backend checks:
 

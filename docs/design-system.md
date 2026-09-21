@@ -108,6 +108,20 @@ The **only new dependency** is `three` (+ `@types/three`, dev). Nothing in the
 project provided 3D/WebGL or animation; react-three-fiber and drei were not
 added.
 
+## Sigvi (the public AI assistant)
+
+`features/sigvi/` + `styles/sigvi.css` — built only from the tokens above, so
+theme, dark mode and reduced motion need no rules of their own. The mark is the
+talent-graph motif (signal-blue orb, spark, two nodes) — no new hue. Motion:
+the panel opens with a 200–380ms fade + ≤14px rise from the launcher's corner,
+messages rise 6px, the thinking indicator is three pulsing dots, and the
+launcher shows a quiet ring three times then rests; all `transform`/`opacity`.
+Rendered through a portal into `<body>` (same reason as dialogs). Non-modal
+floating panel on desktop, full-screen sheet ≤ 640px (16px input to prevent
+iOS zoom, safe-area padding, page scroll locked beneath). It appears only on
+the home, careers and role pages — never on assessment/campus-drive pages or
+the staff app. Details: `docs/sigvi.md` § 8.
+
 ## Dialogs
 
 `Modal` and `ConfirmDialog` (every dialog in the app goes through one of them)
