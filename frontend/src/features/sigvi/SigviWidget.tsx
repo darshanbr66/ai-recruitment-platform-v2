@@ -1,25 +1,33 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "../../shared/components/Icon";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
 import { useReducedMotion } from "../../shared/hooks/useReducedMotion";
 import { SIGVI_MAX_MESSAGE_CHARS } from "../../types/sigvi";
+// Sigvi's styles ship with Sigvi's (lazy) chunk, not the main stylesheet.
+import "../../styles/sigvi.css";
 import { FormattedMessage } from "./formatMessage";
 import { SigviAvatar } from "./SigviAvatar";
 import { SigviJobCard } from "./SigviJobCard";
-import { SIGVI_SUGGESTIONS } from "./suggestions";
+import { SigviLauncher } from "./SigviLauncher";
+import { SigviMascot, type MascotState } from "./SigviMascot";
+import { SigviTeaser } from "./SigviTeaser";
+import { SigviWelcome } from "./SigviWelcome";
+import { rememberTeaserDismissed } from "./teaserStorage";
 import { useSigviChat, type ChatTurn } from "./useSigviChat";
 
 const MOBILE_QUERY = "(max-width: 640px)";
 const COUNTER_FROM = Math.floor(SIGVI_MAX_MESSAGE_CHARS * 0.8);
+/** How long the mascot celebrates after a reply lands. */
+const DELIGHT_MS = 1400;
 
 function AssistantTurn({ turn, onNavigate }: { turn: ChatTurn; onNavigate: () => void }) {
   const knowledge = (turn.sources ?? []).filter((source) => source.type === "knowledge");
   return (
     <div className="sigvi-row sigvi-row-assistant">
-      <SigviAvatar size={26} />
+      <SigviAvatar size={30} />
       <div className="sigvi-stack">
-        <div className="sigvi-bubble sigvi-bubble-assistant">
+        <div className="sigvi-bubble sigvi-bubble-assistant sigvi-arrive">
           <FormattedMessage text={turn.content} />
         </div>
         {turn.jobs && turn.jobs.length > 0 && (
@@ -30,8 +38,11 @@ function AssistantTurn({ turn, onNavigate }: { turn: ChatTurn; onNavigate: () =>
           </div>
         )}
         {knowledge.length > 0 && (
-          <p className="sigvi-sources">
-            Based on: {knowledge.map((source) => source.title).join(" · ")}
+          // The specific topics are in the tooltip; the chip itself stays
+          // simple and never names anything internal.
+          <p className="sigvi-sources" title={knowledge.map((source) => source.title).join(" · ")}>
+            <Icon name="sparkles" size={12} />
+            Based on SIGVITAS Careers
           </p>
         )}
       </div>
@@ -47,20 +58,43 @@ function AssistantTurn({ turn, onNavigate }: { turn: ChatTurn; onNavigate: () =>
  * Non-modal on desktop (the page stays usable beside it), a full-screen sheet
  * on phones. Escape closes it and returns focus to the launcher.
  */
-export function SigviWidget({ organizationSlug }: { organizationSlug?: string }) {
+export function SigviWidget({
+  organizationSlug,
+  teaser = false,
+}: {
+  organizationSlug?: string;
+  /** Offer the one-time "Hi, I'm Sigvi" nudge (the home page only). */
+  teaser?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [teaserDismissed, setTeaserDismissed] = useState(false);
+  // The reply the mascot has already finished celebrating.
+  const [celebrated, setCelebrated] = useState<string | null>(null);
   const { turns, status, error, send, retry, clear } = useSigviChat({ organizationSlug });
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const reducedMotion = useReducedMotion();
 
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef(false);
   const composing = useRef(false);
 
   const pending = status === "pending";
+  const lastTurn = turns.at(-1);
+  const delight = lastTurn?.role === "assistant" && celebrated !== lastTurn.id;
+  const mascotState: MascotState = pending ? "thinking" : delight ? "delight" : "idle";
+
+  // A reply just arrived: the mascot lights up (derived above) until this
+  // timer marks that reply as celebrated.
+  useEffect(() => {
+    if (lastTurn?.role !== "assistant") return;
+    const id = lastTurn.id;
+    const timer = window.setTimeout(() => setCelebrated(id), DELIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [lastTurn?.id, lastTurn?.role]);
 
   // Opening moves focus to the message box; closing (button / Escape) returns
   // it to the launcher. Following a link out of the panel does neither.
@@ -77,6 +111,11 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
   useLayoutEffect(() => {
     const log = logRef.current;
     if (!log || !open) return;
+    // The welcome screen reads from the top; only a conversation follows the end.
+    if (turns.length === 0) {
+      log.scrollTop = 0;
+      return;
+    }
     if (!reducedMotion && typeof log.scrollTo === "function") {
       log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
     } else {
@@ -94,6 +133,28 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
     };
   }, [open, isMobile]);
 
+  // On a phone the on-screen keyboard shrinks the *visual* viewport but not
+  // the layout viewport, which would leave the message box underneath it. Size
+  // the sheet to what is actually visible so the input stays in reach.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const panel = panelRef.current;
+    if (!open || !isMobile || !viewport || !panel) return;
+    const update = () => {
+      panel.style.setProperty("--sigvi-vh", `${viewport.height}px`);
+      panel.style.setProperty("--sigvi-top", `${viewport.offsetTop}px`);
+    };
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+      panel.style.removeProperty("--sigvi-vh");
+      panel.style.removeProperty("--sigvi-top");
+    };
+  }, [open, isMobile]);
+
   // Grow the box with its content (up to a cap), shrink back after sending.
   useLayoutEffect(() => {
     const input = inputRef.current;
@@ -101,6 +162,17 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
   }, [draft]);
+
+  const dismissTeaser = useCallback(() => {
+    setTeaserDismissed(true);
+    rememberTeaserDismissed();
+  }, []);
+
+  // Opening Sigvi — from the launcher or the teaser — retires the teaser for good.
+  const openPanel = () => {
+    dismissTeaser();
+    setOpen(true);
+  };
 
   const close = () => {
     restoreFocus.current = true;
@@ -124,24 +196,17 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
   const hasConversation = turns.length > 0 || error !== null;
 
   return createPortal(
-    <div className="sigvi" data-open={open}>
-      <button
-        ref={launcherRef}
-        type="button"
-        className="sigvi-launcher"
-        aria-label="Ask Sigvi, the AI assistant"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls="sigvi-panel"
-        aria-hidden={open}
-        inert={open}
-        onClick={() => setOpen(true)}
-      >
-        <SigviAvatar size={30} />
-        <span className="sigvi-launcher-label">Ask Sigvi</span>
-      </button>
+    <div className="sigvi" data-open={open} data-state={mascotState}>
+      <SigviTeaser
+        enabled={teaser}
+        dismissed={teaserDismissed || open}
+        onDismiss={dismissTeaser}
+        onOpen={openPanel}
+      />
+      <SigviLauncher ref={launcherRef} open={open} onOpen={openPanel} />
 
       <section
+        ref={panelRef}
         id="sigvi-panel"
         className="sigvi-panel"
         role="dialog"
@@ -155,10 +220,12 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
         }}
       >
         <header className="sigvi-header">
-          <SigviAvatar size={36} />
+          <span className="sigvi-head-avatar">
+            <SigviMascot size={44} variant="head" state={mascotState} />
+          </span>
           <div className="sigvi-header-text">
             <h2 className="sigvi-title">Sigvi</h2>
-            <p className="sigvi-subtitle">AI assistant for Sigvitas</p>
+            <p className="sigvi-subtitle">AI assistant for SIGVITAS</p>
           </div>
           <button
             type="button"
@@ -187,30 +254,18 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
           aria-relevant="additions"
           tabIndex={0}
         >
-          <div className="sigvi-row sigvi-row-assistant">
-            <SigviAvatar size={26} />
-            <div className="sigvi-bubble sigvi-bubble-assistant sigvi-welcome">
-              <p>
-                <strong>Hi, I'm Sigvi</strong> <span aria-hidden="true">👋</span>
-              </p>
-              <p>Your AI assistant for Sigvitas.</p>
-              <p>How can I help you today?</p>
-            </div>
-          </div>
-
-          {turns.length === 0 && (
-            <div className="sigvi-suggestions" role="group" aria-label="Suggested questions">
-              {SIGVI_SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  className="sigvi-chip"
-                  disabled={pending}
-                  onClick={() => send(suggestion)}
-                >
-                  {suggestion}
-                </button>
-              ))}
+          {turns.length === 0 ? (
+            <SigviWelcome onPick={send} disabled={pending} />
+          ) : (
+            <div className="sigvi-row sigvi-row-assistant">
+              <SigviAvatar size={30} />
+              <div className="sigvi-bubble sigvi-bubble-assistant sigvi-welcome">
+                <p>
+                  <strong>Hi, I'm Sigvi</strong> <span aria-hidden="true">👋</span>
+                </p>
+                <p>Your AI assistant for SIGVITAS.</p>
+                <p>How can I help you today?</p>
+              </div>
             </div>
           )}
 
@@ -226,7 +281,7 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
 
           {pending && (
             <div className="sigvi-row sigvi-row-assistant" role="status">
-              <SigviAvatar size={26} />
+              <SigviMascot size={34} variant="head" state="thinking" />
               <div className="sigvi-bubble sigvi-bubble-assistant sigvi-typing">
                 <span className="sigvi-dots" aria-hidden="true">
                   <span />
@@ -241,7 +296,7 @@ export function SigviWidget({ organizationSlug }: { organizationSlug?: string })
           {status === "error" && error && (
             <div className="sigvi-error" role="alert">
               <p>{error}</p>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={retry}>
+              <button type="button" className="sigvi-retry" onClick={retry}>
                 Retry
               </button>
             </div>

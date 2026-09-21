@@ -44,6 +44,7 @@ function useAfterIdle(timeoutMs = 1500) {
  */
 export function SigviLayer() {
   const careersMatch = useMatch({ path: "/org/:slug", end: false });
+  const isHome = useMatch({ path: "/", end: true }) !== null;
   const ready = useAfterIdle();
 
   return (
@@ -52,7 +53,7 @@ export function SigviLayer() {
       {ready && (
         <SigviBoundary>
           <Suspense fallback={null}>
-            <SigviWidget organizationSlug={careersMatch?.params.slug} />
+            <SigviWidget organizationSlug={careersMatch?.params.slug} teaser={isHome} />
           </Suspense>
         </SigviBoundary>
       )}

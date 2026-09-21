@@ -10,7 +10,6 @@ import "./styles/polish.css";
 import "./styles/filters.css";
 import "./styles/dashboard.css";
 import "./styles/landing.css";
-import "./styles/sigvi.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

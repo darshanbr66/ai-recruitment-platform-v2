@@ -65,12 +65,13 @@ describe("opening and closing", () => {
     const dialog = screen.getByRole("dialog", { name: /sigvi/i });
     expect(within(dialog).getByText(/hi, i'm sigvi/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/your ai assistant for sigvitas/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/how can i help you today/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/i can help you explore/i)).toBeInTheDocument();
     for (const suggestion of [
-      "Explore current jobs",
+      "Show me current openings",
       "How do I apply?",
+      "How does the hiring process work?",
+      "Tell me about SIGVITAS",
       "How does the assessment work?",
-      "Tell me about Sigvitas",
     ]) {
       expect(within(dialog).getByRole("button", { name: suggestion })).toBeInTheDocument();
     }
@@ -330,7 +331,10 @@ describe("rendering replies", () => {
     type("how do I apply");
     pressEnter();
 
-    expect(await screen.findByText(/based on: how to apply for a job/i)).toBeInTheDocument();
+    const chip = await screen.findByText(/based on sigvitas careers/i);
+    expect(chip).toBeInTheDocument();
+    // the specific topic is available on hover, but the chip names nothing internal
+    expect(chip).toHaveAttribute("title", "How to apply for a job");
   });
 
   it("shows job cards that link to the real role page and apply form", async () => {
@@ -357,11 +361,11 @@ describe("rendering replies", () => {
     pressEnter();
 
     const card = await screen.findByRole("article", { name: /react frontend developer/i });
+    expect(within(card).getByText("Open role")).toBeInTheDocument();
     expect(within(card).getByText("Engineering")).toBeInTheDocument();
-    expect(within(card).getByText("Bengaluru")).toBeInTheDocument();
-    expect(within(card).getByText("Full-time")).toBeInTheDocument();
+    expect(within(card).getByText("Bengaluru · Full-time")).toBeInTheDocument();
     expect(within(card).getByText("Build interfaces in React.")).toBeInTheDocument();
-    expect(within(card).getByRole("link", { name: /view job/i })).toHaveAttribute(
+    expect(within(card).getByRole("link", { name: /view role/i })).toHaveAttribute(
       "href",
       "/org/sigvitas/jobs/job-1",
     );
@@ -394,7 +398,7 @@ describe("rendering replies", () => {
     type("jobs");
     pressEnter();
 
-    fireEvent.click(await screen.findByRole("link", { name: /view job/i }));
+    fireEvent.click(await screen.findByRole("link", { name: /view role/i }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -621,9 +625,14 @@ describe("accessibility", () => {
     renderWidget();
     openPanel();
 
-    const avatars = document.querySelectorAll("svg.sigvi-avatar");
-    expect(avatars.length).toBeGreaterThan(0);
-    avatars.forEach((svg) => expect(svg).toHaveAttribute("aria-hidden", "true"));
+    // Every mascot is either decorative (hidden) or a named image.
+    const mascots = document.querySelectorAll("svg.sigvi-mascot");
+    expect(mascots.length).toBeGreaterThan(1);
+    mascots.forEach((svg) => {
+      const decorative = svg.getAttribute("aria-hidden") === "true";
+      const named = svg.getAttribute("role") === "img" && !!svg.getAttribute("aria-label");
+      expect(decorative || named).toBe(true);
+    });
     expect(screen.getByText("👋")).toHaveAttribute("aria-hidden", "true");
   });
 
@@ -632,6 +641,6 @@ describe("accessibility", () => {
     openPanel();
 
     expect(screen.getByText(/ai can make mistakes/i)).toBeInTheDocument();
-    expect(screen.getByText("AI assistant for Sigvitas")).toBeInTheDocument();
+    expect(screen.getByText("AI assistant for SIGVITAS")).toBeInTheDocument();
   });
 });

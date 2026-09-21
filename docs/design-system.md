@@ -110,17 +110,27 @@ added.
 
 ## Sigvi (the public AI assistant)
 
-`features/sigvi/` + `styles/sigvi.css` — built only from the tokens above, so
-theme, dark mode and reduced motion need no rules of their own. The mark is the
-talent-graph motif (signal-blue orb, spark, two nodes) — no new hue. Motion:
-the panel opens with a 200–380ms fade + ≤14px rise from the launcher's corner,
-messages rise 6px, the thinking indicator is three pulsing dots, and the
-launcher shows a quiet ring three times then rests; all `transform`/`opacity`.
+`features/sigvi/` + `styles/sigvi.css`. Sigvi is the one place the site has a
+*character*, so it carries a small identity of its own on top of the tokens:
+deep navy surfaces, signal blue, electric blue, a touch of violet and cyan,
+white text (`--sv-*`, scoped to `.sigvi`), and it stays dark in **both** themes
+so it is recognisable on a light or dark page. Type, radii, easing and durations
+still come from `tokens.css`. The mascot is an inline-SVG robot (white/blue
+shell, dark visor, glowing eyes) — no images, filters or libraries — echoing the
+"talent graph" motif through a miniature constellation around the launcher.
+
+Motion follows the rules above with two additions, both measured on the real
+page: ambient loops are limited to compositable elements and are **finite**
+(the launcher animates for a few seconds, then rests; hover, a once-a-minute
+wake and each open restart it), because an animation that never ends keeps the
+whole page rendering. Reduced motion switches every Sigvi animation off.
+
 Rendered through a portal into `<body>` (same reason as dialogs). Non-modal
-floating panel on desktop, full-screen sheet ≤ 640px (16px input to prevent
-iOS zoom, safe-area padding, page scroll locked beneath). It appears only on
-the home, careers and role pages — never on assessment/campus-drive pages or
-the staff app. Details: `docs/sigvi.md` § 8.
+floating panel on desktop; full-screen sheet ≤ 640px that tracks the visible
+viewport (16px input to prevent iOS zoom, safe-area padding, page scroll locked
+beneath, keyboard-aware). It appears only on the home, careers and role pages —
+never on assessment/campus-drive pages or the staff app. Details:
+`docs/sigvi.md` § 8.
 
 ## Dialogs
 
