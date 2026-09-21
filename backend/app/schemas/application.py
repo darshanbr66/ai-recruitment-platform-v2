@@ -1,9 +1,27 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.application import ApplicationSource, ApplicationStatus
+
+
+class ApplicationSortField(StrEnum):
+    """What the Applications list can be ordered by. `created_at` is the
+    long-standing default; `status` orders by workflow stage (the enum's
+    declaration order), not alphabetically."""
+
+    CREATED_AT = "created_at"
+    APPLIED_AT = "applied_at"
+    CANDIDATE_NAME = "candidate_name"
+    JOB_TITLE = "job_title"
+    STATUS = "status"
+
+
+class SortDirection(StrEnum):
+    ASC = "asc"
+    DESC = "desc"
 
 
 class ApplicationCreateRequest(BaseModel):
@@ -33,6 +51,7 @@ class ApplicationResponse(BaseModel):
     candidate_id: uuid.UUID
     candidate_full_name: str
     candidate_email: str
+    candidate_phone: str | None = None
     job_id: uuid.UUID
     job_title: str
     campus_drive_id: uuid.UUID | None = None

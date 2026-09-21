@@ -5,8 +5,9 @@ app/workflows/application_workflow.py exclusively — see
 docs/recruitment-workflow.md."""
 
 import uuid
+from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,13 +15,16 @@ from app.api.deps import require_permission
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.integrations.storage import StorageError, get_resume_storage_for_provider
-from app.models.application import Application, ApplicationStatus
+from app.models.application import Application, ApplicationSource, ApplicationStatus
+from app.models.candidate import CandidateType
 from app.models.user import User
 from app.schemas.application import (
     ApplicationCreateRequest,
     ApplicationDeleteRequest,
     ApplicationResponse,
+    ApplicationSortField,
     ApplicationStatusChangeRequest,
+    SortDirection,
 )
 from app.schemas.assessment import AssessmentInvitationResponse, AssessmentResultResponse
 from app.schemas.email import (
@@ -47,6 +51,7 @@ def _to_response(application: Application) -> ApplicationResponse:
         candidate_id=application.candidate_id,
         candidate_full_name=application.candidate.full_name,
         candidate_email=application.candidate.email,
+        candidate_phone=application.candidate.phone,
         job_id=application.job_id,
         job_title=application.job.title,
         campus_drive_id=application.campus_drive_id,
@@ -79,24 +84,92 @@ async def create_application(
     return _to_response(application)
 
 
+# Upper bound on one page. The Applications page asks for 25; anything the
+# caller sends beyond this is rejected rather than silently clamped.
+MAX_PAGE_SIZE = 100
+
+# Hard ceilings for user-typed numbers — far beyond any real value, they only
+# exist to reject nonsense (and keep the integers well inside the column type).
+_MAX_YEARS = 80
+_MAX_NOTICE_DAYS = 365
+_TEXT = 255
+
+
 @router.get("", response_model=list[ApplicationResponse])
 async def list_applications(
+    response: Response,
     job_id: uuid.UUID | None = Query(default=None),
     candidate_id: uuid.UUID | None = Query(default=None),
     application_status: ApplicationStatus | None = Query(default=None, alias="status"),
     campus_drive_id: uuid.UUID | None = Query(default=None),
+    source: ApplicationSource | None = Query(default=None),
+    q: str | None = Query(
+        default=None,
+        max_length=100,
+        description="Words matched against candidate name, email, phone and job title.",
+    ),
+    candidate_type: CandidateType | None = Query(default=None),
+    current_title: str | None = Query(default=None, max_length=_TEXT),
+    current_company: str | None = Query(default=None, max_length=_TEXT),
+    location: str | None = Query(default=None, max_length=_TEXT),
+    preferred_location: str | None = Query(default=None, max_length=_TEXT),
+    qualification: str | None = Query(default=None, max_length=_TEXT),
+    min_experience: int | None = Query(default=None, ge=0, le=_MAX_YEARS),
+    max_experience: int | None = Query(default=None, ge=0, le=_MAX_YEARS),
+    max_notice_period_days: int | None = Query(default=None, ge=0, le=_MAX_NOTICE_DAYS),
+    immediate_joiner: bool | None = Query(default=None),
+    applied_from: date | None = Query(default=None),
+    applied_to: date | None = Query(default=None),
+    sort_by: ApplicationSortField = Query(default=ApplicationSortField.CREATED_AT),
+    sort_dir: SortDirection = Query(default=SortDirection.DESC),
+    limit: int | None = Query(default=None, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
     current_user: User = Depends(require_permission("application.read")),
     db: AsyncSession = Depends(get_db),
 ) -> list[ApplicationResponse]:
+    """The organization's applications, filtered, sorted and paged in the
+    database. All filters combine with AND and paging is applied after
+    filtering. The body stays a plain list (existing callers rely on it); the
+    number of applications matching the filters — ignoring `limit`/`offset` —
+    is returned in the `X-Total-Count` header. Without `limit`, every match is
+    returned. Inverted ranges are a 422."""
     assert current_user.organization_id is not None
-    applications = await application_service.list_applications(
-        db,
-        current_user.organization_id,
+    filters = application_service.ApplicationFilters(
         job_id=job_id,
         candidate_id=candidate_id,
         status=application_status,
         campus_drive_id=campus_drive_id,
+        source=source,
+        search=q,
+        candidate_type=candidate_type,
+        current_title=current_title,
+        current_company=current_company,
+        location=location,
+        preferred_location=preferred_location,
+        qualification=qualification,
+        min_experience=min_experience,
+        max_experience=max_experience,
+        max_notice_period_days=max_notice_period_days,
+        immediate_joiner=immediate_joiner,
+        applied_from=applied_from,
+        applied_to=applied_to,
     )
+    applications = await application_service.list_applications(
+        db,
+        current_user.organization_id,
+        filters=filters,
+        sort_by=sort_by,
+        sort_direction=sort_dir,
+        limit=limit,
+        offset=offset,
+    )
+    # An unpaged request already holds every match; only a page needs a count.
+    total = (
+        len(applications)
+        if limit is None
+        else await application_service.count_applications(db, current_user.organization_id, filters)
+    )
+    response.headers["X-Total-Count"] = str(total)
     return [_to_response(application) for application in applications]
 
 

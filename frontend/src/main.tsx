@@ -7,6 +7,7 @@ import "./styles/shell.css";
 import "./styles/auth.css";
 import "./styles/public.css";
 import "./styles/polish.css";
+import "./styles/filters.css";
 import "./styles/dashboard.css";
 import "./styles/landing.css";
 

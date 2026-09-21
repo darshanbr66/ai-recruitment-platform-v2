@@ -53,6 +53,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # The Applications list reports its filtered total here; a
+        # cross-origin browser can only read a response header that is exposed.
+        expose_headers=["X-Total-Count"],
     )
 
     register_exception_handlers(app)

@@ -133,6 +133,7 @@ export interface ApplicationResponse {
   candidate_id: string;
   candidate_full_name: string;
   candidate_email: string;
+  candidate_phone: string | null;
   job_id: string;
   job_title: string;
   campus_drive_id: string | null;

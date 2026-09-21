@@ -83,7 +83,8 @@ GET/POST      /api/v1/recruiter/jobs
 GET/PATCH     /api/v1/recruiter/jobs/{job_id}
 GET/POST      /api/v1/recruiter/candidates
 GET/PATCH     /api/v1/recruiter/candidates/{candidate_id}
-GET           /api/v1/recruiter/applications
+GET           /api/v1/recruiter/applications                  (application.read; searched, filtered, sorted and paged
+                                                                in the database — see "Applications list" below)
 GET/PATCH     /api/v1/recruiter/applications/{application_id}
 POST          /api/v1/recruiter/applications/{application_id}/status
 POST          /api/v1/recruiter/applications/{application_id}/screening-runs
@@ -127,6 +128,31 @@ POST          /api/v1/recruiter/applications/{application_id}/email/send      (t
                                                                                 422 unresolved_placeholders /
                                                                                 503 email_not_configured / 502 email_delivery_failed)
 ```
+### Applications list (`GET /api/v1/recruiter/applications`)
+
+One endpoint serves the Applications page, a Campus Drive's "Candidates in this
+drive" (`campus_drive_id`), a candidate's own applications (`candidate_id`) and
+reports. Everything is decided server-side; paging is applied **after**
+filtering. The body is a plain list; the number of matches ignoring paging is
+in the **`X-Total-Count`** response header (exposed through CORS).
+
+| Parameter | Meaning |
+|---|---|
+| `q` | Up to 5 words (max 100 chars); **every** word must match the candidate's name, email or phone (digits-only comparison, so `98765 43210` finds `+91 98765-43210`) **or** the job title. `%` and `_` are literal. |
+| `job_id`, `status`, `source`, `campus_drive_id`, `candidate_id` | Exact matches. `status` and `source` are enums (`PORTAL`, `RECRUITER_ADDED`, `CAMPUS_IMPORT`, `REFERRAL`, `OTHER`); unknown values are a 422. |
+| `candidate_type` | `FRESHER` / `EXPERIENCED`. |
+| `current_title`, `current_company`, `location` (current), `preferred_location`, `qualification` | Case-insensitive "contains" (max 255). |
+| `min_experience`, `max_experience` | Years, 0–80, inclusive. Candidates with no experience recorded never match a bound. `min > max` is a 422. |
+| `max_notice_period_days` | "Up to N days", 0–365. Candidates with no notice period recorded don't match. |
+| `immediate_joiner` | `true` / `false`. |
+| `applied_from`, `applied_to` | `YYYY-MM-DD`, whole days in **UTC**, both ends inclusive. `from > to` is a 422. |
+| `sort_by`, `sort_dir` | `created_at` (default) / `applied_at` / `candidate_name` / `job_title` / `status` (pipeline order, not alphabetical); `asc` / `desc` (default `desc`). Ties are broken by id, so pages never repeat or skip rows. |
+| `limit`, `offset` | `limit` 1–100; **omitted = every match** (internal callers such as reports rely on it). `offset` ≥ 0. |
+
+All filters combine with AND. Deleted applications are never returned. Rows
+also carry `candidate_phone`. Results are always scoped to the caller's
+organization (query + RLS).
+
 All resolve `organization_id` from the authenticated principal — never from
 a path/query/body parameter — and enforce the specific permission for the
 action via a dependency (e.g. `require_permission("application.status.change")`).

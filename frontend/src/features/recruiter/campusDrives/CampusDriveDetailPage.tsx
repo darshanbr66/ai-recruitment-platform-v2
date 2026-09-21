@@ -1,11 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { BackLink } from "../../../shared/components/BackLink";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
+import { Pagination } from "../../../shared/components/Pagination";
 import { QrCode } from "../../../shared/components/QrCode";
 import { useToast } from "../../../shared/components/ToastContext";
 import type {
@@ -14,8 +15,19 @@ import type {
   CampusDriveStatus,
 } from "../../../types/campusDrive";
 import { useAuth } from "../../auth/AuthContext";
-import { listApplicationsForDrive } from "../applications/api";
+import { listApplicationsPage } from "../applications/api";
+import {
+  PAGE_SIZE,
+  hasActiveCriteria,
+  toApiQuery,
+  useApplicationListState,
+} from "../applications/applicationFilters";
+import { ApplicationListControls, type FilterField } from "../applications/ApplicationListControls";
 import { getCampusDrive, getCampusDriveFunnel, regenerateCampusDriveLink, updateCampusDrive } from "./api";
+
+/** What a recruiter can narrow a drive's candidates by. A drive has one job and
+ * its own source, so those filters would be noise here. */
+const DRIVE_CANDIDATE_FILTERS: FilterField[] = ["status", "qualification", "applied"];
 
 const WORKFLOW_STAGES = ["Registration", "Assessment", "Submitted", "Screening", "Shortlisted"];
 
@@ -96,11 +108,38 @@ export function CampusDriveDetailPage() {
     enabled: accessToken !== null,
   });
 
+  // Search, filters and page live in the URL and are applied by the server —
+  // the drive's candidates are never all downloaded to be filtered here.
+  const [listState, setListState] = useApplicationListState();
+  const apiQuery = toApiQuery(listState, { campus_drive_id: driveId });
+
   const applicationsQuery = useQuery({
-    queryKey: ["recruiter", "applications", "drive", driveId],
-    queryFn: () => listApplicationsForDrive(driveId, token),
+    queryKey: ["recruiter", "applications", "drive", driveId, apiQuery],
+    // The page number rides along with the rows so the summary always
+    // describes the rows on screen (see ApplicationsPage).
+    queryFn: async () => ({
+      ...(await listApplicationsPage(apiQuery, token)),
+      page: listState.page,
+    }),
     enabled: accessToken !== null,
+    placeholderData: keepPreviousData,
   });
+  const candidates = applicationsQuery.data?.items ?? [];
+  const totalCandidates = applicationsQuery.data?.total ?? 0;
+  const shownPage = applicationsQuery.data?.page ?? listState.page;
+  const criteriaActive = hasActiveCriteria(listState.filters);
+  const lastPage = Math.max(1, Math.ceil(totalCandidates / PAGE_SIZE));
+
+  // A page that no longer exists (stale link, or rows removed) -> the last real one.
+  useEffect(() => {
+    if (
+      applicationsQuery.isSuccess &&
+      !applicationsQuery.isPlaceholderData &&
+      listState.page > lastPage
+    ) {
+      setListState({ ...listState, page: lastPage });
+    }
+  }, [applicationsQuery.isSuccess, applicationsQuery.isPlaceholderData, listState, lastPage, setListState]);
 
   const statusMutation = useMutation({
     mutationFn: (status: CampusDriveStatus) => updateCampusDrive(driveId, { status }, token),
@@ -300,38 +339,81 @@ export function CampusDriveDetailPage() {
       <section className="card">
         <h2>Candidates in this drive</h2>
         {applicationsQuery.isPending && <p role="status">Loading…</p>}
-        {applicationsQuery.isSuccess && applicationsQuery.data.length === 0 && (
+        {applicationsQuery.isError && (
+          <Alert>
+            {applicationsQuery.error instanceof ApiError
+              ? applicationsQuery.error.message
+              : "Could not load this drive's candidates."}
+          </Alert>
+        )}
+        {/* Nothing to search until the drive has at least one candidate. */}
+        {((applicationsQuery.isSuccess && (totalCandidates > 0 || criteriaActive)) ||
+          applicationsQuery.isError) && (
+          <ApplicationListControls
+            state={listState}
+            onChange={setListState}
+            fields={DRIVE_CANDIDATE_FILTERS}
+            searchLabel="Search candidates in this drive"
+            searchPlaceholder="Search by name, email or phone…"
+          />
+        )}
+        {applicationsQuery.isSuccess && totalCandidates === 0 && !criteriaActive && (
           <p className="muted">
             No applications yet. Candidates who apply via this drive's link appear here automatically.
           </p>
         )}
-        {applicationsQuery.isSuccess && applicationsQuery.data.length > 0 && (
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Status</th>
-                  <th>Applied</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applicationsQuery.data.map((application) => (
-                  <tr
-                    key={application.id}
-                    className="clickable-row"
-                    onClick={() => navigate(`/recruiter/applications/${application.id}`)}
-                  >
-                    <td>{application.candidate_full_name}</td>
-                    <td>
-                      <span className="badge badge-active">{application.status}</span>
-                    </td>
-                    <td>{new Date(application.applied_at).toLocaleDateString()}</td>
+        {applicationsQuery.isSuccess && totalCandidates === 0 && criteriaActive && (
+          <p className="muted">No candidates in this drive match these filters.</p>
+        )}
+        {applicationsQuery.isSuccess && candidates.length > 0 && (
+          <>
+            <div
+              className={
+                applicationsQuery.isPlaceholderData ? "table-scroll is-refreshing" : "table-scroll"
+              }
+              aria-busy={applicationsQuery.isPlaceholderData}
+            >
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Status</th>
+                    <th>Applied</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {candidates.map((application) => (
+                    <tr
+                      key={application.id}
+                      className="clickable-row"
+                      onClick={() => navigate(`/recruiter/applications/${application.id}`)}
+                    >
+                      <td>
+                        {application.candidate_full_name}
+                        <span className="cell-sub">
+                          {[application.candidate_email, application.candidate_phone]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-active">{application.status}</span>
+                      </td>
+                      <td>{new Date(application.applied_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={shownPage}
+              pageSize={PAGE_SIZE}
+              total={totalCandidates}
+              noun={totalCandidates === 1 ? "candidate" : "candidates"}
+              disabled={applicationsQuery.isPlaceholderData}
+              onPageChange={(page) => setListState({ ...listState, page })}
+            />
+          </>
         )}
       </section>
 

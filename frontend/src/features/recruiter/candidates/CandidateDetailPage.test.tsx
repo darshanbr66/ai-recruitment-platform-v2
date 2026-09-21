@@ -42,6 +42,7 @@ function application(overrides: Partial<ApplicationResponse>): ApplicationRespon
     candidate_id: "cand-1",
     candidate_full_name: "Priya Candidate",
     candidate_email: "priya@example.com",
+    candidate_phone: null,
     job_id: "job-1",
     job_title: "Full Stack Developer",
     campus_drive_id: null,

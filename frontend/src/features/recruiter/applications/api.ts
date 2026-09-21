@@ -14,20 +14,21 @@ import type {
   EmailTemplate,
 } from "../../../types/email";
 
+/** Every application, unpaged (the Overview's stats). The Applications list
+ * uses `listApplicationsPage` instead. */
 export function listApplications(accessToken: string) {
   return apiClient.get<ApplicationResponse[]>("/api/v1/recruiter/applications", accessToken);
+}
+
+/** One page of applications. `query` is built by `toApiQuery` (filters, sort,
+ * limit/offset); the server filters and pages, and reports the total matches. */
+export function listApplicationsPage(query: string, accessToken: string) {
+  return apiClient.getPage<ApplicationResponse>(`/api/v1/recruiter/applications?${query}`, accessToken);
 }
 
 export function listApplicationsForCandidate(candidateId: string, accessToken: string) {
   return apiClient.get<ApplicationResponse[]>(
     `/api/v1/recruiter/applications?candidate_id=${candidateId}`,
-    accessToken,
-  );
-}
-
-export function listApplicationsForDrive(driveId: string, accessToken: string) {
-  return apiClient.get<ApplicationResponse[]>(
-    `/api/v1/recruiter/applications?campus_drive_id=${driveId}`,
     accessToken,
   );
 }

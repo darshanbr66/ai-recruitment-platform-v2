@@ -1,0 +1,187 @@
+/* Search / filters / pager for the Applications and Campus Drive candidate
+   lists. Built only from the existing tokens and the shared .toolbar,
+   .search-input, .field and .btn rules — nothing here restyles them. */
+
+.list-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.list-search {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+}
+
+.list-search .search-input {
+  width: 100%;
+}
+
+.filters-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.filters-toggle.is-open {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.filters-caret {
+  font-size: 0.7rem;
+  transition: transform var(--dur-base, 160ms) var(--ease-out, ease-out);
+}
+
+.filters-toggle.is-open .filters-caret {
+  transform: rotate(180deg);
+}
+
+.filter-count {
+  min-width: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.filter-panel {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.filter-grid .field {
+  margin-bottom: 0;
+}
+
+.filter-actions {
+  margin-top: 1rem;
+}
+
+/* On a phone the filters open in a scrolling dialog: keep Apply / Clear in view
+   instead of at the bottom of a long form. */
+.dialog-card .filter-actions {
+  position: sticky;
+  /* The card's own padding is part of its scrolling area; stick flush with its edge. */
+  bottom: -1.5rem;
+  margin: 1rem -1.5rem -1.5rem;
+  padding: 0.85rem 1.5rem;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  background: var(--color-surface);
+}
+
+/* Inside a card (the Campus Drive candidates section) nothing else spaces the
+   controls from the heading and the table. */
+.card > .list-controls {
+  margin: 0.9rem 0 1rem;
+}
+
+.field-error {
+  margin: 0.75rem 0 0;
+  color: var(--color-danger-text);
+  font-size: 0.82rem;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.65rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+  font-size: 0.78rem;
+}
+
+.filter-chip button {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.filter-chip button:hover,
+.filter-chip button:focus-visible {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* Pager */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.pager-summary {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pager-page {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+/* The previous page stays visible, dimmed, while the next one loads. */
+.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 120ms ease-out;
+}
+
+/* Candidate cell: name with the contact details a search may have matched. */
+.cell-sub {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pager {
+    justify-content: center;
+  }
+}

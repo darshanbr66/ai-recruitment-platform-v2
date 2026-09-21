@@ -22,6 +22,7 @@ const application: ApplicationResponse = {
   candidate_id: "cand-1",
   candidate_full_name: "Jane Candidate",
   candidate_email: "jane@example.com",
+  candidate_phone: null,
   job_id: "job-1",
   job_title: "Backend Engineer",
   campus_drive_id: null,

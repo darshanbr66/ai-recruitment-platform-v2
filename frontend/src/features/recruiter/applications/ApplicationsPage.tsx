@@ -1,22 +1,45 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type FormEvent } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { Modal } from "../../../shared/components/Modal";
 import { EmptyState } from "../../../shared/components/EmptyState";
+import { Pagination } from "../../../shared/components/Pagination";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { statusTone, toneBadgeClass } from "../../../shared/lib/statusTone";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import type { ApplicationResponse } from "../../../types/recruitment";
-import { APPLICATION_STATUSES, type ApplicationStatus } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
-import { createApplication, deleteApplication, listApplications } from "./api";
+import {
+  PAGE_SIZE,
+  hasActiveCriteria,
+  toApiQuery,
+  useApplicationListState,
+} from "./applicationFilters";
+import { ApplicationListControls, type FilterField } from "./ApplicationListControls";
+import { createApplication, deleteApplication, listApplicationsPage } from "./api";
 
 const APPLICATIONS_QUERY_KEY = ["recruiter", "applications"];
+
+const FILTER_FIELDS: FilterField[] = [
+  "job",
+  "status",
+  "candidateType",
+  "experience",
+  "currentTitle",
+  "currentCompany",
+  "location",
+  "preferredLocation",
+  "qualification",
+  "notice",
+  "immediateJoiner",
+  "applied",
+  "source",
+];
 
 export function ApplicationsPage() {
   const { accessToken } = useAuth();
@@ -25,12 +48,21 @@ export function ApplicationsPage() {
   const token = accessToken as string;
   const { showToast } = useToast();
   const [showForm, setShowForm] = useState(false);
-  const [search, setSearch] = useState("");
+  // Search, filters, sort and page live in the URL and are applied by the server.
+  const [listState, setListState] = useApplicationListState();
+  const apiQuery = toApiQuery(listState);
 
   const applicationsQuery = useQuery({
-    queryKey: APPLICATIONS_QUERY_KEY,
-    queryFn: () => listApplications(token),
+    queryKey: [...APPLICATIONS_QUERY_KEY, "list", apiQuery],
+    // The page number rides along with the rows, so the row numbers and the
+    // "Showing 26–50" summary always describe the rows on screen.
+    queryFn: async () => ({
+      ...(await listApplicationsPage(apiQuery, token)),
+      page: listState.page,
+    }),
     enabled: accessToken !== null,
+    // Keep showing the previous page (dimmed) while the next one loads.
+    placeholderData: keepPreviousData,
   });
 
   const candidatesQuery = useQuery({
@@ -44,9 +76,6 @@ export function ApplicationsPage() {
     queryFn: () => listJobs(token),
     enabled: accessToken !== null,
   });
-
-  const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("");
-  const [jobFilter, setJobFilter] = useState("");
 
   const [candidateId, setCandidateId] = useState("");
   const [jobId, setJobId] = useState("");
@@ -120,22 +149,23 @@ export function ApplicationsPage() {
     applicationsQuery.error instanceof ApiError && applicationsQuery.error.status === 403
   );
 
-  const filteredApplications = useMemo(() => {
-    if (!applicationsQuery.data) return [];
-    const term = search.trim().toLowerCase();
-    return applicationsQuery.data.filter((application) => {
-      if (statusFilter && application.status !== statusFilter) return false;
-      if (jobFilter && application.job_id !== jobFilter) return false;
-      if (
-        term &&
-        !application.candidate_full_name.toLowerCase().includes(term) &&
-        !application.job_title.toLowerCase().includes(term)
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [applicationsQuery.data, statusFilter, jobFilter, search]);
+  const applications = applicationsQuery.data?.items ?? [];
+  const totalMatches = applicationsQuery.data?.total ?? 0;
+  const shownPage = applicationsQuery.data?.page ?? listState.page;
+  const criteriaActive = hasActiveCriteria(listState.filters);
+  const lastPage = Math.max(1, Math.ceil(totalMatches / PAGE_SIZE));
+
+  // If the current page no longer exists (rows were deleted, or a stale link),
+  // move to the last real page rather than showing an empty one.
+  useEffect(() => {
+    if (
+      applicationsQuery.isSuccess &&
+      !applicationsQuery.isPlaceholderData &&
+      listState.page > lastPage
+    ) {
+      setListState({ ...listState, page: lastPage });
+    }
+  }, [applicationsQuery.isSuccess, applicationsQuery.isPlaceholderData, listState, lastPage, setListState]);
 
   return (
     <div className="stack-lg">
@@ -164,53 +194,37 @@ export function ApplicationsPage() {
         </Alert>
       )}
 
+      {/* Nothing to search until at least one application exists. */}
+      {((applicationsQuery.isSuccess && (totalMatches > 0 || criteriaActive)) ||
+        (applicationsQuery.isError && canManageApplications)) && (
+        <ApplicationListControls
+          state={listState}
+          onChange={setListState}
+          fields={FILTER_FIELDS}
+          jobs={jobsQuery.data}
+          showSort
+          searchLabel="Search applications"
+          searchPlaceholder="Search by name, email, phone or job…"
+        />
+      )}
+
       {applicationsQuery.isSuccess && (
         <section className="stack-lg" style={{ gap: "1rem" }}>
-          {applicationsQuery.data.length > 0 && (
-            <div className="toolbar">
-              <input
-                className="search-input"
-                placeholder="Search by candidate or job…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <select
-                className="filter-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as ApplicationStatus | "")}
-              >
-                <option value="">All statuses</option>
-                {APPLICATION_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="filter-select"
-                value={jobFilter}
-                onChange={(e) => setJobFilter(e.target.value)}
-              >
-                <option value="">All jobs</option>
-                {jobsQuery.data?.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {applicationsQuery.data.length === 0 ? (
+          {totalMatches === 0 && !criteriaActive ? (
             <EmptyState icon="inbox" title="No applications yet">
               Use "+ Link candidate to job" above to add one, or wait for candidates to apply.
             </EmptyState>
-          ) : filteredApplications.length === 0 ? (
+          ) : totalMatches === 0 ? (
             <EmptyState icon="search" title="No applications match these filters">
-              Try clearing the search, status, or job filter.
+              Try a different search, or remove some filters.
             </EmptyState>
           ) : (
-            <div className="table-scroll">
+            <div
+              className={
+                applicationsQuery.isPlaceholderData ? "table-scroll is-refreshing" : "table-scroll"
+              }
+              aria-busy={applicationsQuery.isPlaceholderData}
+            >
               <table className="data-table">
                 <thead>
                   <tr>
@@ -225,14 +239,21 @@ export function ApplicationsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredApplications.map((application, index) => (
+                  {applications.map((application, index) => (
                     <tr
                       key={application.id}
                       className="clickable-row"
                       onClick={() => navigate(`/recruiter/applications/${application.id}`)}
                     >
-                      <td>{index + 1}</td>
-                      <td>{application.candidate_full_name}</td>
+                      <td>{(shownPage - 1) * PAGE_SIZE + index + 1}</td>
+                      <td>
+                        {application.candidate_full_name}
+                        <span className="cell-sub">
+                          {[application.candidate_email, application.candidate_phone]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </td>
                       <td>{application.job_title}</td>
                       <td>
                         <span className={toneBadgeClass(statusTone(application.status))}>
@@ -260,6 +281,17 @@ export function ApplicationsPage() {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {totalMatches > 0 && (
+            <Pagination
+              page={shownPage}
+              pageSize={PAGE_SIZE}
+              total={totalMatches}
+              noun={totalMatches === 1 ? "application" : "applications"}
+              disabled={applicationsQuery.isPlaceholderData}
+              onPageChange={(page) => setListState({ ...listState, page })}
+            />
           )}
         </section>
       )}

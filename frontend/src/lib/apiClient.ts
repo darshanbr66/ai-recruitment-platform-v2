@@ -127,7 +127,45 @@ async function requestBlob(
   return { blob: await response.blob(), filename: match?.[1] ?? null };
 }
 
+export interface PagedResult<T> {
+  items: T[];
+  /** Matches across *all* pages (the `X-Total-Count` header), not `items.length`. */
+  total: number;
+}
+
+/** A list endpoint that pages server-side: the body is the page, and the total
+ * number of matches travels in the `X-Total-Count` response header. */
+async function requestPage<T>(path: string, accessToken: string): Promise<PagedResult<T>> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    let code = "unknown_error";
+    let message = "Request failed.";
+    let details: { field: string; message: string }[] = [];
+    try {
+      const body = (await response.json()) as ErrorEnvelope;
+      code = body.error?.code ?? code;
+      message = body.error?.message ?? message;
+      details = body.error?.details ?? [];
+    } catch {
+      // Non-JSON error body — fall back to the defaults above.
+    }
+    throw new ApiError(message, response.status, code, details);
+  }
+
+  const items = (await response.json()) as T[];
+  const header = response.headers.get("X-Total-Count");
+  const total = header === null || header.trim() === "" ? Number.NaN : Number(header);
+  // A missing/garbled header (e.g. a proxy stripped it) degrades to "what we got".
+  return { items, total: Number.isInteger(total) && total >= 0 ? total : items.length };
+}
+
 export const apiClient = {
+  /** Like `get`, for list endpoints that page on the server. */
+  getPage: <T>(path: string, accessToken: string) => requestPage<T>(path, accessToken),
   get: <T>(path: string, accessToken?: string) => request<T>(path, "GET", { accessToken }),
   post: <T>(path: string, body?: unknown, accessToken?: string) =>
     request<T>(path, "POST", { body, accessToken }),

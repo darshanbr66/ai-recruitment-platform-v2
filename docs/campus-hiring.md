@@ -127,6 +127,14 @@ POST   /api/v1/recruiter/campus-drives/{id}/regenerate-link -- invalidates the o
 
 ## 5. Campus reporting
 
+**Candidates in this drive** (drive detail page) reads the ordinary Applications
+list with `campus_drive_id` — there is no drive-specific candidates API. It
+supports server-side search (name, email, phone), a status filter,
+qualification, and an applied-from/to range, with pagination, and the state is
+kept in the page URL. The drive's own lifecycle (DRAFT / ACTIVE / PAUSED /
+CLOSED) only governs the *public* apply link; a recruiter can always search a
+drive's candidates, whatever its state.
+
 Because campus participation is just `Application.campus_drive_id`, two
 real (never hardcoded) views are available:
 
