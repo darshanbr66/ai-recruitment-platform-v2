@@ -17,9 +17,19 @@ services:
     name: sigvitas-recruitment-api
     runtime: python
     rootDir: backend
-    plan: starter
+    plan: free
     buildCommand: "pip install --upgrade pip && pip install ."
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    # `alembic upgrade head` runs first, using the exact same DATABASE_URL
+    # env var the app itself reads (no new credentials, no second database,
+    # no Base.metadata.create_all()) — the standard Render/Heroku "release
+    # phase" pattern for a free tier with no Shell access. `&&` means
+    # uvicorn only starts if migrations succeed, so a bad migration fails
+    # the deploy loudly instead of serving against a stale schema; Render
+    # then keeps the previous successful deploy live rather than taking the
+    # service down. Idempotent by construction (alembic tracks the applied
+    # revision in alembic_version; re-running at head is a fast no-op) —
+    # safe to run on every cold start a free-tier dyno does after idling.
+    startCommand: "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

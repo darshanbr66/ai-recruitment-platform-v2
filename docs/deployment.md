@@ -106,16 +106,35 @@ left unset — this is enforced in code (`app/integrations/email`,
 
 ## 4. Run Alembic migrations against the production database
 
-From your own machine (not Render's shell, so you control exactly when
-this runs), with the **External Database URL** (rewritten per § 1) in your
-environment:
+As of `render.yaml`'s current `startCommand`
+(`alembic upgrade head && uvicorn app.main:app ...`), this now runs
+**automatically on every deploy and every cold start**, using the same
+`DATABASE_URL` the web service already has configured — no Render Shell
+access needed (the free plan doesn't offer one), no second database, no
+hardcoded credentials. `&&` means `uvicorn` only starts if the migration
+step exits 0, so a broken migration fails the deploy loudly (Render keeps
+the previous successful deploy live) instead of serving against a stale or
+half-migrated schema. It is safe to run unconditionally on every startup
+because `alembic upgrade head` is idempotent — Alembic tracks the applied
+revision in the `alembic_version` table, so re-running it when already at
+head is a fast no-op (one query). On a free-tier dyno that spins down when
+idle, this means the check simply repeats on every subsequent cold start.
+
+The first initialization of a brand-new, empty production database still
+works exactly the same way — the same command just has more migrations to
+apply the first time it runs.
+
+If you ever need to run it by hand instead (e.g. to test against a copy of
+production before deploying, or if you disable the automatic step) — from
+your own machine, with the **External Database URL** (rewritten per § 1)
+in your environment:
 
 ```bash
 cd backend
 DATABASE_URL="postgresql+psycopg://...<external-url>..." alembic upgrade head
 ```
 
-This is the **first and only** way the schema should ever be created —
+This remains the **first and only** way the schema should ever be created —
 `Base.metadata.create_all()` is never used anywhere in this codebase.
 `alembic upgrade head` on a brand-new, empty database runs every migration
 in order (identity/tenancy → recruitment core → screening/assessments/
@@ -174,7 +193,8 @@ database, and only when you're actually ready to initialize it.
 - **Build command**: `pip install --upgrade pip && pip install .`
   (installs from `pyproject.toml` — there is no separate `requirements.txt`
   to keep dependency declarations in one place)
-- **Start command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Start command**: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+  (see § 4 — migrations run automatically, before the app starts serving)
 - **Health check path**: `/healthz`
 
 If you use the Blueprint (`render.yaml` at the repo root), most of this is
