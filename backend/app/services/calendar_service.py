@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import String, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -25,6 +25,7 @@ from app.models.calendar_event import (
 from app.models.candidate import Candidate
 from app.models.job import Job
 from app.models.user import User
+from app.services import activity_service
 
 _WITH_ORGANIZER = (joinedload(CalendarEvent.organizer),)
 
@@ -110,6 +111,20 @@ async def create_event(
         )
         await db.flush()
 
+    description = f"Created a {event_type.value.replace('_', ' ').lower()} event."
+    if valid_attendee_ids:
+        description += f" {len(valid_attendee_ids)} attendee(s) invited."
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=organizer,
+        action="CALENDAR_EVENT_CREATED",
+        entity_type="calendar_event",
+        entity_id=event.id,
+        entity_label=title,
+        description=description,
+    )
+
     return await get_event(db, event.id)  # type: ignore[return-value]
 
 
@@ -135,6 +150,7 @@ async def list_events(
     range_end: datetime,
     candidate_id: uuid.UUID | None = None,
     job_id: uuid.UUID | None = None,
+    search: str | None = None,
 ) -> list[CalendarEvent]:
     """Every event overlapping `[range_start, range_end)` — the calendar
     grid's query, regardless of whether the caller is asking for a month, a
@@ -148,6 +164,31 @@ async def list_events(
         conditions.append(CalendarEvent.candidate_id == candidate_id)
     if job_id is not None:
         conditions.append(CalendarEvent.job_id == job_id)
+    if search:
+        term = f"%{search.strip()}%"
+        # Subquery/EXISTS-style membership checks rather than joins, so a
+        # match against a linked candidate/job/organizer/attendee never
+        # duplicates the event row — each condition is independently scoped
+        # to ids the event already (tenant-scoped) references.
+        conditions.append(
+            or_(
+                CalendarEvent.title.ilike(term),
+                CalendarEvent.description.ilike(term),
+                CalendarEvent.event_type.cast(String).ilike(term),
+                CalendarEvent.candidate_id.in_(
+                    select(Candidate.id).where(Candidate.full_name.ilike(term))
+                ),
+                CalendarEvent.job_id.in_(select(Job.id).where(Job.title.ilike(term))),
+                CalendarEvent.organizer_user_id.in_(
+                    select(User.id).where(User.full_name.ilike(term))
+                ),
+                CalendarEvent.id.in_(
+                    select(CalendarEventAttendee.event_id)
+                    .join(User, User.id == CalendarEventAttendee.user_id)
+                    .where(User.full_name.ilike(term))
+                ),
+            )
+        )
 
     result = await db.execute(
         select(CalendarEvent).where(*conditions).options(*_WITH_ORGANIZER).order_by(CalendarEvent.start_at.asc())
@@ -164,7 +205,7 @@ async def update_event(
     db: AsyncSession,
     event: CalendarEvent,
     *,
-    user_id: uuid.UUID,
+    actor: User,
     organization_id: uuid.UUID,
     title: str | None = None,
     description: str | None | Literal["__unset__"] = "__unset__",
@@ -180,12 +221,18 @@ async def update_event(
     reminder_minutes_before: int | None | Literal["__unset__"] = "__unset__",
     attendee_ids: list[uuid.UUID] | None = None,
 ) -> CalendarEvent:
-    _require_organizer(event, user_id)
+    _require_organizer(event, actor.id)
 
     new_start = start_at if start_at is not None else event.start_at
     new_end = end_at if end_at is not None else event.end_at
     if new_end < new_start:
         raise UnprocessableError("An event cannot end before it starts.")
+
+    previous_attendee_ids = set(await list_attendee_ids(db, event.id))
+    reminder_changed = (
+        reminder_minutes_before != "__unset__"
+        and reminder_minutes_before != event.reminder_minutes_before
+    )
 
     await _validate_links(
         db,
@@ -223,10 +270,14 @@ async def update_event(
         event.reminder_minutes_before = reminder_minutes_before
         event.reminder_fired_at = None
 
+    attendees_changed = False
     if attendee_ids is not None:
-        valid_attendee_ids = await _validate_attendees(
-            db, organization_id=organization_id, attendee_ids=attendee_ids
+        valid_attendee_ids = set(
+            await _validate_attendees(
+                db, organization_id=organization_id, attendee_ids=attendee_ids
+            )
         )
+        attendees_changed = valid_attendee_ids != previous_attendee_ids
         await db.execute(
             delete(CalendarEventAttendee).where(CalendarEventAttendee.event_id == event.id)
         )
@@ -237,12 +288,57 @@ async def update_event(
             )
 
     await db.flush()
+
+    changes = []
+    if title is not None:
+        changes.append("title")
+    if start_at is not None or end_at is not None:
+        changes.append("schedule")
+    if attendees_changed:
+        added = len(valid_attendee_ids - previous_attendee_ids)
+        removed = len(previous_attendee_ids - valid_attendee_ids)
+        parts = []
+        if added:
+            parts.append(f"{added} attendee(s) added")
+        if removed:
+            parts.append(f"{removed} attendee(s) removed")
+        changes.append(", ".join(parts) if parts else "attendees changed")
+    if reminder_changed:
+        changes.append("reminder configuration changed")
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=actor,
+        action="CALENDAR_EVENT_UPDATED",
+        entity_type="calendar_event",
+        entity_id=event.id,
+        entity_label=event.title,
+        description=f"Updated event: {'; '.join(changes)}." if changes else "Updated event.",
+    )
+
     reloaded = await get_event(db, event.id)
     assert reloaded is not None
     return reloaded
 
 
-async def delete_event(db: AsyncSession, event: CalendarEvent, *, user_id: uuid.UUID) -> None:
-    _require_organizer(event, user_id)
+async def delete_event(db: AsyncSession, event: CalendarEvent, *, actor: User) -> None:
+    _require_organizer(event, actor.id)
+    event_id, title, organization_id, event_type = (
+        event.id,
+        event.title,
+        event.organization_id,
+        event.event_type,
+    )
     await db.delete(event)
     await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=actor,
+        action="CALENDAR_EVENT_DELETED",
+        entity_type="calendar_event",
+        entity_id=event_id,
+        entity_label=title,
+        description=f"Deleted a {event_type.value.replace('_', ' ').lower()} event.",
+    )

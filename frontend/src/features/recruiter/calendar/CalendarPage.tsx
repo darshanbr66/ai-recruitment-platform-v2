@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { EmptyState } from "../../../shared/components/EmptyState";
+import { Icon } from "../../../shared/components/Icon";
 import { Modal } from "../../../shared/components/Modal";
 import { SkeletonList } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
@@ -17,7 +19,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { listApplications } from "../applications/api";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
-import { createEvent, deleteEvent, listEvents, updateEvent } from "./api";
+import { createEvent, deleteEvent, getEvent, listEvents, updateEvent } from "./api";
 import {
   addDays,
   browserTimezone,
@@ -132,21 +134,52 @@ export function CalendarPage() {
 
   const [view, setView] = useState<CalendarView>("month");
   const [anchorDate, setAnchorDate] = useState(() => startOfDay(new Date()));
+  const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEventResponse | null>(null);
   const [detailEvent, setDetailEvent] = useState<CalendarEventResponse | null>(null);
   const [form, setForm] = useState<EventFormState>(() => emptyForm(new Date()));
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CalendarEventResponse | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const range = rangeForView(anchorDate, view);
+  const trimmedSearch = search.trim();
 
   const eventsQuery = useQuery({
-    queryKey: [...CALENDAR_QUERY_KEY, range.start.toISOString(), range.end.toISOString()],
+    queryKey: [...CALENDAR_QUERY_KEY, range.start.toISOString(), range.end.toISOString(), trimmedSearch],
     queryFn: () =>
-      listEvents(token, { start: range.start.toISOString(), end: range.end.toISOString() }),
+      listEvents(token, {
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+        search: trimmedSearch || undefined,
+      }),
     enabled: accessToken !== null,
   });
+
+  // Arriving from a reminder notification link (`?event=<id>`) opens that
+  // event's detail view directly, regardless of which date range/view is
+  // currently displayed — then clears the param so it isn't re-triggered
+  // by a later navigation back to this page.
+  const linkedEventId = searchParams.get("event");
+  const linkedEventQuery = useQuery({
+    queryKey: ["recruiter", "calendar", "linked-event", linkedEventId],
+    queryFn: () => getEvent(linkedEventId as string, token),
+    enabled: accessToken !== null && linkedEventId !== null,
+  });
+  useEffect(() => {
+    if (!linkedEventQuery.data) return;
+    setDetailEvent(linkedEventQuery.data);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("event");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedEventQuery.data]);
 
   const candidatesQuery = useQuery({
     queryKey: ["recruiter", "candidates"],
@@ -317,6 +350,23 @@ export function CalendarPage() {
         </div>
       </div>
 
+      <div className="toolbar">
+        <div className="search-input-wrap">
+          <Icon name="search" size={16} className="search-input-icon" />
+          <input
+            className="search-input"
+            placeholder="Search events, candidates, jobs, people…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button type="button" className="search-input-clear" aria-label="Clear search" onClick={() => setSearch("")}>
+              <Icon name="x" size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {eventsQuery.isPending && <SkeletonList rows={4} />}
       {eventsQuery.isError && (
         <Alert>{eventsQuery.error instanceof ApiError ? eventsQuery.error.message : "Could not load events."}</Alert>
@@ -325,14 +375,18 @@ export function CalendarPage() {
       {eventsQuery.isSuccess && events.length === 0 && (
         <EmptyState
           icon="clock"
-          title="No events in this range"
+          title={trimmedSearch ? "No matching events" : "No events in this range"}
           action={
-            <button type="button" className="btn btn-primary" onClick={() => openCreateForm(new Date())}>
-              Schedule your first event
-            </button>
+            !trimmedSearch && (
+              <button type="button" className="btn btn-primary" onClick={() => openCreateForm(new Date())}>
+                Schedule your first event
+              </button>
+            )
           }
         >
-          Interviews, follow-ups, and team meetings you create will appear here.
+          {trimmedSearch
+            ? "Try a different search term, or widen the date range."
+            : "Interviews, follow-ups, and team meetings you create will appear here."}
         </EmptyState>
       )}
 

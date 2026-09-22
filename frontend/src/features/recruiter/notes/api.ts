@@ -43,3 +43,8 @@ export function updateMyNote(noteId: string, payload: NoteUpdateRequest, accessT
 export function deleteMyNote(noteId: string, accessToken: string) {
   return apiClient.delete(`/api/v1/recruiter/notes/${noteId}`, accessToken);
 }
+
+/** Toggles pinned/unpinned — author-only, same authorization as any other edit. */
+export function togglePinNote(noteId: string, accessToken: string) {
+  return apiClient.post<NoteResponse>(`/api/v1/recruiter/notes/${noteId}/pin`, undefined, accessToken);
+}

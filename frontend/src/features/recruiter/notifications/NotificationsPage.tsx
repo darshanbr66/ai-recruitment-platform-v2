@@ -3,24 +3,34 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
+import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { EmptyState } from "../../../shared/components/EmptyState";
+import { Icon } from "../../../shared/components/Icon";
 import { Modal } from "../../../shared/components/Modal";
 import { SkeletonList } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { AnnouncementTarget, NotificationResponse, NotificationType } from "../../../types/notification";
+import type {
+  AnnouncementTarget,
+  NotificationResponse,
+  NotificationType,
+  SentNotificationResponse,
+} from "../../../types/notification";
 import { useAuth } from "../../auth/AuthContext";
 import { listUsers } from "../../auth/api";
 import { listDepartments } from "../team/api";
 import {
   acknowledgeAllNotifications,
   acknowledgeNotifications,
+  deleteNotification,
   listAllNotifications,
+  listSentNotifications,
   sendAnnouncement,
   sendDirectMessage,
 } from "./api";
 
 const NOTIFICATIONS_QUERY_KEY = ["recruiter", "notifications", "all"];
+const SENT_QUERY_KEY = ["recruiter", "notifications", "sent"];
 
 const TYPE_LABEL: Record<NotificationType, string> = {
   ASSESSMENT_STARTED: "Assessment",
@@ -45,6 +55,8 @@ function relatedEntityLink(notification: NotificationResponse): { to: string; la
       return { to: `/recruiter/applications/${notification.related_entity_id}`, label: "View application" };
     case "CANDIDATE":
       return { to: `/recruiter/candidates/${notification.related_entity_id}`, label: "View candidate" };
+    case "CALENDAR_EVENT":
+      return { to: `/recruiter/calendar?event=${notification.related_entity_id}`, label: "View event" };
     default:
       return null;
   }
@@ -55,20 +67,48 @@ function formatTimestamp(iso: string): string {
   return `${date.toLocaleDateString()} · ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
+/** A short, single-line preview for the compact card — the full text is
+ * always available in the detail view, never lost, just not crammed into
+ * the list. */
+function preview(text: string, maxLength = 140): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > maxLength ? `${collapsed.slice(0, maxLength - 1)}…` : collapsed;
+}
+
+type Tab = "received" | "sent";
+
 export function NotificationsPage() {
   const { accessToken, user } = useAuth();
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+
+  const [tab, setTab] = useState<Tab>("received");
   const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [search, setSearch] = useState("");
   const [composer, setComposer] = useState<"announcement" | "message" | null>(null);
+  const [detail, setDetail] = useState<NotificationResponse | null>(null);
+  const [sentDetail, setSentDetail] = useState<SentNotificationResponse | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<NotificationResponse | null>(null);
 
   const isOrgAdmin = user?.roles.includes("ORG_ADMIN") ?? false;
+  const trimmedSearch = search.trim();
 
-  const notificationsQuery = useQuery({
-    queryKey: [...NOTIFICATIONS_QUERY_KEY, filter],
-    queryFn: () => listAllNotifications(token, { unreadOnly: filter === "unread", limit: 100 }),
-    enabled: accessToken !== null,
+  const receivedQuery = useQuery({
+    queryKey: [...NOTIFICATIONS_QUERY_KEY, filter, trimmedSearch],
+    queryFn: () =>
+      listAllNotifications(token, {
+        unreadOnly: filter === "unread",
+        search: trimmedSearch || undefined,
+        limit: 100,
+      }),
+    enabled: accessToken !== null && tab === "received",
+  });
+
+  const sentQuery = useQuery({
+    queryKey: [...SENT_QUERY_KEY, trimmedSearch],
+    queryFn: () => listSentNotifications(token, { search: trimmedSearch || undefined, limit: 100 }),
+    enabled: accessToken !== null && tab === "sent",
   });
 
   const markReadMutation = useMutation({
@@ -84,10 +124,29 @@ export function NotificationsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteNotification(id, token),
+    onSuccess: () => {
+      showToast("Notification deleted.", "success");
+      setPendingDelete(null);
+      setDetail(null);
+      void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+    },
+    onError: (err) => {
+      showToast(err instanceof ApiError ? err.message : "Could not delete the notification.", "error");
+      setPendingDelete(null);
+    },
+  });
+
   const unreadCount = useMemo(
-    () => notificationsQuery.data?.filter((n) => n.read_at === null).length ?? 0,
-    [notificationsQuery.data],
+    () => receivedQuery.data?.filter((n) => n.read_at === null).length ?? 0,
+    [receivedQuery.data],
   );
+
+  function openDetail(notification: NotificationResponse) {
+    setDetail(notification);
+    if (notification.read_at === null) markReadMutation.mutate(notification.id);
+  }
 
   return (
     <div className="stack-lg">
@@ -105,14 +164,16 @@ export function NotificationsPage() {
           <button type="button" className="btn btn-ghost" onClick={() => setComposer("message")}>
             + Message a colleague
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => markAllReadMutation.mutate()}
-            disabled={markAllReadMutation.isPending || unreadCount === 0}
-          >
-            {markAllReadMutation.isPending ? <Spinner label="Marking…" /> : "Mark all as read"}
-          </button>
+          {tab === "received" && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => markAllReadMutation.mutate()}
+              disabled={markAllReadMutation.isPending || unreadCount === 0}
+            >
+              {markAllReadMutation.isPending ? <Spinner label="Marking…" /> : "Mark all as read"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -120,80 +181,203 @@ export function NotificationsPage() {
         <div className="segmented-control">
           <button
             type="button"
-            className={`btn btn-sm ${filter === "all" ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setFilter("all")}
+            className={`btn btn-sm ${tab === "received" ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => setTab("received")}
           >
-            All
+            Received
           </button>
           <button
             type="button"
-            className={`btn btn-sm ${filter === "unread" ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setFilter("unread")}
+            className={`btn btn-sm ${tab === "sent" ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => setTab("sent")}
           >
-            Unread{unreadCount > 0 ? ` (${unreadCount})` : ""}
+            Sent
           </button>
         </div>
+        <div className="search-input-wrap">
+          <Icon name="search" size={16} className="search-input-icon" />
+          <input
+            className="search-input"
+            placeholder="Search notifications…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button type="button" className="search-input-clear" aria-label="Clear search" onClick={() => setSearch("")}>
+              <Icon name="x" size={14} />
+            </button>
+          )}
+        </div>
+        {tab === "received" && (
+          <div className="segmented-control">
+            <button
+              type="button"
+              className={`btn btn-sm ${filter === "all" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setFilter("all")}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${filter === "unread" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setFilter("unread")}
+            >
+              Unread{unreadCount > 0 ? ` (${unreadCount})` : ""}
+            </button>
+          </div>
+        )}
       </div>
 
-      {notificationsQuery.isPending && <SkeletonList rows={6} />}
-      {notificationsQuery.isError && (
-        <Alert>
-          {notificationsQuery.error instanceof ApiError
-            ? notificationsQuery.error.message
-            : "Could not load notifications."}
-        </Alert>
+      {tab === "received" && (
+        <>
+          {receivedQuery.isPending && <SkeletonList rows={6} />}
+          {receivedQuery.isError && (
+            <Alert>
+              {receivedQuery.error instanceof ApiError ? receivedQuery.error.message : "Could not load notifications."}
+            </Alert>
+          )}
+
+          {receivedQuery.isSuccess && receivedQuery.data.length === 0 && (
+            <EmptyState icon="inbox" title={trimmedSearch ? "No matching notifications" : filter === "unread" ? "You're all caught up" : "No notifications yet"}>
+              {trimmedSearch
+                ? "Try a different search term."
+                : filter === "unread"
+                  ? "Nothing new right now — announcements, messages and updates will show up here."
+                  : "Announcements, direct messages and system updates for your organization will appear here."}
+            </EmptyState>
+          )}
+
+          {receivedQuery.isSuccess && receivedQuery.data.length > 0 && (
+            <ul className="stack-sm notification-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {receivedQuery.data.map((notification) => {
+                const isUnread = notification.read_at === null;
+                return (
+                  <li key={notification.id}>
+                    <button
+                      type="button"
+                      className={`card notification-item notification-item-clickable${isUnread ? " notification-item-unread" : ""}`}
+                      onClick={() => openDetail(notification)}
+                    >
+                      <div className="notification-item-head">
+                        <span className={`badge ${TYPE_BADGE[notification.type]}`}>{TYPE_LABEL[notification.type]}</span>
+                        <span className="muted notification-item-time">{formatTimestamp(notification.created_at)}</span>
+                      </div>
+                      <h3 style={{ margin: "0.4rem 0 0.15rem" }}>{notification.title}</h3>
+                      <p style={{ margin: 0 }} className="muted">
+                        {preview(notification.message)}
+                      </p>
+                      <div className="notification-item-foot">
+                        <span className="muted" style={{ fontSize: "0.78rem" }}>
+                          {notification.sender_name ? `From ${notification.sender_name}` : "System"}
+                        </span>
+                        {isUnread && <span className="notification-dot" aria-hidden="true" />}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
-      {notificationsQuery.isSuccess && notificationsQuery.data.length === 0 && (
-        <EmptyState icon="inbox" title={filter === "unread" ? "You're all caught up" : "No notifications yet"}>
-          {filter === "unread"
-            ? "Nothing new right now — announcements, messages and updates will show up here."
-            : "Announcements, direct messages and system updates for your organization will appear here."}
-        </EmptyState>
+      {tab === "sent" && (
+        <>
+          {sentQuery.isPending && <SkeletonList rows={6} />}
+          {sentQuery.isError && (
+            <Alert>{sentQuery.error instanceof ApiError ? sentQuery.error.message : "Could not load sent messages."}</Alert>
+          )}
+
+          {sentQuery.isSuccess && sentQuery.data.length === 0 && (
+            <EmptyState icon="send" title={trimmedSearch ? "No matching messages" : "You haven't sent anything yet"}>
+              {trimmedSearch
+                ? "Try a different search term."
+                : "Announcements and direct messages you send will be listed here."}
+            </EmptyState>
+          )}
+
+          {sentQuery.isSuccess && sentQuery.data.length > 0 && (
+            <ul className="stack-sm notification-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {sentQuery.data.map((sent) => (
+                <li key={sent.id}>
+                  <button type="button" className="card notification-item notification-item-clickable" onClick={() => setSentDetail(sent)}>
+                    <div className="notification-item-head">
+                      <span className={`badge ${TYPE_BADGE[sent.type]}`}>{TYPE_LABEL[sent.type]}</span>
+                      <span className="muted notification-item-time">{formatTimestamp(sent.created_at)}</span>
+                    </div>
+                    <h3 style={{ margin: "0.4rem 0 0.15rem" }}>{sent.title}</h3>
+                    <p style={{ margin: 0 }} className="muted">
+                      {preview(sent.message)}
+                    </p>
+                    <div className="notification-item-foot">
+                      <span className="muted" style={{ fontSize: "0.78rem" }}>
+                        {sent.recipient_name
+                          ? `To ${sent.recipient_name}`
+                          : `${sent.target_description ?? "Multiple recipients"} · ${sent.recipient_count} recipient(s)`}
+                      </span>
+                      <span className="muted" style={{ fontSize: "0.78rem" }}>
+                        {sent.read_count}/{sent.recipient_count} read
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
-      {notificationsQuery.isSuccess && notificationsQuery.data.length > 0 && (
-        <ul className="stack-sm notification-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {notificationsQuery.data.map((notification) => {
-            const isUnread = notification.read_at === null;
-            const link = relatedEntityLink(notification);
-            return (
-              <li
-                key={notification.id}
-                className={`card notification-item${isUnread ? " notification-item-unread" : ""}`}
-              >
-                <div className="notification-item-head">
-                  <span className={`badge ${TYPE_BADGE[notification.type]}`}>{TYPE_LABEL[notification.type]}</span>
-                  <span className="muted notification-item-time">{formatTimestamp(notification.created_at)}</span>
-                </div>
-                <h3 style={{ margin: "0.4rem 0 0.15rem" }}>{notification.title}</h3>
-                <p style={{ margin: 0 }}>{notification.message}</p>
-                <div className="notification-item-foot">
-                  <span className="muted" style={{ fontSize: "0.78rem" }}>
-                    {notification.sender_name ? `From ${notification.sender_name}` : "System"}
-                  </span>
-                  <div className="btn-group">
-                    {link && (
-                      <Link className="btn btn-ghost btn-sm" to={link.to}>
-                        {link.label}
-                      </Link>
-                    )}
-                    {isUnread && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => markReadMutation.mutate(notification.id)}
-                        disabled={markReadMutation.isPending}
-                      >
-                        Mark as read
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      {detail && (
+        <Modal title={detail.title} onClose={() => setDetail(null)}>
+          <div className="stack-sm">
+            <div className="notification-item-head">
+              <span className={`badge ${TYPE_BADGE[detail.type]}`}>{TYPE_LABEL[detail.type]}</span>
+              <span className="muted notification-item-time">{formatTimestamp(detail.created_at)}</span>
+            </div>
+            <p className="muted" style={{ margin: 0 }}>
+              {detail.sender_name ? `From ${detail.sender_name}` : "From System"}
+            </p>
+            <div className="notification-detail-body">{detail.message}</div>
+            {relatedEntityLink(detail) && (
+              <Link className="btn btn-ghost btn-sm" to={relatedEntityLink(detail)!.to} onClick={() => setDetail(null)}>
+                {relatedEntityLink(detail)!.label}
+              </Link>
+            )}
+            <div className="btn-group" style={{ marginTop: "0.5rem" }}>
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setPendingDelete(detail)}>
+                Delete
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDetail(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {sentDetail && (
+        <Modal title={sentDetail.title} onClose={() => setSentDetail(null)}>
+          <div className="stack-sm">
+            <div className="notification-item-head">
+              <span className={`badge ${TYPE_BADGE[sentDetail.type]}`}>{TYPE_LABEL[sentDetail.type]}</span>
+              <span className="muted notification-item-time">{formatTimestamp(sentDetail.created_at)}</span>
+            </div>
+            <p className="muted" style={{ margin: 0 }}>
+              {sentDetail.recipient_name
+                ? `Sent to ${sentDetail.recipient_name}`
+                : `Sent to: ${sentDetail.target_description ?? "Multiple recipients"} (${sentDetail.recipient_count} recipient(s))`}
+            </p>
+            <p className="muted" style={{ margin: 0 }}>
+              {sentDetail.read_count} of {sentDetail.recipient_count} recipient(s) have read this.
+            </p>
+            <div className="notification-detail-body">{sentDetail.message}</div>
+            <div className="btn-group" style={{ marginTop: "0.5rem" }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSentDetail(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {composer === "announcement" && (
@@ -204,6 +388,7 @@ export function NotificationsPage() {
             showToast(`Announcement sent to ${count} recipient(s).`, "success");
             setComposer(null);
             void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+            void queryClient.invalidateQueries({ queryKey: SENT_QUERY_KEY });
           }}
         />
       )}
@@ -215,7 +400,19 @@ export function NotificationsPage() {
           onSent={() => {
             showToast("Message sent.", "success");
             setComposer(null);
+            void queryClient.invalidateQueries({ queryKey: SENT_QUERY_KEY });
           }}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete this notification?"
+          message="This removes it from your notification center only. This cannot be undone."
+          confirmLabel="Delete notification"
+          isConfirming={deleteMutation.isPending}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => deleteMutation.mutate(pendingDelete.id)}
         />
       )}
     </div>
@@ -299,6 +496,9 @@ function AnnouncementComposer({
             <option value="EMPLOYEES">Specific people</option>
           </select>
         </label>
+        <p className="field-hint" style={{ marginTop: "-0.5rem" }}>
+          You will not receive a notification for your own announcement.
+        </p>
 
         {target === "DEPARTMENT" && (
           <label className="field">

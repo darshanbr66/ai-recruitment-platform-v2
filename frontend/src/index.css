@@ -5,6 +5,37 @@
   box-sizing: border-box;
 }
 
+/* Thin, theme-aware scrollbars everywhere — the sidebar, notification/notes
+ * lists, modal/drawer bodies, the calendar grid, any long content area.
+ * `scrollbar-width`/`scrollbar-color` cover Firefox; the `::-webkit-*`
+ * pseudo-elements cover Chromium/WebKit. Never `scrollbar-width: none` /
+ * `overflow: hidden` tricks — scrolling stays visually discoverable, just
+ * not the bulky OS-default bar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-muted);
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -541,6 +572,50 @@ fieldset.field legend {
   background: var(--color-surface);
   color: var(--color-text);
   font-size: 0.85rem;
+}
+
+/* A `.search-input` with a leading icon and a trailing "clear" button —
+ * shared by every module's search box (Notifications, Notes, Calendar) so
+ * search always looks and behaves the same way across the app. */
+.search-input-wrap {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrap .search-input {
+  width: 100%;
+  padding-left: 2.25rem;
+  padding-right: 2.25rem;
+}
+
+.search-input-icon {
+  position: absolute;
+  left: 0.7rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.search-input-clear {
+  position: absolute;
+  right: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.search-input-clear:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
 }
 
 /* Tables */

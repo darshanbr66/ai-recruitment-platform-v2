@@ -40,6 +40,8 @@ def _to_response(note: Note) -> NoteResponse:
         category=note.category,
         color=note.color,
         visibility=note.visibility,
+        pinned=note.pinned,
+        pinned_at=note.pinned_at,
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -70,7 +72,7 @@ async def create_note(
         db,
         organization_id=current_user.organization_id,
         application_id=application_id,
-        author_id=current_user.id,
+        actor=current_user,
         body=payload.body,
         title=payload.title,
         category=payload.category,
@@ -125,7 +127,7 @@ async def create_my_note(
     note = await note_service.create_note(
         db,
         organization_id=current_user.organization_id,
-        author_id=current_user.id,
+        actor=current_user,
         body=payload.body,
         title=payload.title,
         category=payload.category,
@@ -171,7 +173,7 @@ async def update_my_note(
     updated = await note_service.update_note(
         db,
         note,
-        user_id=current_user.id,
+        actor=current_user,
         body=payload.body,
         title=payload.title if "title" in fields else "__unset__",
         category=payload.category if "category" in fields else "__unset__",
@@ -184,6 +186,18 @@ async def update_my_note(
     return _to_response(updated)
 
 
+@workspace_router.post("/{note_id}/pin", response_model=NoteResponse)
+async def toggle_pin_my_note(
+    note_id: uuid.UUID,
+    current_user: User = Depends(require_permission("note.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> NoteResponse:
+    """Toggles pinned/unpinned — author-only, same as any other edit."""
+    note = await _get_visible_note(db, note_id, current_user)
+    updated = await note_service.toggle_pin(db, note, actor=current_user)
+    return _to_response(updated)
+
+
 @workspace_router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_my_note(
     note_id: uuid.UUID,
@@ -191,4 +205,4 @@ async def delete_my_note(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     note = await _get_visible_note(db, note_id, current_user)
-    await note_service.delete_note(db, note, user_id=current_user.id)
+    await note_service.delete_note(db, note, actor=current_user)

@@ -110,6 +110,7 @@ export function RecruiterLayout() {
         userName={user?.full_name}
         userRole={user?.roles.join(", ") ?? ""}
         onSignOut={() => void handleLogout()}
+        notificationBell={{ unreadCount: unreadQuery.data?.unread ?? 0, to: "/recruiter/notifications" }}
       />
     </>
   );

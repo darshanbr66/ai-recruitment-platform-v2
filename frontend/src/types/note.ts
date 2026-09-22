@@ -14,6 +14,8 @@ export interface NoteResponse {
   category: string | null;
   color: string | null;
   visibility: NoteVisibility;
+  pinned: boolean;
+  pinned_at: string | null;
   created_at: string;
   updated_at: string;
 }

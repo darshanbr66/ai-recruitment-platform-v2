@@ -4,6 +4,7 @@ import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { EmptyState } from "../../../shared/components/EmptyState";
+import { Icon } from "../../../shared/components/Icon";
 import { Modal } from "../../../shared/components/Modal";
 import { SkeletonList } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
@@ -12,7 +13,7 @@ import type { NoteResponse, NoteVisibility } from "../../../types/note";
 import { useAuth } from "../../auth/AuthContext";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
-import { createMyNote, deleteMyNote, listMyNotes, updateMyNote } from "./api";
+import { createMyNote, deleteMyNote, listMyNotes, togglePinNote, updateMyNote } from "./api";
 
 const NOTES_QUERY_KEY = ["recruiter", "notes", "mine"];
 
@@ -71,6 +72,7 @@ export function NotesPage() {
   const [form, setForm] = useState<NoteFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<NoteResponse | null>(null);
+  const [detailNote, setDetailNote] = useState<NoteResponse | null>(null);
 
   const notesQuery = useQuery({
     queryKey: [...NOTES_QUERY_KEY, search, visibilityFilter, sort],
@@ -84,16 +86,27 @@ export function NotesPage() {
     enabled: accessToken !== null,
   });
 
+  // Also loaded when a note's detail view is open, so a linked
+  // candidate/job can be shown by name rather than a bare id.
   const candidatesQuery = useQuery({
     queryKey: ["recruiter", "candidates"],
     queryFn: () => listCandidates(token),
-    enabled: accessToken !== null && showForm,
+    enabled: accessToken !== null && (showForm || detailNote !== null),
   });
   const jobsQuery = useQuery({
     queryKey: ["recruiter", "jobs"],
     queryFn: () => listJobs(token),
-    enabled: accessToken !== null && showForm,
+    enabled: accessToken !== null && (showForm || detailNote !== null),
   });
+
+  function candidateName(candidateId: string | null): string | null {
+    if (!candidateId) return null;
+    return candidatesQuery.data?.find((c) => c.id === candidateId)?.full_name ?? "Linked candidate";
+  }
+  function jobTitle(jobId: string | null): string | null {
+    if (!jobId) return null;
+    return jobsQuery.data?.find((j) => j.id === jobId)?.title ?? "Linked job";
+  }
 
   function openCreateForm() {
     setEditingNote(null);
@@ -135,8 +148,20 @@ export function NotesPage() {
     onSuccess: () => {
       showToast("Note deleted.", "success");
       setPendingDelete(null);
+      setDetailNote(null);
       void queryClient.invalidateQueries({ queryKey: NOTES_QUERY_KEY });
     },
+  });
+
+  const pinMutation = useMutation({
+    mutationFn: (noteId: string) => togglePinNote(noteId, token),
+    onSuccess: (updated) => {
+      showToast(updated.pinned ? "Note pinned." : "Note unpinned.", "success");
+      setDetailNote((current) => (current?.id === updated.id ? updated : current));
+      void queryClient.invalidateQueries({ queryKey: NOTES_QUERY_KEY });
+    },
+    onError: (err) =>
+      showToast(err instanceof ApiError ? err.message : "Could not update the pin.", "error"),
   });
 
   function handleSubmit(event: FormEvent) {
@@ -157,12 +182,20 @@ export function NotesPage() {
       </div>
 
       <div className="toolbar">
-        <input
-          className="search-input"
-          placeholder="Search notes…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="search-input-wrap">
+          <Icon name="search" size={16} className="search-input-icon" />
+          <input
+            className="search-input"
+            placeholder="Search notes…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button type="button" className="search-input-clear" aria-label="Clear search" onClick={() => setSearch("")}>
+              <Icon name="x" size={14} />
+            </button>
+          )}
+        </div>
         <select
           className="filter-select"
           value={visibilityFilter}
@@ -187,14 +220,16 @@ export function NotesPage() {
       {notesQuery.isSuccess && notesQuery.data.length === 0 && (
         <EmptyState
           icon="graph"
-          title="No notes yet"
+          title={search.trim() ? "No matching notes" : "No notes yet"}
           action={
             <button type="button" className="btn btn-primary" onClick={openCreateForm}>
               Write your first note
             </button>
           }
         >
-          Personal reminders, candidate follow-ups, and shared team commentary all live here.
+          {search.trim()
+            ? "Try a different search term."
+            : "Personal reminders, candidate follow-ups, and shared team commentary all live here."}
         </EmptyState>
       )}
 
@@ -205,23 +240,38 @@ export function NotesPage() {
             return (
               <article
                 key={note.id}
-                className="card note-card"
+                className={`card note-card${note.pinned ? " note-card-pinned" : ""}`}
                 style={note.color ? { borderLeft: `4px solid ${note.color}` } : undefined}
               >
-                <div className="note-card-head">
-                  <span className={`badge ${note.visibility === "PRIVATE" ? "badge-inactive" : "badge-active"}`}>
-                    {note.visibility === "PRIVATE" ? "Private" : "Shared"}
+                {note.pinned && (
+                  <span className="note-card-pin" aria-hidden="true">
+                    <Icon name="pin" size={13} />
                   </span>
-                  {note.category && <span className="chip">{note.category}</span>}
-                </div>
-                <h3 style={{ margin: "0.5rem 0 0.25rem" }}>{note.title || "Untitled note"}</h3>
-                <p className="note-card-body">{note.body}</p>
+                )}
+                <button type="button" className="note-card-open" onClick={() => setDetailNote(note)}>
+                  <div className="note-card-head">
+                    <span className={`badge ${note.visibility === "PRIVATE" ? "badge-inactive" : "badge-active"}`}>
+                      {note.visibility === "PRIVATE" ? "Private" : "Shared"}
+                    </span>
+                    {note.category && <span className="chip">{note.category}</span>}
+                  </div>
+                  <h3 style={{ margin: "0.5rem 0 0.25rem" }}>{note.title || "Untitled note"}</h3>
+                  <p className="note-card-body">{note.body}</p>
+                </button>
                 <div className="note-card-foot">
                   <span className="muted" style={{ fontSize: "0.75rem" }}>
                     {note.author_name} · {new Date(note.updated_at).toLocaleDateString()}
                   </span>
                   {isOwn && (
                     <div className="btn-group">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => pinMutation.mutate(note.id)}
+                        disabled={pinMutation.isPending}
+                      >
+                        {note.pinned ? "Unpin" : "Pin"}
+                      </button>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEditForm(note)}>
                         Edit
                       </button>
@@ -239,6 +289,67 @@ export function NotesPage() {
             );
           })}
         </div>
+      )}
+
+      {detailNote && (
+        <Modal title={detailNote.title || "Untitled note"} onClose={() => setDetailNote(null)} wide>
+          <div className="stack-sm">
+            <div className="note-card-head">
+              <span className={`badge ${detailNote.visibility === "PRIVATE" ? "badge-inactive" : "badge-active"}`}>
+                {detailNote.visibility === "PRIVATE" ? "Private" : "Shared"}
+              </span>
+              {detailNote.category && <span className="chip">{detailNote.category}</span>}
+              {detailNote.pinned && (
+                <span className="chip">
+                  <Icon name="pin" size={12} /> Pinned
+                </span>
+              )}
+            </div>
+            <div className="notification-detail-body">{detailNote.body}</div>
+            {(detailNote.candidate_id || detailNote.job_id) && (
+              <p className="muted" style={{ margin: 0 }}>
+                {detailNote.candidate_id && `Candidate: ${candidateName(detailNote.candidate_id)}`}
+                {detailNote.candidate_id && detailNote.job_id && " · "}
+                {detailNote.job_id && `Job: ${jobTitle(detailNote.job_id)}`}
+              </p>
+            )}
+            <p className="muted" style={{ margin: 0, fontSize: "0.82rem" }}>
+              By {detailNote.author_name} · Created {new Date(detailNote.created_at).toLocaleString()}
+              {detailNote.updated_at !== detailNote.created_at &&
+                ` · Updated ${new Date(detailNote.updated_at).toLocaleString()}`}
+            </p>
+            <div className="btn-group" style={{ marginTop: "0.5rem" }}>
+              {detailNote.author_id === user?.id && (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => pinMutation.mutate(detailNote.id)}
+                    disabled={pinMutation.isPending}
+                  >
+                    {detailNote.pinned ? "Unpin" : "Pin"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setDetailNote(null);
+                      openEditForm(detailNote);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button type="button" className="btn btn-danger btn-sm" onClick={() => setPendingDelete(detailNote)}>
+                    Delete
+                  </button>
+                </>
+              )}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDetailNote(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {showForm && (

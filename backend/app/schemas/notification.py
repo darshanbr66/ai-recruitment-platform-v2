@@ -62,3 +62,21 @@ class DirectMessageCreateRequest(BaseModel):
 
 class AnnouncementResult(BaseModel):
     recipients_notified: int
+
+
+class SentNotificationResponse(BaseModel):
+    """One entry per broadcast (an announcement's whole fan-out counts as
+    one) for the Notification Center's "Sent" tab — never one row per
+    recipient. See `in_app_notification_service.SentNotificationGroup`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    type: NotificationType
+    title: str
+    message: str
+    created_at: datetime
+    target_description: str | None = None
+    recipient_count: int
+    read_count: int
+    recipient_name: str | None = None

@@ -75,16 +75,50 @@ describe("NotificationsPage", () => {
     expect(await screen.findByText("No notifications yet")).toBeInTheDocument();
   });
 
-  it("marks a single notification as read", async () => {
+  it("marks a notification as read when its card is opened", async () => {
     vi.spyOn(api, "listAllNotifications").mockResolvedValue([makeNotification()]);
     const markSpy = vi.spyOn(api, "acknowledgeNotifications").mockResolvedValue({ updated: 1 });
 
     renderPage();
     await screen.findByText("Maintenance");
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+    fireEvent.click(screen.getByText("Maintenance"));
 
     await waitFor(() => expect(markSpy).toHaveBeenCalledWith(["notif-1"], "test-token"));
+    expect(await screen.findByRole("dialog", { name: "Maintenance" })).toBeInTheDocument();
+  });
+
+  it("does not re-acknowledge an already-read notification when opened", async () => {
+    vi.spyOn(api, "listAllNotifications").mockResolvedValue([
+      makeNotification({ read_at: new Date().toISOString() }),
+    ]);
+    const markSpy = vi.spyOn(api, "acknowledgeNotifications").mockResolvedValue({ updated: 0 });
+
+    renderPage();
+    await screen.findByText("Maintenance");
+    fireEvent.click(screen.getByText("Maintenance"));
+
+    await screen.findByRole("dialog", { name: "Maintenance" });
+    expect(markSpy).not.toHaveBeenCalled();
+  });
+
+  it("deletes a notification from its detail view after confirmation", async () => {
+    vi.spyOn(api, "listAllNotifications").mockResolvedValue([
+      makeNotification({ read_at: new Date().toISOString() }),
+    ]);
+    const deleteSpy = vi.spyOn(api, "deleteNotification").mockResolvedValue(undefined);
+
+    renderPage();
+    await screen.findByText("Maintenance");
+    fireEvent.click(screen.getByText("Maintenance"));
+
+    const dialog = await screen.findByRole("dialog", { name: "Maintenance" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete this notification?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: /delete notification/i }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("notif-1", "test-token"));
   });
 
   it("marks all notifications as read and disables the button when nothing is unread", async () => {
@@ -95,15 +129,17 @@ describe("NotificationsPage", () => {
     expect(screen.getByRole("button", { name: /mark all as read/i })).toBeDisabled();
   });
 
-  it("shows a 'View candidate' link when the notification references one", async () => {
+  it("shows a 'View candidate' link in the detail view when the notification references one", async () => {
     vi.spyOn(api, "listAllNotifications").mockResolvedValue([
       makeNotification({ related_entity_type: "CANDIDATE", related_entity_id: "cand-9" }),
     ]);
 
     renderPage();
     await screen.findByText("Maintenance");
+    fireEvent.click(screen.getByText("Maintenance"));
 
-    expect(screen.getByRole("link", { name: "View candidate" })).toHaveAttribute(
+    const dialog = await screen.findByRole("dialog", { name: "Maintenance" });
+    expect(within(dialog).getByRole("link", { name: "View candidate" })).toHaveAttribute(
       "href",
       "/recruiter/candidates/cand-9",
     );
@@ -174,7 +210,52 @@ describe("NotificationsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /unread/i }));
 
     await waitFor(() =>
-      expect(api.listAllNotifications).toHaveBeenCalledWith("test-token", { unreadOnly: true, limit: 100 }),
+      expect(api.listAllNotifications).toHaveBeenCalledWith("test-token", {
+        unreadOnly: true,
+        search: undefined,
+        limit: 100,
+      }),
     );
+  });
+
+  it("searches received notifications", async () => {
+    const listSpy = vi.spyOn(api, "listAllNotifications").mockResolvedValue([makeNotification()]);
+    renderPage();
+    await screen.findByText("Maintenance");
+
+    fireEvent.change(screen.getByPlaceholderText("Search notifications…"), { target: { value: "office" } });
+
+    await waitFor(() =>
+      expect(listSpy).toHaveBeenLastCalledWith("test-token", {
+        unreadOnly: false,
+        search: "office",
+        limit: 100,
+      }),
+    );
+  });
+
+  it("switches to the Sent tab and lists broadcasts sent by the caller", async () => {
+    vi.spyOn(api, "listAllNotifications").mockResolvedValue([]);
+    vi.spyOn(api, "listSentNotifications").mockResolvedValue([
+      {
+        id: "sent-1",
+        type: "ANNOUNCEMENT",
+        title: "Policy update",
+        message: "New policy in effect starting Monday.",
+        created_at: new Date().toISOString(),
+        target_description: "Everyone in the organization",
+        recipient_count: 4,
+        read_count: 2,
+        recipient_name: null,
+      },
+    ]);
+
+    renderPage();
+    await screen.findByText("No notifications yet");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sent" }));
+
+    await screen.findByText("Policy update");
+    expect(screen.getByText(/2\/4 read/)).toBeInTheDocument();
   });
 });

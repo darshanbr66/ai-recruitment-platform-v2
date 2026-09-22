@@ -27,6 +27,8 @@ function makeNote(overrides: Partial<NoteResponse> = {}): NoteResponse {
     category: null,
     color: null,
     visibility: "PRIVATE",
+    pinned: false,
+    pinned_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -119,6 +121,43 @@ describe("NotesPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /delete note/i }));
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("note-1", "test-token"));
+  });
+
+  it("opens a note's detail view when its card is clicked", async () => {
+    vi.spyOn(api, "listMyNotes").mockResolvedValue([
+      makeNote({ title: "Long note", body: "A fairly long note body that deserves its own view." }),
+    ]);
+
+    renderPage();
+    await screen.findByText("Long note");
+    fireEvent.click(screen.getByText("Long note"));
+
+    const dialog = await screen.findByRole("dialog", { name: "Long note" });
+    expect(within(dialog).getByText("A fairly long note body that deserves its own view.")).toBeInTheDocument();
+  });
+
+  it("pins and unpins a note from the card and reflects it visually", async () => {
+    const note = makeNote();
+    vi.spyOn(api, "listMyNotes").mockResolvedValue([note]);
+    const pinSpy = vi.spyOn(api, "togglePinNote").mockResolvedValue({ ...note, pinned: true, pinned_at: new Date().toISOString() });
+
+    renderPage();
+    await screen.findByText("Follow up");
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+
+    await waitFor(() => expect(pinSpy).toHaveBeenCalledWith("note-1", "test-token"));
+  });
+
+  it("only offers pin/edit/delete for the current user's own notes", async () => {
+    vi.spyOn(api, "listMyNotes").mockResolvedValue([
+      makeNote({ id: "own-note", author_id: "user-1" }),
+      makeNote({ id: "colleague-note", author_id: "user-2", title: "Team note", visibility: "SHARED" }),
+    ]);
+
+    renderPage();
+    await screen.findByText("Team note");
+
+    expect(screen.getAllByRole("button", { name: "Pin" })).toHaveLength(1);
   });
 
   it("re-queries when the search box changes", async () => {

@@ -56,6 +56,7 @@ async def list_events(
     end: datetime = Query(..., description="Range end (exclusive), ISO 8601."),
     candidate_id: uuid.UUID | None = Query(default=None),
     job_id: uuid.UUID | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=200),
     current_user: User = Depends(require_permission("calendar.read")),
     db: AsyncSession = Depends(get_db),
 ) -> list[CalendarEventResponse]:
@@ -67,6 +68,7 @@ async def list_events(
         range_end=end,
         candidate_id=candidate_id,
         job_id=job_id,
+        search=search,
     )
     return [await _to_response(db, event) for event in events]
 
@@ -126,7 +128,7 @@ async def update_event(
     updated = await calendar_service.update_event(
         db,
         event,
-        user_id=current_user.id,
+        actor=current_user,
         organization_id=current_user.organization_id,
         title=payload.title,
         description=payload.description if "description" in fields else "__unset__",
@@ -156,4 +158,4 @@ async def delete_event(
     event = await calendar_service.get_event(db, event_id)
     if event is None:
         raise NotFoundError("Event not found.")
-    await calendar_service.delete_event(db, event, user_id=current_user.id)
+    await calendar_service.delete_event(db, event, actor=current_user)

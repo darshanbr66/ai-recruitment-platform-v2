@@ -6,6 +6,8 @@ permission). Candidates never appear here; this router is mounted only
 under `/api/v1/recruiter/*`.
 """
 
+import uuid
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,7 @@ from app.schemas.notification import (
     NotificationAcknowledgeRequest,
     NotificationAcknowledgeResult,
     NotificationResponse,
+    SentNotificationResponse,
     UnreadCountResponse,
 )
 from app.services import in_app_notification_service
@@ -80,15 +83,32 @@ async def list_all_notifications(
     current_user: User = Depends(_current_organization_user),
     db: AsyncSession = Depends(get_db),
     unread_only: bool = Query(default=False),
+    search: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[NotificationResponse]:
-    """The Notification Center's full, paginated history — read and unread,
-    never auto-acknowledged just by being listed."""
+    """The Notification Center's "Received" tab — full paginated history,
+    read and unread, never auto-acknowledged just by being listed."""
     notifications = await in_app_notification_service.list_notifications(
-        db, user=current_user, unread_only=unread_only, limit=limit, offset=offset
+        db, user=current_user, unread_only=unread_only, search=search, limit=limit, offset=offset
     )
     return [_to_response(n) for n in notifications]
+
+
+@router.get("/sent", response_model=list[SentNotificationResponse])
+async def list_sent_notifications(
+    current_user: User = Depends(_current_organization_user),
+    db: AsyncSession = Depends(get_db),
+    search: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[SentNotificationResponse]:
+    """The Notification Center's "Sent" tab — announcements and direct
+    messages the caller has sent, one entry per broadcast."""
+    groups = await in_app_notification_service.list_sent(
+        db, user=current_user, search=search, limit=limit, offset=offset
+    )
+    return [SentNotificationResponse.model_validate(g) for g in groups]
 
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
@@ -120,6 +140,21 @@ async def acknowledge_all_notifications(
 ) -> NotificationAcknowledgeResult:
     updated = await in_app_notification_service.mark_all_read(db, user=current_user)
     return NotificationAcknowledgeResult(updated=updated)
+
+
+@router.delete("/{notification_id}", status_code=204)
+async def delete_notification(
+    notification_id: uuid.UUID,
+    current_user: User = Depends(_current_organization_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Removes one of the caller's own *received* notifications from their
+    inbox — never a sent broadcast, and never another recipient's copy of
+    the same announcement (each recipient has always had an independent
+    row; see `in_app_notification_service.create_announcement`)."""
+    await in_app_notification_service.delete_notification(
+        db, user=current_user, notification_id=notification_id
+    )
 
 
 @router.post("/announce", response_model=AnnouncementResult, status_code=201)

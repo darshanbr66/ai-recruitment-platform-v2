@@ -9,10 +9,11 @@ same organization never sees someone else's notifications.
 
 import uuid
 from collections.abc import Collection
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import CursorResult, String, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,12 +23,33 @@ from app.core.exceptions import NotFoundError, UnprocessableError
 from app.core.logging import get_logger
 from app.models.assessment import AssessmentInvitation
 from app.models.notification import Notification, NotificationType
-from app.models.team_hierarchy import Employee
+from app.models.team_hierarchy import Department, Employee
 from app.models.user import User
+from app.services import activity_service
 
 logger = get_logger(__name__)
 
 AnnouncementTarget = Literal["EVERYONE", "DEPARTMENT", "EMPLOYEES"]
+
+
+@dataclass(frozen=True)
+class SentNotificationGroup:
+    """One row per *broadcast* (an announcement's whole fan-out, or one
+    direct message) for the sender's "Sent" tab — never one row per
+    recipient, which is what the underlying table actually stores."""
+
+    id: uuid.UUID
+    type: NotificationType
+    title: str
+    message: str
+    created_at: datetime
+    target_description: str | None
+    recipient_count: int
+    read_count: int
+    # Populated only for a direct message (exactly one recipient); a
+    # broadcast shows `target_description` instead.
+    recipient_name: str | None
+
 
 _ASSESSMENT_EVENTS: dict[NotificationType, tuple[str, str]] = {
     NotificationType.ASSESSMENT_STARTED: ("Assessment started", "started"),
@@ -145,9 +167,15 @@ async def count_unread(db: AsyncSession, *, user: User) -> int:
 
 
 async def list_notifications(
-    db: AsyncSession, *, user: User, unread_only: bool = False, limit: int = 50, offset: int = 0
+    db: AsyncSession,
+    *,
+    user: User,
+    unread_only: bool = False,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[Notification]:
-    """The Notification Center's full history (unlike `list_unread`, which
+    """The Notification Center's "Received" tab (unlike `list_unread`, which
     is capped and meant only for the toaster's poll) — newest first, always
     pinned to the caller's own user id."""
     query = (
@@ -157,9 +185,122 @@ async def list_notifications(
     )
     if unread_only:
         query = query.where(Notification.read_at.is_(None))
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                Notification.title.ilike(term),
+                Notification.message.ilike(term),
+                Notification.type.cast(String).ilike(term),
+                Notification.sender.has(User.full_name.ilike(term)),
+            )
+        )
     query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(query)
     return list(result.unique().scalars().all())
+
+
+async def list_sent(
+    db: AsyncSession, *, user: User, search: str | None = None, limit: int = 100, offset: int = 0
+) -> list[SentNotificationGroup]:
+    """The Notification Center's "Sent" tab: everything `user` has sent,
+    grouped so one announcement shows as one entry (its full fan-out of
+    per-recipient rows), never as N duplicate rows. The sender never has a
+    row of their own to show here — see `create_announcement`/
+    `create_direct_message`'s exclusion of the sender — so this always
+    reads `sender_user_id`, never `recipient_user_id`.
+
+    Grouping happens in Python rather than SQL: a `GROUP BY` cannot also
+    return a representative row's full title/message, and this codebase's
+    scale (one organization's outbound messages) makes a bounded in-memory
+    group-by the simpler, equally correct choice — the same "modest scale"
+    tradeoff `note_service.list_my_notes` already makes with a plain
+    `LIMIT`.
+    """
+    query = (
+        select(Notification)
+        .where(Notification.sender_user_id == user.id)
+        .options(joinedload(Notification.recipient))
+        .order_by(Notification.created_at.desc())
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                Notification.title.ilike(term),
+                Notification.message.ilike(term),
+                Notification.target_description.ilike(term),
+                Notification.type.cast(String).ilike(term),
+                Notification.recipient.has(User.full_name.ilike(term)),
+            )
+        )
+    # A generous cap on rows scanned before grouping — comfortably above
+    # any real organization's outbound message volume, while still bounding
+    # the query (see the docstring above).
+    query = query.limit(5000)
+    rows = (await db.execute(query)).unique().scalars().all()
+
+    groups: dict[uuid.UUID, list[Notification]] = {}
+    order: list[uuid.UUID] = []
+    for row in rows:
+        key = row.broadcast_group_id or row.id
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(row)
+
+    results: list[SentNotificationGroup] = []
+    for key in order[offset : offset + limit]:
+        members = groups[key]
+        first = members[0]  # newest-first, since `rows` was already ordered
+        is_single_dm = len(members) == 1 and first.type == NotificationType.DIRECT_MESSAGE
+        results.append(
+            SentNotificationGroup(
+                id=key,
+                type=first.type,
+                title=first.title,
+                message=first.message,
+                created_at=first.created_at,
+                target_description=first.target_description,
+                recipient_count=len(members),
+                read_count=sum(1 for m in members if m.read_at is not None),
+                recipient_name=first.recipient.full_name if is_single_dm else None,
+            )
+        )
+    return results
+
+
+async def delete_notification(db: AsyncSession, *, user: User, notification_id: uuid.UUID) -> None:
+    """Deletes exactly one of the caller's own *received* notifications.
+    The `recipient_user_id == user.id` filter is part of the DELETE itself
+    (not a check-then-delete), so an id belonging to someone else's inbox —
+    another user's copy of the same broadcast included — simply matches
+    nothing and is indistinguishable from "not found". This can never
+    remove another recipient's copy of a shared announcement, since each
+    recipient has always had their own independent row (see
+    `create_announcement`)."""
+    result = await db.execute(
+        delete(Notification)
+        .where(Notification.id == notification_id, Notification.recipient_user_id == user.id)
+        .returning(Notification.title, Notification.type)
+    )
+    row = result.first()
+    if row is None:
+        raise NotFoundError("Notification not found.")
+
+    assert user.organization_id is not None
+    await activity_service.record_activity(
+        db,
+        organization_id=user.organization_id,
+        actor=user,
+        action="NOTIFICATION_DELETED",
+        entity_type="notification",
+        entity_id=notification_id,
+        entity_label=row.title,
+        description=(
+            f"Removed a {row.type.value.replace('_', ' ').lower()} notification from their inbox."
+        ),
+    )
 
 
 async def _resolve_department_recipients(
@@ -193,9 +334,11 @@ async def create_announcement(
     `Notification` row (each independently readable/dismissible — there is
     no "one row, many recipients" shortcut, since read state is per person).
     Recipients are always resolved from the caller's own organization,
-    active only, and never include the sender themselves twice by accident
-    (they may still address themselves explicitly via `user_ids`).
+    active only, and NEVER include the sender — an admin broadcasting "Office
+    closed tomorrow" does not get a notification about their own message,
+    even if they explicitly included themselves in `user_ids`.
     """
+    target_description: str
     if target == "EVERYONE":
         result = await db.execute(
             select(User.id).where(
@@ -203,6 +346,7 @@ async def create_announcement(
             )
         )
         recipient_ids = list(result.scalars().all())
+        target_description = "Everyone in the organization"
     elif target == "DEPARTMENT":
         if department_id is None:
             raise UnprocessableError("department_id is required when target is DEPARTMENT.")
@@ -211,6 +355,8 @@ async def create_announcement(
         )
         if not recipient_ids:
             raise NotFoundError("No portal users are linked to that department.")
+        department = await db.get(Department, department_id)
+        target_description = f"Department: {department.name}" if department else "A department"
     elif target == "EMPLOYEES":
         if not user_ids:
             raise UnprocessableError("user_ids is required when target is EMPLOYEES.")
@@ -224,9 +370,22 @@ async def create_announcement(
         recipient_ids = list(result.scalars().all())
         if not recipient_ids:
             raise NotFoundError("None of the selected employees have an active portal account.")
+        target_description = "Selected employees"
     else:  # pragma: no cover - Literal exhausts at the type level
         raise UnprocessableError(f"Unknown announcement target: {target!r}")
 
+    # De-duplicate, keep order, and always exclude the sender — see the
+    # docstring above.
+    recipient_ids = [rid for rid in dict.fromkeys(recipient_ids) if rid != sender.id]
+    if not recipient_ids:
+        raise UnprocessableError(
+            "There are no other recipients for this announcement — you cannot send an "
+            "announcement only to yourself."
+        )
+    if target == "EMPLOYEES":
+        target_description = f"{len(recipient_ids)} selected employee(s)"
+
+    broadcast_group_id = uuid.uuid4()
     notifications = [
         Notification(
             organization_id=organization_id,
@@ -237,11 +396,27 @@ async def create_announcement(
             message=message,
             related_entity_type=related_entity_type,
             related_entity_id=related_entity_id,
+            broadcast_group_id=broadcast_group_id,
+            target_description=target_description,
         )
-        for recipient_id in dict.fromkeys(recipient_ids)  # de-duplicate, keep order
+        for recipient_id in recipient_ids
     ]
     db.add_all(notifications)
     await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=sender,
+        action="ANNOUNCEMENT_SENT",
+        entity_type="notification",
+        entity_id=broadcast_group_id,
+        entity_label=title,
+        description=(
+            f"Sent an announcement to {target_description.lower()} "
+            f"({len(notifications)} recipient(s))."
+        ),
+    )
     return notifications
 
 
@@ -283,4 +458,15 @@ async def create_direct_message(
     )
     db.add(notification)
     await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=sender,
+        action="DIRECT_MESSAGE_SENT",
+        entity_type="notification",
+        entity_id=notification.id,
+        entity_label=title,
+        description=f"Sent a direct message to {recipient.full_name}.",
+    )
     return notification

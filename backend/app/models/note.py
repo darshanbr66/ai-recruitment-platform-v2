@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,6 +38,7 @@ class Note(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "notes"
+    __table_args__ = (Index("ix_notes_org_pinned", "organization_id", "pinned"),)
 
     # Nullable: a standalone personal note ("Follow up with candidate next
     # Monday") need not be tied to one specific application at all.
@@ -70,5 +72,13 @@ class Note(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
         default=NoteVisibility.SHARED,
         server_default=NoteVisibility.SHARED.value,
     )
+    # Author-controlled only (same authorization as editing any other note
+    # field) — pinned notes sort first in the workspace. `pinned_at` breaks
+    # ties among several pinned notes (most-recently-pinned first) and is
+    # cleared on unpin, not just flipped alongside the boolean.
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     author: Mapped[User] = relationship(User, lazy="raise", viewonly=True)

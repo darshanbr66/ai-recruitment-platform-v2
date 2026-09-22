@@ -97,6 +97,11 @@ function iconForAction(action: string): IconName {
   if (action.startsWith("CAMPUS")) return "campus";
   if (action.startsWith("CANDIDATE")) return "candidates";
   if (action.startsWith("EMPLOYEE") || action.startsWith("DEPARTMENT")) return "team";
+  if (action.startsWith("NOTE")) return "notes";
+  if (action.startsWith("ANNOUNCEMENT") || action.startsWith("DIRECT_MESSAGE") || action.startsWith("NOTIFICATION")) {
+    return "inbox";
+  }
+  if (action.startsWith("CALENDAR")) return "calendar";
   return "activities";
 }
 

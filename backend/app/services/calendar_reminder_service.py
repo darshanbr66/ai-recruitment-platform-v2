@@ -66,6 +66,11 @@ async def process_due_reminders(
 
     Never mutates the event's `status` or any candidate/application data —
     purely a notification side effect.
+
+    The organizer is deliberately excluded from the notified recipients by
+    default (they scheduled the event; the reminder is aimed at the people
+    who might otherwise forget it) — unless they explicitly added
+    themselves as an attendee too, which is treated as an explicit opt-in.
     """
     now = now or datetime.now(UTC)
     query = _due_reminders_query(organization_id=organization_id, now=now)
@@ -87,12 +92,13 @@ async def process_due_reminders(
         if claimed.scalar_one_or_none() is None:
             continue
 
-        recipient_ids = {event.organizer_user_id}
         attendee_query = select(CalendarEventAttendee.user_id).where(
             CalendarEventAttendee.event_id == event.id
         )
         attendee_ids = (await db.execute(attendee_query)).scalars().all()
-        recipient_ids.update(attendee_ids)
+        # Only attendees by default — the organizer is excluded unless they
+        # explicitly added themselves as an attendee too (see the docstring).
+        recipient_ids = set(attendee_ids)
 
         active_recipients = (
             await db.execute(

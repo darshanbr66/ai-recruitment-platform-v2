@@ -278,6 +278,54 @@
   padding: 0.2rem 0;
 }
 
+/* A notification card rendered as a <button> so the whole card is
+ * clickable/keyboard-focusable, while still looking exactly like `.card`. */
+.notification-item-clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.notification-item-clickable:hover {
+  border-color: var(--color-border-strong);
+}
+
+.notification-item-clickable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.notification-item-clickable h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-primary-solid);
+  flex-shrink: 0;
+}
+
+/* The detail modal's full message — long text scrolls internally instead
+ * of stretching the dialog off-screen. */
+.notification-detail-body {
+  max-height: min(50vh, 24rem);
+  overflow-y: auto;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+}
+
 /* --- notes workspace --------------------------------------------------- */
 
 .note-grid {
@@ -285,9 +333,44 @@
 }
 
 .note-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.note-card-pinned {
+  background: linear-gradient(180deg, var(--color-accent-soft), transparent 45%), var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.note-card-pin {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  color: var(--color-accent-text);
+}
+
+/* The card's clickable content area — everything except the footer's
+ * pin/edit/delete actions, which stay their own buttons so a click on one
+ * of those doesn't also open the detail view. */
+.note-card-open {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.note-card-open:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .note-card-head {

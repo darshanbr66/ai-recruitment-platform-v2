@@ -1,4 +1,5 @@
-import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, type SyntheticEvent } from "react";
+import { createPortal } from "react-dom";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ThemeToggle } from "../features/theme/ThemeToggle";
 import { Avatar } from "../shared/components/Avatar";
@@ -6,6 +7,23 @@ import { Icon, LogoMark, type IconName } from "../shared/components/Icon";
 import { PageTransition } from "../shared/components/PageTransition";
 import { RouteFallback } from "../shared/components/RouteFallback";
 import { useMediaQuery } from "../shared/hooks/useMediaQuery";
+
+const SIDEBAR_COLLAPSED_KEY = "ai-recruitment-sidebar-collapsed";
+
+function readStoredCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+interface TooltipState {
+  label: string;
+  top: number;
+  left: number;
+  placement: "right" | "bottom";
+}
 
 export interface NavItem {
   to: string;
@@ -43,6 +61,7 @@ export function AppShell({
   userRole,
   onSignOut,
   variant = "recruiter",
+  notificationBell,
 }: {
   brandTitle: string;
   /** Small label above the page title in the top bar, e.g. "Recruiter Portal". */
@@ -55,6 +74,11 @@ export function AppShell({
   userRole: string;
   onSignOut: () => void;
   variant?: "recruiter" | "admin";
+  /** A bell icon in the top header, beside the theme toggle — the same
+   * unread count/destination as the sidebar's Notifications item, just
+   * reachable without opening the sidebar. Omitted entirely (e.g. the
+   * admin surface, which has no notification center) when not passed. */
+  notificationBell?: { unreadCount: number; to: string };
 }) {
   const location = useLocation();
   // The drawer is open *for a path*: navigating elsewhere closes it without an effect.
@@ -66,6 +90,54 @@ export function AppShell({
   const closeRef = useRef<HTMLButtonElement>(null);
   const [indicator, setIndicator] = useState<{ y: number; h: number } | null>(null);
   const [indicatorReady, setIndicatorReady] = useState(false);
+  // Desktop-only preference, persisted across refresh/navigation; irrelevant
+  // on phones, which already use the overlay drawer instead of a rail.
+  const [collapsed, setCollapsed] = useState(readStoredCollapsed);
+  const isCollapsed = collapsed && !isPhone;
+
+  // A single floating tooltip, portalled to <body> and positioned with
+  // `getBoundingClientRect` + `position: fixed`. NOT a CSS `::after` on the
+  // trigger itself: that approach (still occupying its layout box even at
+  // opacity 0) was what caused the collapsed sidebar's phantom horizontal
+  // scrollbar — an invisible tooltip escaping the narrow rail still counted
+  // toward `.sidebar`'s scrollable overflow. A portalled, viewport-fixed
+  // element can never do that, however narrow its scrolling ancestor is.
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  function showTooltip(event: SyntheticEvent<HTMLElement>, label: string, placement: "right" | "bottom") {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltip(
+      placement === "right"
+        ? { label, placement, top: rect.top + rect.height / 2, left: rect.right + 10 }
+        : { label, placement, top: rect.bottom + 8, left: rect.left + rect.width / 2 },
+    );
+  }
+  function hideTooltip() {
+    setTooltip(null);
+  }
+
+  // A stale tooltip must never outlive the thing it points at: navigating
+  // can unmount the hovered link entirely. Adjusted directly during render
+  // (React's documented pattern for resetting state when a prop-like value
+  // changes) rather than in an effect, which would cost an extra commit.
+  const [tooltipRoute, setTooltipRoute] = useState(location.pathname);
+  if (location.pathname !== tooltipRoute) {
+    setTooltipRoute(location.pathname);
+    if (tooltip !== null) setTooltip(null);
+  }
+
+  function toggleCollapsed() {
+    hideTooltip();
+    setCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      } catch {
+        // Private browsing / storage disabled — still applies for this load.
+      }
+      return next;
+    });
+  }
 
   const allItems = sections.flatMap((section) => section.items);
   const current = [...allItems]
@@ -113,7 +185,7 @@ export function AppShell({
         onClick={() => setMenuOpen(false)}
       />
       <aside
-        className={`sidebar${variant === "admin" ? " sidebar-admin" : ""}${menuOpen ? " open" : ""}`}
+        className={`sidebar${variant === "admin" ? " sidebar-admin" : ""}${menuOpen ? " open" : ""}${isCollapsed ? " sidebar-collapsed" : ""}`}
         aria-label="Primary"
         // A closed phone drawer is off-screen: keep it out of tab order and
         // the accessibility tree instead of leaving invisible focus stops.
@@ -135,7 +207,23 @@ export function AppShell({
           </button>
         </div>
 
-        <nav className="sidebar-nav" ref={navRef}>
+        {!isPhone && (
+          <button
+            type="button"
+            className="sidebar-collapse-toggle"
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-pressed={isCollapsed}
+            onClick={toggleCollapsed}
+            onMouseEnter={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
+            onMouseLeave={hideTooltip}
+            onFocus={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
+            onBlur={hideTooltip}
+          >
+            <Icon name="arrow-right" size={14} className={isCollapsed ? "" : "flip-h"} />
+          </button>
+        )}
+
+        <nav className="sidebar-nav" ref={navRef} onScroll={hideTooltip}>
           <span
             className={`nav-indicator${indicatorReady ? " ready" : ""}`}
             aria-hidden="true"
@@ -147,13 +235,17 @@ export function AppShell({
           />
           {sections.map((section, index) => (
             <div key={section.label ?? index} className="nav-group">
-              {section.label && <div className="sidebar-section-label">{section.label}</div>}
+              {section.label && !isCollapsed && <div className="sidebar-section-label">{section.label}</div>}
               {section.items.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+                  onMouseEnter={(e) => isCollapsed && showTooltip(e, item.label, "right")}
+                  onMouseLeave={hideTooltip}
+                  onFocus={(e) => isCollapsed && showTooltip(e, item.label, "right")}
+                  onBlur={hideTooltip}
                 >
                   <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
@@ -163,7 +255,7 @@ export function AppShell({
             </div>
           ))}
 
-          {upcoming.length > 0 && (
+          {upcoming.length > 0 && !isCollapsed && (
             <div className="nav-group">
               <div className="sidebar-section-label">Coming soon</div>
               {upcoming.map((label) => (
@@ -179,13 +271,23 @@ export function AppShell({
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <Avatar name={userName} />
-            <span className="sidebar-user-text">
-              <span className="user-name">{userName}</span>
-              <span className="user-roles">{userRole}</span>
-            </span>
+            {!isCollapsed && (
+              <span className="sidebar-user-text">
+                <span className="user-name">{userName}</span>
+                <span className="user-roles">{userRole}</span>
+              </span>
+            )}
           </div>
-          <button type="button" className="btn btn-ghost btn-sm sidebar-signout" onClick={onSignOut}>
-            Sign out
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm sidebar-signout"
+            onClick={onSignOut}
+            onMouseEnter={(e) => isCollapsed && showTooltip(e, "Sign out", "right")}
+            onMouseLeave={hideTooltip}
+            onFocus={(e) => isCollapsed && showTooltip(e, "Sign out", "right")}
+            onBlur={hideTooltip}
+          >
+            {isCollapsed ? <Icon name="x" size={16} label="Sign out" /> : "Sign out"}
           </button>
         </div>
       </aside>
@@ -208,6 +310,28 @@ export function AppShell({
             </div>
           </div>
           <div className="topbar-user">
+            {notificationBell && (
+              <NavLink
+                to={notificationBell.to}
+                className="topbar-icon-btn"
+                aria-label={
+                  notificationBell.unreadCount > 0
+                    ? `Notifications, ${notificationBell.unreadCount} unread`
+                    : "Notifications"
+                }
+                onMouseEnter={(e) => showTooltip(e, "Notifications", "bottom")}
+                onMouseLeave={hideTooltip}
+                onFocus={(e) => showTooltip(e, "Notifications", "bottom")}
+                onBlur={hideTooltip}
+              >
+                <Icon name="inbox" size={19} />
+                {notificationBell.unreadCount > 0 && (
+                  <span className="topbar-icon-badge">
+                    {notificationBell.unreadCount > 99 ? "99+" : notificationBell.unreadCount}
+                  </span>
+                )}
+              </NavLink>
+            )}
             <ThemeToggle />
             <div className="user-chip">
               <Avatar name={userName} />
@@ -250,6 +374,17 @@ export function AppShell({
           </nav>
         )}
       </div>
+
+      {tooltip &&
+        createPortal(
+          <div
+            className={`shell-tooltip shell-tooltip-${tooltip.placement}`}
+            style={{ top: tooltip.top, left: tooltip.left }}
+          >
+            {tooltip.label}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

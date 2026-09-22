@@ -7,13 +7,24 @@ import type {
 
 export function listEvents(
   accessToken: string,
-  range: { start: string; end: string; candidateId?: string; jobId?: string },
+  range: { start: string; end: string; candidateId?: string; jobId?: string; search?: string },
 ) {
   const params = new URLSearchParams({ start: range.start, end: range.end });
   if (range.candidateId) params.set("candidate_id", range.candidateId);
   if (range.jobId) params.set("job_id", range.jobId);
+  if (range.search) params.set("search", range.search);
   return apiClient.get<CalendarEventResponse[]>(
     `/api/v1/recruiter/calendar/events?${params.toString()}`,
+    accessToken,
+  );
+}
+
+/** Fetches one event directly by id, regardless of the currently displayed
+ * date range — used to open a specific event's detail view when arriving
+ * from a reminder notification link. */
+export function getEvent(eventId: string, accessToken: string) {
+  return apiClient.get<CalendarEventResponse>(
+    `/api/v1/recruiter/calendar/events/${eventId}`,
     accessToken,
   );
 }

@@ -95,7 +95,14 @@ class Settings(BaseSettings):
     # Unset means "assistant unavailable", never a canned/fake answer.
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
-    sigvi_request_timeout_seconds: float = 20.0
+    # Empirically measured (2026-09-22, real API): a plain, short prompt to
+    # this model took ~26-32s end to end even with no `thinkingConfig` (which
+    # this model rejects as an invalid argument, so it cannot be tuned down
+    # further) — 20s was cutting a genuinely-succeeding request off before it
+    # could finish, producing a spurious "Sigvi is temporarily unavailable"
+    # for what would have been a normal reply. This budget reflects the
+    # model's real observed latency, not a guess.
+    sigvi_request_timeout_seconds: float = 45.0
     sigvi_max_output_tokens: int = 700
     # The careers site Sigvi answers about when the request names no
     # organization (this deployment serves one: docs/architecture.md).
@@ -120,7 +127,8 @@ class Settings(BaseSettings):
     # any embeddings have been stored requires re-embedding everything — the
     # column width is fixed at migration time.
     gemini_embedding_dimensions: int = 768
-    internal_ai_request_timeout_seconds: float = 25.0
+    # Same empirical basis as `sigvi_request_timeout_seconds` above.
+    internal_ai_request_timeout_seconds: float = 45.0
     internal_ai_max_output_tokens: int = 1200
 
     @model_validator(mode="after")

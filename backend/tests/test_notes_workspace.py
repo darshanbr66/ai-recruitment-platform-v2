@@ -207,6 +207,119 @@ async def test_category_filter(client: AsyncClient, super_admin: User) -> None:
     assert results[0]["category"] == "Interview"
 
 
+async def test_pin_and_unpin_persist_and_sort_first(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "notes-pin")
+
+    older = await client.post(
+        "/api/v1/recruiter/notes", json={"title": "Older note", "body": "First."}, headers=ctx["admin_headers"]
+    )
+    newer = await client.post(
+        "/api/v1/recruiter/notes", json={"title": "Newer note", "body": "Second."}, headers=ctx["admin_headers"]
+    )
+    older_id, newer_id = older.json()["id"], newer.json()["id"]
+
+    # Sort by title (deterministic regardless of same-transaction timestamps,
+    # unlike created_at) to isolate what pinning alone changes: "Newer" < "Older"
+    # alphabetically, so title order puts the newer note first before any pin.
+    before = (
+        await client.get("/api/v1/recruiter/notes?sort=title&order=asc", headers=ctx["admin_headers"])
+    ).json()
+    assert before[0]["id"] == newer_id
+
+    pin_resp = await client.post(f"/api/v1/recruiter/notes/{older_id}/pin", headers=ctx["admin_headers"])
+    assert pin_resp.status_code == 200
+    assert pin_resp.json()["pinned"] is True
+    assert pin_resp.json()["pinned_at"] is not None
+
+    # Pinned sorts first regardless of the chosen sort field/direction.
+    after = (
+        await client.get("/api/v1/recruiter/notes?sort=title&order=asc", headers=ctx["admin_headers"])
+    ).json()
+    assert after[0]["id"] == older_id
+
+    unpin_resp = await client.post(f"/api/v1/recruiter/notes/{older_id}/pin", headers=ctx["admin_headers"])
+    assert unpin_resp.json()["pinned"] is False
+    assert unpin_resp.json()["pinned_at"] is None
+
+    restored = (
+        await client.get("/api/v1/recruiter/notes?sort=title&order=asc", headers=ctx["admin_headers"])
+    ).json()
+    assert restored[0]["id"] == newer_id
+
+
+async def test_only_the_author_can_pin_a_shared_note(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "notes-pin-owner")
+
+    create_resp = await client.post(
+        "/api/v1/recruiter/notes",
+        json={"body": "Shared note.", "visibility": "SHARED"},
+        headers=ctx["admin_headers"],
+    )
+    note_id = create_resp.json()["id"]
+
+    forbidden = await client.post(f"/api/v1/recruiter/notes/{note_id}/pin", headers=ctx["recruiter_headers"])
+    assert forbidden.status_code == 403
+
+
+async def test_search_matches_category_and_linked_candidate_name(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "notes-search-extended")
+
+    candidate_resp = await client.post(
+        "/api/v1/recruiter/candidates",
+        json={"email": "priya@notes-search-extended.dev", "full_name": "Priya Sharma"},
+        headers=ctx["admin_headers"],
+    )
+    candidate_id = candidate_resp.json()["id"]
+
+    await client.post(
+        "/api/v1/recruiter/notes",
+        json={"title": "Candidate follow-up", "body": "Discuss offer.", "candidate_id": candidate_id},
+        headers=ctx["admin_headers"],
+    )
+    await client.post(
+        "/api/v1/recruiter/notes", json={"title": "Unrelated", "body": "Nothing to do with this.", "category": "General"},
+        headers=ctx["admin_headers"],
+    )
+
+    by_candidate_name = (
+        await client.get("/api/v1/recruiter/notes?search=priya", headers=ctx["admin_headers"])
+    ).json()
+    assert len(by_candidate_name) == 1
+    assert by_candidate_name[0]["title"] == "Candidate follow-up"
+
+    by_category = (
+        await client.get("/api/v1/recruiter/notes?search=general", headers=ctx["admin_headers"])
+    ).json()
+    assert len(by_category) == 1
+    assert by_category[0]["title"] == "Unrelated"
+
+
+async def test_note_lifecycle_is_recorded_in_activity_without_leaking_body(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "notes-activity")
+
+    create_resp = await client.post(
+        "/api/v1/recruiter/notes",
+        json={"title": "Sensitive", "body": "Secret compensation numbers.", "visibility": "PRIVATE"},
+        headers=ctx["admin_headers"],
+    )
+    note_id = create_resp.json()["id"]
+
+    await client.patch(
+        f"/api/v1/recruiter/notes/{note_id}", json={"body": "Updated secret numbers."}, headers=ctx["admin_headers"]
+    )
+    await client.post(f"/api/v1/recruiter/notes/{note_id}/pin", headers=ctx["admin_headers"])
+    await client.delete(f"/api/v1/recruiter/notes/{note_id}", headers=ctx["admin_headers"])
+
+    activities = (await client.get("/api/v1/recruiter/activities", headers=ctx["admin_headers"])).json()
+    actions = {a["action"] for a in activities}
+    assert {"NOTE_CREATED", "NOTE_UPDATED", "NOTE_PINNED", "NOTE_DELETED"}.issubset(actions)
+    for activity in activities:
+        assert "Secret compensation" not in (activity.get("description") or "")
+        assert "Secret compensation" not in (activity.get("entity_label") or "")
+
+
 async def test_notes_are_tenant_isolated(client: AsyncClient, super_admin: User) -> None:
     org_a = await _bootstrap_org_with_two_users(client, "notes-tenant-a")
     org_b = await _bootstrap_org_with_two_users(client, "notes-tenant-b")

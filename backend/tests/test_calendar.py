@@ -255,9 +255,13 @@ async def test_calendar_read_requires_permission(client: AsyncClient, super_admi
     assert create_resp.status_code == 403
 
 
-async def test_reminder_fires_exactly_once_and_notifies_organizer_and_attendees(
+async def test_reminder_fires_exactly_once_and_notifies_attendees_but_not_the_organizer(
     client: AsyncClient, super_admin: User
 ) -> None:
+    """The organizer scheduled the event themselves and is excluded from
+    the reminder by default — only attendees are notified, unless the
+    organizer explicitly added themselves as an attendee too (see the next
+    test)."""
     ctx = await _bootstrap_org_with_two_users(client, "cal-reminder")
     recruiter_me = await client.get("/api/v1/recruiter/auth/me", headers=ctx["recruiter_headers"])
     recruiter_id = recruiter_me.json()["id"]
@@ -280,19 +284,146 @@ async def test_reminder_fires_exactly_once_and_notifies_organizer_and_attendees(
 
     # The reminder-check is piggybacked on the notification poll.
     admin_notifications = await client.get("/api/v1/recruiter/notifications", headers=ctx["admin_headers"])
-    assert any(n["type"] == "CALENDAR_REMINDER" for n in admin_notifications.json())
+    assert not any(n["type"] == "CALENDAR_REMINDER" for n in admin_notifications.json())
 
     recruiter_notifications = await client.get("/api/v1/recruiter/notifications", headers=ctx["recruiter_headers"])
     assert any(n["type"] == "CALENDAR_REMINDER" for n in recruiter_notifications.json())
+    reminder = next(n for n in recruiter_notifications.json() if n["type"] == "CALENDAR_REMINDER")
+    assert reminder["related_entity_type"] == "CALENDAR_EVENT"
 
     # Polling again must never fire (and re-notify for) the same reminder.
-    admin_notifications_second_poll = await client.get(
-        "/api/v1/recruiter/notifications", headers=ctx["admin_headers"]
+    recruiter_notifications_second_poll = await client.get(
+        "/api/v1/recruiter/notifications", headers=ctx["recruiter_headers"]
     )
     reminder_count = sum(
-        1 for n in admin_notifications_second_poll.json() if n["type"] == "CALENDAR_REMINDER"
+        1 for n in recruiter_notifications_second_poll.json() if n["type"] == "CALENDAR_REMINDER"
     )
     assert reminder_count == 1
+
+
+async def test_organizer_receives_reminder_only_if_explicitly_also_an_attendee(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "cal-reminder-self")
+    admin_me = await client.get("/api/v1/recruiter/auth/me", headers=ctx["admin_headers"])
+    admin_id = admin_me.json()["id"]
+    start = datetime.now(UTC) + timedelta(minutes=1)
+
+    await client.post(
+        "/api/v1/recruiter/calendar/events",
+        json={
+            "title": "Solo prep block",
+            "start_at": _iso(start),
+            "end_at": _iso(start + timedelta(hours=1)),
+            "timezone": "UTC",
+            "reminder_minutes_before": 60,
+            "attendee_ids": [admin_id],
+        },
+        headers=ctx["admin_headers"],
+    )
+
+    admin_notifications = await client.get("/api/v1/recruiter/notifications", headers=ctx["admin_headers"])
+    assert any(n["type"] == "CALENDAR_REMINDER" for n in admin_notifications.json())
+
+
+async def test_search_matches_title_type_and_organizer(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "cal-search")
+    start = datetime.now(UTC) + timedelta(days=1)
+
+    await client.post(
+        "/api/v1/recruiter/calendar/events",
+        json={
+            "title": "Interview with Priya",
+            "event_type": "INTERVIEW",
+            "start_at": _iso(start),
+            "end_at": _iso(start + timedelta(hours=1)),
+            "timezone": "UTC",
+        },
+        headers=ctx["admin_headers"],
+    )
+    await client.post(
+        "/api/v1/recruiter/calendar/events",
+        json={
+            "title": "Team standup",
+            "event_type": "TEAM_MEETING",
+            "start_at": _iso(start),
+            "end_at": _iso(start + timedelta(hours=1)),
+            "timezone": "UTC",
+        },
+        headers=ctx["admin_headers"],
+    )
+
+    by_title = await client.get(
+        "/api/v1/recruiter/calendar/events",
+        params={"start": _iso(start - timedelta(days=1)), "end": _iso(start + timedelta(days=1)), "search": "priya"},
+        headers=ctx["admin_headers"],
+    )
+    titles = [e["title"] for e in by_title.json()]
+    assert titles == ["Interview with Priya"]
+
+    by_type = await client.get(
+        "/api/v1/recruiter/calendar/events",
+        params={
+            "start": _iso(start - timedelta(days=1)),
+            "end": _iso(start + timedelta(days=1)),
+            "search": "team_meeting",
+        },
+        headers=ctx["admin_headers"],
+    )
+    assert [e["title"] for e in by_type.json()] == ["Team standup"]
+
+    by_organizer = await client.get(
+        "/api/v1/recruiter/calendar/events",
+        params={
+            "start": _iso(start - timedelta(days=1)),
+            "end": _iso(start + timedelta(days=1)),
+            "search": "acme admin",
+        },
+        headers=ctx["admin_headers"],
+    )
+    assert len(by_organizer.json()) == 2
+
+
+async def test_event_lifecycle_is_recorded_in_activity(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "cal-activity")
+    recruiter_me = await client.get("/api/v1/recruiter/auth/me", headers=ctx["recruiter_headers"])
+    recruiter_id = recruiter_me.json()["id"]
+    start = datetime.now(UTC) + timedelta(days=1)
+
+    create_resp = await client.post(
+        "/api/v1/recruiter/calendar/events",
+        json={
+            "title": "Interview with Priya",
+            "event_type": "INTERVIEW",
+            "start_at": _iso(start),
+            "end_at": _iso(start + timedelta(hours=1)),
+            "timezone": "UTC",
+            "attendee_ids": [recruiter_id],
+        },
+        headers=ctx["admin_headers"],
+    )
+    event_id = create_resp.json()["id"]
+
+    await client.patch(
+        f"/api/v1/recruiter/calendar/events/{event_id}",
+        json={"title": "Interview with Priya (rescheduled)", "attendee_ids": []},
+        headers=ctx["admin_headers"],
+    )
+    await client.delete(f"/api/v1/recruiter/calendar/events/{event_id}", headers=ctx["admin_headers"])
+
+    activities = (await client.get("/api/v1/recruiter/activities", headers=ctx["admin_headers"])).json()
+    calendar_activities = [a for a in activities if a["entity_type"] == "calendar_event"]
+    actions = {a["action"] for a in calendar_activities}
+    assert {"CALENDAR_EVENT_CREATED", "CALENDAR_EVENT_UPDATED", "CALENDAR_EVENT_DELETED"} == actions
+
+    updated_activity = next(a for a in calendar_activities if a["action"] == "CALENDAR_EVENT_UPDATED")
+    assert "attendee" in updated_activity["description"].lower()
+    for activity in calendar_activities:
+        # Safe metadata only — never sensitive candidate/description text.
+        assert activity["entity_label"] in (
+            "Interview with Priya",
+            "Interview with Priya (rescheduled)",
+        )
 
 
 async def test_reminder_does_not_fire_before_it_is_due(client: AsyncClient, super_admin: User) -> None:

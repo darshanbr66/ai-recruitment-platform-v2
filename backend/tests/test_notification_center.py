@@ -115,7 +115,9 @@ async def test_announce_requires_permission_for_broadcast(client: AsyncClient, s
     assert response.status_code == 403
 
 
-async def test_announce_to_everyone_notifies_every_active_user(client: AsyncClient, super_admin: User) -> None:
+async def test_announce_to_everyone_notifies_every_active_user_except_the_sender(
+    client: AsyncClient, super_admin: User
+) -> None:
     ctx = await _bootstrap_org(client, "notif-announce-all")
 
     response = await client.post(
@@ -128,11 +130,15 @@ async def test_announce_to_everyone_notifies_every_active_user(client: AsyncClie
         headers=ctx["admin_headers"],
     )
     assert response.status_code == 201, response.text
-    # admin + recruiter = 2 active users in this org.
-    assert response.json()["recipients_notified"] == 2
+    # admin + recruiter = 2 active users in this org, minus the sender (admin).
+    assert response.json()["recipients_notified"] == 1
 
     recruiter_listing = await client.get("/api/v1/recruiter/notifications/all", headers=ctx["recruiter_headers"])
     assert any(n["type"] == "ANNOUNCEMENT" for n in recruiter_listing.json())
+
+    # The sender must never receive a notification for their own announcement.
+    admin_listing = await client.get("/api/v1/recruiter/notifications/all", headers=ctx["admin_headers"])
+    assert not any(n["type"] == "ANNOUNCEMENT" for n in admin_listing.json())
 
 
 async def test_announce_to_department_targets_linked_employees_only(client: AsyncClient, super_admin: User) -> None:
@@ -205,6 +211,168 @@ async def test_mark_read_and_mark_all_read(client: AsyncClient, super_admin: Use
     listing = (await client.get("/api/v1/recruiter/notifications/all", headers=ctx["recruiter_headers"])).json()
     assert len(listing) == 2
     assert all(n["read_at"] is not None for n in listing)
+
+
+async def test_hr_employee_can_message_admin_individually(client: AsyncClient, super_admin: User) -> None:
+    """The reverse direction of test_direct_message_is_delivered_and_listed
+    — every staff role holds `notification.send` and any active org user is
+    a valid recipient, so a RECRUITER can already message an ORG_ADMIN."""
+    ctx = await _bootstrap_org(client, "notif-hr-to-admin")
+    admin_me = await client.get("/api/v1/recruiter/auth/me", headers=ctx["admin_headers"])
+    admin_id = admin_me.json()["id"]
+
+    response = await client.post(
+        "/api/v1/recruiter/notifications/send",
+        json={"recipient_user_id": admin_id, "title": "Quick question", "message": "Do you have 5 minutes?"},
+        headers=ctx["recruiter_headers"],
+    )
+    assert response.status_code == 201, response.text
+
+    admin_listing = (await client.get("/api/v1/recruiter/notifications/all", headers=ctx["admin_headers"])).json()
+    assert any(n["title"] == "Quick question" and n["sender_name"] == "Rita Recruiter" for n in admin_listing)
+
+    # The sender must not see their own message in their own inbox.
+    recruiter_listing = (
+        await client.get("/api/v1/recruiter/notifications/all", headers=ctx["recruiter_headers"])
+    ).json()
+    assert not any(n["title"] == "Quick question" for n in recruiter_listing)
+
+
+async def test_direct_message_cannot_target_a_candidate(client: AsyncClient, super_admin: User) -> None:
+    """Candidates live in a separate table entirely (never `users`), so a
+    candidate id is structurally indistinguishable from a nonexistent user."""
+    ctx = await _bootstrap_org(client, "notif-no-candidates")
+
+    candidate_resp = await client.post(
+        "/api/v1/recruiter/candidates",
+        json={"email": "candidate@notif-no-candidates.dev", "full_name": "Chris Candidate"},
+        headers=ctx["admin_headers"],
+    )
+    candidate_id = candidate_resp.json()["id"]
+
+    response = await client.post(
+        "/api/v1/recruiter/notifications/send",
+        json={"recipient_user_id": candidate_id, "title": "Hi", "message": "Hello"},
+        headers=ctx["admin_headers"],
+    )
+    assert response.status_code == 404
+
+
+async def test_sent_tab_groups_an_announcement_into_one_entry(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org(client, "notif-sent-grouping")
+
+    await client.post(
+        "/api/v1/recruiter/notifications/announce",
+        json={"title": "All hands", "message": "Meeting at 4pm.", "target": "EVERYONE"},
+        headers=ctx["admin_headers"],
+    )
+    await client.post(
+        "/api/v1/recruiter/notifications/send",
+        json={"recipient_user_id": ctx["recruiter_id"], "title": "Hey", "message": "Got a sec?"},
+        headers=ctx["admin_headers"],
+    )
+
+    sent = (await client.get("/api/v1/recruiter/notifications/sent", headers=ctx["admin_headers"])).json()
+    assert len(sent) == 2
+
+    announcement = next(s for s in sent if s["type"] == "ANNOUNCEMENT")
+    assert announcement["recipient_count"] == 1  # admin excluded, only the recruiter remains
+    assert announcement["target_description"] == "Everyone in the organization"
+
+    dm = next(s for s in sent if s["type"] == "DIRECT_MESSAGE")
+    assert dm["recipient_count"] == 1
+    assert dm["recipient_name"] == "Rita Recruiter"
+
+    # The recruiter's own "Sent" tab is empty — they sent nothing.
+    recruiter_sent = (
+        await client.get("/api/v1/recruiter/notifications/sent", headers=ctx["recruiter_headers"])
+    ).json()
+    assert recruiter_sent == []
+
+
+async def test_search_filters_received_notifications(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org(client, "notif-search")
+
+    await client.post(
+        "/api/v1/recruiter/notifications/send",
+        json={"recipient_user_id": ctx["recruiter_id"], "title": "Budget review", "message": "Numbers attached."},
+        headers=ctx["admin_headers"],
+    )
+    await client.post(
+        "/api/v1/recruiter/notifications/send",
+        json={"recipient_user_id": ctx["recruiter_id"], "title": "Lunch", "message": "Order is in."},
+        headers=ctx["admin_headers"],
+    )
+
+    results = (
+        await client.get("/api/v1/recruiter/notifications/all?search=budget", headers=ctx["recruiter_headers"])
+    ).json()
+    assert len(results) == 1
+    assert results[0]["title"] == "Budget review"
+
+
+async def test_delete_removes_only_the_callers_own_copy(client: AsyncClient, super_admin: User) -> None:
+    ctx = await _bootstrap_org(client, "notif-delete")
+
+    await client.post(
+        "/api/v1/recruiter/notifications/announce",
+        json={"title": "Reminder", "message": "Submit timesheets.", "target": "EVERYONE"},
+        headers=ctx["admin_headers"],
+    )
+    recruiter_listing = (
+        await client.get("/api/v1/recruiter/notifications/all", headers=ctx["recruiter_headers"])
+    ).json()
+    notification_id = recruiter_listing[0]["id"]
+
+    # The sender never received a copy (excluded), so there is nothing of
+    # theirs to delete for this broadcast.
+    forbidden = await client.delete(
+        f"/api/v1/recruiter/notifications/{notification_id}", headers=ctx["admin_headers"]
+    )
+    assert forbidden.status_code == 404
+
+    deleted = await client.delete(
+        f"/api/v1/recruiter/notifications/{notification_id}", headers=ctx["recruiter_headers"]
+    )
+    assert deleted.status_code == 204
+
+    after = (await client.get("/api/v1/recruiter/notifications/all", headers=ctx["recruiter_headers"])).json()
+    assert not any(n["id"] == notification_id for n in after)
+
+
+async def test_announce_direct_message_and_delete_are_recorded_in_activity(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org(client, "notif-activity")
+
+    await client.post(
+        "/api/v1/recruiter/notifications/announce",
+        json={"title": "Policy update", "message": "New policy in effect.", "target": "EVERYONE"},
+        headers=ctx["admin_headers"],
+    )
+    send_resp = await client.post(
+        "/api/v1/recruiter/notifications/send",
+        json={"recipient_user_id": ctx["recruiter_id"], "title": "FYI", "message": "See attached."},
+        headers=ctx["admin_headers"],
+    )
+    notification_id = send_resp.json()["id"]
+
+    recruiter_notification_id = (
+        await client.get("/api/v1/recruiter/notifications/all", headers=ctx["recruiter_headers"])
+    ).json()[0]["id"]
+    await client.delete(
+        f"/api/v1/recruiter/notifications/{recruiter_notification_id}", headers=ctx["recruiter_headers"]
+    )
+
+    activities = (await client.get("/api/v1/recruiter/activities", headers=ctx["admin_headers"])).json()
+    actions = {a["action"] for a in activities}
+    assert "ANNOUNCEMENT_SENT" in actions
+    assert "DIRECT_MESSAGE_SENT" in actions
+    assert "NOTIFICATION_DELETED" in actions
+    # Safe metadata only — never the private message body.
+    for activity in activities:
+        assert "See attached" not in (activity.get("description") or "")
+    assert notification_id  # sanity: the DM was actually created
 
 
 async def test_a_user_can_never_mark_another_users_notification_read(client: AsyncClient, super_admin: User) -> None:

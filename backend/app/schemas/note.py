@@ -63,5 +63,7 @@ class NoteResponse(BaseModel):
     category: str | None
     color: str | None
     visibility: NoteVisibility
+    pinned: bool
+    pinned_at: datetime | None
     created_at: datetime
     updated_at: datetime

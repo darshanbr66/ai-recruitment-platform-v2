@@ -5,6 +5,7 @@ import type {
   DirectMessageCreateRequest,
   NotificationAcknowledgeResult,
   NotificationResponse,
+  SentNotificationResponse,
   UnreadCountResponse,
 } from "../../../types/notification";
 
@@ -14,14 +15,15 @@ export function listUnreadNotifications(accessToken: string) {
   return apiClient.get<NotificationResponse[]>("/api/v1/recruiter/notifications", accessToken);
 }
 
-/** The Notification Center's full, paginated history — never auto-consumed
- * just by being listed. */
+/** The Notification Center's "Received" tab — full, paginated history,
+ * never auto-consumed just by being listed. */
 export function listAllNotifications(
   accessToken: string,
-  options: { unreadOnly?: boolean; limit?: number; offset?: number } = {},
+  options: { unreadOnly?: boolean; search?: string; limit?: number; offset?: number } = {},
 ) {
   const params = new URLSearchParams();
   if (options.unreadOnly) params.set("unread_only", "true");
+  if (options.search) params.set("search", options.search);
   if (options.limit) params.set("limit", String(options.limit));
   if (options.offset) params.set("offset", String(options.offset));
   const query = params.toString();
@@ -29,6 +31,29 @@ export function listAllNotifications(
     `/api/v1/recruiter/notifications/all${query ? `?${query}` : ""}`,
     accessToken,
   );
+}
+
+/** The Notification Center's "Sent" tab — announcements and direct
+ * messages the caller has sent, one entry per broadcast. */
+export function listSentNotifications(
+  accessToken: string,
+  options: { search?: string; limit?: number; offset?: number } = {},
+) {
+  const params = new URLSearchParams();
+  if (options.search) params.set("search", options.search);
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
+  const query = params.toString();
+  return apiClient.get<SentNotificationResponse[]>(
+    `/api/v1/recruiter/notifications/sent${query ? `?${query}` : ""}`,
+    accessToken,
+  );
+}
+
+/** Removes one of the caller's own received notifications from their inbox
+ * only — never a sent broadcast, never another recipient's copy. */
+export function deleteNotification(notificationId: string, accessToken: string) {
+  return apiClient.delete(`/api/v1/recruiter/notifications/${notificationId}`, accessToken);
 }
 
 export function getUnreadCount(accessToken: string) {

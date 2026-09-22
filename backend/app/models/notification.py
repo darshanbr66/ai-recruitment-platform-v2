@@ -56,6 +56,8 @@ class Notification(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base)
             "created_at",
             postgresql_where="read_at IS NULL",
         ),
+        # Groups one announcement's fan-out rows for the sender's "Sent" tab.
+        Index("ix_notifications_broadcast_group_id", "broadcast_group_id"),
     )
 
     recipient_user_id: Mapped[uuid.UUID] = mapped_column(
@@ -86,10 +88,25 @@ class Notification(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base)
     related_entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # NULL = not yet acknowledged by the recipient.
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Shared by every fan-out row created from one `create_announcement` call
+    # (NULL for a direct message, which is already a single row) — lets the
+    # sender's "Sent" tab show one entry per broadcast instead of one per
+    # recipient, without a separate "outbound message" table.
+    broadcast_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # A human-readable snapshot of who an announcement targeted (e.g.
+    # "Everyone in the organization", "Department: Engineering", "3 employees")
+    # — denormalized onto every row in the broadcast so the sender's "Sent"
+    # tab never needs to re-resolve the original target (a department can be
+    # renamed or deleted after the fact; this stays accurate to what was
+    # actually sent). NULL for a direct message and for system notifications.
+    target_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # Read-only convenience relationship — eager-loaded by
-    # in_app_notification_service.list_notifications so the Notification
-    # Center can show "from <name>" without a per-row lookup.
+    # Read-only convenience relationships — eager-loaded by
+    # in_app_notification_service so the Notification Center can show
+    # "from <name>" / "to <name>" without a per-row lookup.
     sender: Mapped[User | None] = relationship(
         User, foreign_keys=[sender_user_id], lazy="raise", viewonly=True
+    )
+    recipient: Mapped[User] = relationship(
+        User, foreign_keys=[recipient_user_id], lazy="raise", viewonly=True
     )

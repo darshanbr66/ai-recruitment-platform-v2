@@ -48,10 +48,10 @@ function makeEvent(overrides: Partial<CalendarEventResponse> = {}): CalendarEven
   };
 }
 
-function renderPage() {
+function renderPage(initialEntries: string[] = ["/recruiter/calendar"]) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <CalendarPage />
@@ -155,5 +155,30 @@ describe("CalendarPage", () => {
     const detail = await screen.findByRole("dialog", { name: "Interview with Priya" });
     expect(within(detail).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(within(detail).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("re-queries with the search term", async () => {
+    const listSpy = vi.spyOn(api, "listEvents").mockResolvedValue([]);
+    renderPage();
+    await screen.findByText("No events in this range");
+
+    fireEvent.change(screen.getByPlaceholderText(/search events/i), { target: { value: "priya" } });
+
+    await waitFor(() =>
+      expect(listSpy).toHaveBeenLastCalledWith(
+        "test-token",
+        expect.objectContaining({ search: "priya" }),
+      ),
+    );
+  });
+
+  it("opens the linked event's detail view when arriving from a notification link", async () => {
+    vi.spyOn(api, "listEvents").mockResolvedValue([]);
+    const getEventSpy = vi.spyOn(api, "getEvent").mockResolvedValue(makeEvent({ id: "event-77" }));
+
+    renderPage(["/recruiter/calendar?event=event-77"]);
+
+    await waitFor(() => expect(getEventSpy).toHaveBeenCalledWith("event-77", "test-token"));
+    expect(await screen.findByRole("dialog", { name: "Interview with Priya" })).toBeInTheDocument();
   });
 });

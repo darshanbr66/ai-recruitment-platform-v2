@@ -12,6 +12,7 @@ visibility means "others can read it", never "others can edit it".
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import ColumnElement, or_, select
@@ -23,6 +24,8 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job import Job
 from app.models.note import Note, NoteVisibility
+from app.models.user import User
+from app.services import activity_service
 
 
 async def _validate_links(
@@ -50,7 +53,7 @@ async def create_note(
     db: AsyncSession,
     *,
     organization_id: uuid.UUID,
-    author_id: uuid.UUID,
+    actor: User,
     body: str,
     title: str | None = None,
     category: str | None = None,
@@ -65,7 +68,7 @@ async def create_note(
     )
     note = Note(
         organization_id=organization_id,
-        author_id=author_id,
+        author_id=actor.id,
         body=body,
         title=title,
         category=category,
@@ -77,6 +80,21 @@ async def create_note(
     )
     db.add(note)
     await db.flush()
+
+    # Never the body — only safe, non-sensitive metadata, even for a
+    # PRIVATE note (the same "title/category, never content" rule every
+    # activity entry below follows).
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=actor,
+        action="NOTE_CREATED",
+        entity_type="note",
+        entity_id=note.id,
+        entity_label=title or "Untitled note",
+        description=f"Created a {visibility.value.lower()} note.",
+    )
+
     reloaded = await db.execute(
         select(Note).where(Note.id == note.id).options(joinedload(Note.author))
     )
@@ -129,7 +147,9 @@ async def list_my_notes(
 ) -> list[Note]:
     """The standalone Notes workspace: every note visible to `user_id` —
     their own (private or shared) plus everyone else's shared ones —
-    searchable/filterable/sortable, newest first by default."""
+    searchable/filterable/sortable. Pinned notes always sort first,
+    regardless of the chosen sort field, which only orders within each of
+    the two groups (pinned / not pinned)."""
     query = (
         select(Note)
         .where(Note.organization_id == organization_id, _visible_to(user_id))
@@ -137,7 +157,20 @@ async def list_my_notes(
     )
     if search:
         term = f"%{search.strip()}%"
-        query = query.where(or_(Note.title.ilike(term), Note.body.ilike(term)))
+        # Title/body/category on the note itself, plus the name of a linked
+        # candidate or job — never the linked entity's other fields, and
+        # never a cross-tenant lookup (the subqueries are already implicitly
+        # scoped to rows this note could reference, since the FK targets
+        # were validated against the caller's own tenant when linked).
+        query = query.where(
+            or_(
+                Note.title.ilike(term),
+                Note.body.ilike(term),
+                Note.category.ilike(term),
+                Note.candidate_id.in_(select(Candidate.id).where(Candidate.full_name.ilike(term))),
+                Note.job_id.in_(select(Job.id).where(Job.title.ilike(term))),
+            )
+        )
     if category:
         query = query.where(Note.category == category)
     if visibility:
@@ -151,7 +184,11 @@ async def list_my_notes(
         "created_at": Note.created_at, "updated_at": Note.updated_at, "title": Note.title,
     }
     sort_column = sort_columns[sort]
-    query = query.order_by(sort_column.desc() if descending else sort_column.asc(), Note.id.asc())
+    query = query.order_by(
+        Note.pinned.desc(),
+        sort_column.desc() if descending else sort_column.asc(),
+        Note.id.asc(),
+    )
     query = query.limit(limit).offset(offset)
 
     result = await db.execute(query)
@@ -167,7 +204,7 @@ async def update_note(
     db: AsyncSession,
     note: Note,
     *,
-    user_id: uuid.UUID,
+    actor: User,
     title: str | None | Literal["__unset__"] = "__unset__",
     body: str | None = None,
     category: str | None | Literal["__unset__"] = "__unset__",
@@ -180,7 +217,7 @@ async def update_note(
     """`"__unset__"` (vs. `None`) distinguishes "leave this field alone"
     from "clear it" for the nullable fields — a PATCH must be able to
     explicitly unlink a candidate/job/application, not just add one."""
-    _require_author(note, user_id)
+    _require_author(note, actor.id)
 
     await _validate_links(
         db,
@@ -188,6 +225,8 @@ async def update_note(
         candidate_id=candidate_id if candidate_id != "__unset__" else None,
         job_id=job_id if job_id != "__unset__" else None,
     )
+
+    visibility_changed = visibility is not None and visibility != note.visibility
 
     if body is not None:
         note.body = body
@@ -207,10 +246,57 @@ async def update_note(
         note.application_id = application_id
 
     await db.flush()
+
+    description = "Updated a note."
+    if visibility_changed:
+        description = f"Changed a note's visibility to {note.visibility.value.lower()}."
+    await activity_service.record_activity(
+        db,
+        organization_id=note.organization_id,
+        actor=actor,
+        action="NOTE_UPDATED",
+        entity_type="note",
+        entity_id=note.id,
+        entity_label=note.title or "Untitled note",
+        description=description,
+    )
     return note
 
 
-async def delete_note(db: AsyncSession, note: Note, *, user_id: uuid.UUID) -> None:
-    _require_author(note, user_id)
+async def toggle_pin(db: AsyncSession, note: Note, *, actor: User) -> Note:
+    """Author-only, like every other note edit — pinning is metadata about
+    the note, not a per-viewer preference (see the model's docstring)."""
+    _require_author(note, actor.id)
+    note.pinned = not note.pinned
+    note.pinned_at = datetime.now(UTC) if note.pinned else None
+    await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=note.organization_id,
+        actor=actor,
+        action="NOTE_PINNED" if note.pinned else "NOTE_UNPINNED",
+        entity_type="note",
+        entity_id=note.id,
+        entity_label=note.title or "Untitled note",
+        description=f"{'Pinned' if note.pinned else 'Unpinned'} a note.",
+    )
+    return note
+
+
+async def delete_note(db: AsyncSession, note: Note, *, actor: User) -> None:
+    _require_author(note, actor.id)
+    note_id, title, organization_id = note.id, note.title, note.organization_id
     await db.delete(note)
     await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=actor,
+        action="NOTE_DELETED",
+        entity_type="note",
+        entity_id=note_id,
+        entity_label=title or "Untitled note",
+        description="Deleted a note.",
+    )

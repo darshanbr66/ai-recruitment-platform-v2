@@ -24,6 +24,20 @@ export interface NotificationAcknowledgeResult {
   updated: number;
 }
 
+/** The Notification Center's "Sent" tab — one entry per broadcast (an
+ * announcement's whole fan-out counts as one), never one per recipient. */
+export interface SentNotificationResponse {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  created_at: string;
+  target_description: string | null;
+  recipient_count: number;
+  read_count: number;
+  recipient_name: string | null;
+}
+
 export interface UnreadCountResponse {
   unread: number;
 }
