@@ -98,3 +98,36 @@ class ChatProvider(ABC):
         """Returns the assistant's reply text for the conversation so far
         (`messages` ends with the user's latest turn). Raises an
         `AIProviderError` subclass on any failure — never fabricates text."""
+
+
+# --- Embedding capability -----------------------------------------------
+# A third, independent capability interface — resume/job-requirement text ->
+# vectors for the internal AI matching/RAG pipeline (docs/ai-screening.md
+# § 5, § 6: the long-deferred "which embedding provider" decision). Shares
+# the same error hierarchy; unrelated to LLMProvider (screening verdicts)
+# and ChatProvider (Sigvi) so neither is touched by this addition.
+
+EmbeddingTaskType = Literal["RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"]
+
+
+class EmbeddingProvider(ABC):
+    #: Short provider identifier, persisted onto ResumeChunk/MatchResult rows.
+    name: str
+    #: Model identifier, persisted alongside `name`.
+    model: str
+    #: Length of every vector this provider returns — must match the
+    #: `Vector(N)` column width the schema was created with.
+    dimension: int
+
+    @abstractmethod
+    async def embed(
+        self, texts: list[str], *, task_type: EmbeddingTaskType = "RETRIEVAL_DOCUMENT"
+    ) -> list[list[float]]:
+        """Returns one embedding vector per input text, same order, each of
+        length `self.dimension`. `task_type` distinguishes text being stored
+        for later retrieval (`RETRIEVAL_DOCUMENT`, e.g. a resume chunk) from
+        text used to search for it (`RETRIEVAL_QUERY`, e.g. a job
+        requirement) — providers that support asymmetric optimization use it
+        to improve match quality; providers that don't may ignore it. Raises
+        an `AIProviderError` subclass on any failure — never returns a
+        fabricated or zero vector."""

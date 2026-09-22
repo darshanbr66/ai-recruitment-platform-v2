@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { Icon } from "../../../shared/components/Icon";
 import { Modal } from "../../../shared/components/Modal";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
@@ -110,6 +112,7 @@ export function JobsPage() {
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const jobsQuery = useQuery({
     queryKey: JOBS_QUERY_KEY,
@@ -352,6 +355,18 @@ export function JobsPage() {
                         {canManageJobs && (
                           <td>
                             <div className="btn-group">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/recruiter/ai?jobId=${job.id}`);
+                                }}
+                              >
+                                <Icon name="sparkles" size={14} />
+                                AI Match
+                              </button>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"

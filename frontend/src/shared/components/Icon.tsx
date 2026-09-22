@@ -145,6 +145,19 @@ const PATHS = {
       <path d="M3 13h5l1 3h6l1-3h5" />
     </>
   ),
+  notes: (
+    <>
+      <path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14.5 3v4.5H19M8 12h8M8 15.5h5" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+      <path d="M8 14h1M12 14h1M16 14h1M8 17.5h1M12 17.5h1" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

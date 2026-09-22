@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
 import { Alert } from "../../../shared/components/Alert";
@@ -20,6 +20,7 @@ export function CandidateDetailPage() {
   const { candidateId = "" } = useParams<{ candidateId: string }>();
   const { accessToken } = useAuth();
   const token = accessToken as string;
+  const navigate = useNavigate();
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<{ applicationId: string; filename: string } | null>(null);
@@ -129,9 +130,20 @@ export function CandidateDetailPage() {
             </ul>
           </div>
         </div>
-        <span className={`badge ${candidate.is_active ? "badge-active" : "badge-inactive"}`}>
-          {candidate.is_active ? "Active" : "Inactive"}
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.6rem" }}>
+          <span className={`badge ${candidate.is_active ? "badge-active" : "badge-inactive"}`}>
+            {candidate.is_active ? "Active" : "Inactive"}
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+            onClick={() => navigate(`/recruiter/ai?candidateId=${candidate.id}`)}
+          >
+            <Icon name="sparkles" size={14} />
+            Analyze with AI
+          </button>
+        </div>
       </div>
 
       <div className="detail-grid">

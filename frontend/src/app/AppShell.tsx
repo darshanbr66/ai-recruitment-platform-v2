@@ -12,6 +12,9 @@ export interface NavItem {
   label: string;
   icon: IconName;
   end?: boolean;
+  /** An unread-style count shown as a small pill next to the label (e.g.
+   * the Notifications nav item). Omitted or 0 shows nothing. */
+  badge?: number;
 }
 
 export interface NavSection {
@@ -154,6 +157,7 @@ export function AppShell({
                 >
                   <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
+                  {!!item.badge && <span className="sidebar-badge">{item.badge > 99 ? "99+" : item.badge}</span>}
                 </NavLink>
               ))}
             </div>

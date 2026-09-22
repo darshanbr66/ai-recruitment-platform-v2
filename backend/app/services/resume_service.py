@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.integrations.storage import ResumeStorage, StorageError
 from app.models.resume import Resume
+from app.services import resume_chunking_service
 
 
 def validate_resume_upload(*, filename: str, content: bytes) -> None:
@@ -66,4 +67,9 @@ async def save_resume(
     )
     db.add(resume)
     await db.flush()
+
+    # Best-effort, inline (no background worker is provisioned yet — see
+    # resume_chunking_service.py's module docstring): feeds the internal AI
+    # matching engine's semantic retrieval. Never fails the upload itself.
+    await resume_chunking_service.chunk_and_embed_resume(db, resume)
     return resume

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.system import router as system_router
 from app.api.v1.router import api_router
 from app.core.asyncio_compat import configure_event_loop_policy
+from app.core.calendar_reminders import start_reminder_loop, stop_reminder_loop
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
@@ -24,13 +25,19 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     `RESUME_STORAGE_PROVIDER=mongodb_gridfs` — local development on the
     "local" provider must not require a MongoDB deployment to start the
     app. The client is created once here, not per request (app/db/mongo.py).
+
+    Also starts the calendar-reminder poll loop (app/core/calendar_
+    reminders.py) — a DB-backed alternative to a Celery/Redis worker, since
+    none is provisioned on this deployment.
     """
     settings = get_settings()
     if settings.resume_storage_provider == "mongodb_gridfs":
         await connect_mongo()
+    start_reminder_loop()
     try:
         yield
     finally:
+        await stop_reminder_loop()
         if settings.resume_storage_provider == "mongodb_gridfs":
             await disconnect_mongo()
 

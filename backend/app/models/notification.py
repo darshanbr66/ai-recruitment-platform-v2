@@ -4,10 +4,11 @@ from enum import StrEnum
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.user import User
 
 
 class NotificationType(StrEnum):
@@ -16,6 +17,15 @@ class NotificationType(StrEnum):
 
     ASSESSMENT_STARTED = "ASSESSMENT_STARTED"
     ASSESSMENT_SUBMITTED = "ASSESSMENT_SUBMITTED"
+    #: Sent by an ORG_ADMIN to everyone / a department / selected employees
+    #: (app/services/in_app_notification_service.py::create_announcement).
+    ANNOUNCEMENT = "ANNOUNCEMENT"
+    #: One authorized portal user messaging another directly — internal
+    #: portal communication, never email (create_direct_message).
+    DIRECT_MESSAGE = "DIRECT_MESSAGE"
+    #: A calendar event's reminder firing (Phase E) — kept in the same enum
+    #: rather than a parallel notification concept, per "do not duplicate".
+    CALENDAR_REMINDER = "CALENDAR_REMINDER"
 
 
 class Notification(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
@@ -61,5 +71,25 @@ class Notification(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base)
         ForeignKey("assessment_invitations.id", ondelete="CASCADE"),
         nullable=True,
     )
+    # NULL = a system-generated notification (assessment events, calendar
+    # reminders) rather than one sent by a person — the UI shows "System".
+    sender_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # A generic entity reference so "open the related item" works for any
+    # notification type without a dedicated FK column per feature — the same
+    # polymorphic pattern app/models/activity.py already uses. No DB-level FK
+    # (the referenced tables vary), so it is never trusted for tenant
+    # scoping by itself — always re-verified through the normal
+    # organization_id-scoped lookup for that entity type before use.
+    related_entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    related_entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # NULL = not yet acknowledged by the recipient.
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Read-only convenience relationship — eager-loaded by
+    # in_app_notification_service.list_notifications so the Notification
+    # Center can show "from <name>" without a per-row lookup.
+    sender: Mapped[User | None] = relationship(
+        User, foreign_keys=[sender_user_id], lazy="raise", viewonly=True
+    )

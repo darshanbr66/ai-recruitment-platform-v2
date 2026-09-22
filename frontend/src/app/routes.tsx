@@ -27,16 +27,20 @@ const CareersPage = page(() => import("../features/careers/CareersPage"), "Caree
 const JobDetailPage = page(() => import("../features/careers/JobDetailPage"), "JobDetailPage");
 const OrganizationsPage = page(() => import("../features/admin/organizations/OrganizationsPage"), "OrganizationsPage");
 const ActivitiesPage = page(() => import("../features/recruiter/activities/ActivitiesPage"), "ActivitiesPage");
+const AiWorkspacePage = page(() => import("../features/recruiter/ai/AiWorkspacePage"), "AiWorkspacePage");
 const ApplicationDetailPage = page(() => import("../features/recruiter/applications/ApplicationDetailPage"), "ApplicationDetailPage");
 const ApplicationsPage = page(() => import("../features/recruiter/applications/ApplicationsPage"), "ApplicationsPage");
 const AssessmentDetailPage = page(() => import("../features/recruiter/assessments/AssessmentDetailPage"), "AssessmentDetailPage");
 const AssessmentsPage = page(() => import("../features/recruiter/assessments/AssessmentsPage"), "AssessmentsPage");
+const CalendarPage = page(() => import("../features/recruiter/calendar/CalendarPage"), "CalendarPage");
 const CampusDriveDetailPage = page(() => import("../features/recruiter/campusDrives/CampusDriveDetailPage"), "CampusDriveDetailPage");
 const CampusDrivesPage = page(() => import("../features/recruiter/campusDrives/CampusDrivesPage"), "CampusDrivesPage");
 const CandidateDetailPage = page(() => import("../features/recruiter/candidates/CandidateDetailPage"), "CandidateDetailPage");
 const CandidatesPage = page(() => import("../features/recruiter/candidates/CandidatesPage"), "CandidatesPage");
 const EmailPage = page(() => import("../features/recruiter/email/EmailPage"), "EmailPage");
 const JobsPage = page(() => import("../features/recruiter/jobs/JobsPage"), "JobsPage");
+const NotesPage = page(() => import("../features/recruiter/notes/NotesPage"), "NotesPage");
+const NotificationsPage = page(() => import("../features/recruiter/notifications/NotificationsPage"), "NotificationsPage");
 const OverviewPage = page(() => import("../features/recruiter/overview/OverviewPage"), "OverviewPage");
 const ReportsPage = page(() => import("../features/recruiter/reports/ReportsPage"), "ReportsPage");
 const UsersPage = page(() => import("../features/recruiter/users/UsersPage"), "UsersPage");
@@ -86,6 +90,10 @@ export function AppRoutes() {
           }
         >
           <Route index element={<OverviewPage />} />
+          <Route path="ai" element={<AiWorkspacePage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="notes" element={<NotesPage />} />
+          <Route path="calendar" element={<CalendarPage />} />
           <Route path="jobs" element={<JobsPage />} />
           <Route path="candidates" element={<CandidatesPage />} />
           <Route path="candidates/:candidateId" element={<CandidateDetailPage />} />

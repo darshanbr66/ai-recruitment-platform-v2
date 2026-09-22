@@ -33,6 +33,16 @@ export function listApplicationsForCandidate(candidateId: string, accessToken: s
   );
 }
 
+/** Used by the internal AI workspace's job-wide ranking view — match results
+ * (POST /api/v1/recruiter/ai/match/job) carry candidate/job ids only, so
+ * this supplies the candidate names to show alongside each score. */
+export function listApplicationsForJob(jobId: string, accessToken: string) {
+  return apiClient.get<ApplicationResponse[]>(
+    `/api/v1/recruiter/applications?job_id=${jobId}`,
+    accessToken,
+  );
+}
+
 export function getApplication(applicationId: string, accessToken: string) {
   return apiClient.get<ApplicationResponse>(
     `/api/v1/recruiter/applications/${applicationId}`,

@@ -11,10 +11,14 @@ from app.integrations.ai.base import (
     AIProviderUnavailableError,
     ChatMessage,
     ChatProvider,
+    EmbeddingProvider,
+    EmbeddingTaskType,
     LLMProvider,
     ScreeningVerdict,
 )
+from app.integrations.ai.gemini_embedding_provider import GeminiEmbeddingProvider
 from app.integrations.ai.gemini_provider import GeminiChatProvider
+from app.integrations.ai.internal_ai_reasoning_provider import InternalAIReasoningProvider
 from app.integrations.ai.ollama_provider import OllamaLLMProvider
 from app.integrations.ai.openai_provider import OpenAILLMProvider
 
@@ -29,13 +33,19 @@ __all__ = [
     "AIProviderUnavailableError",
     "ChatMessage",
     "ChatProvider",
+    "EmbeddingProvider",
+    "EmbeddingTaskType",
     "GeminiChatProvider",
+    "GeminiEmbeddingProvider",
+    "InternalAIReasoningProvider",
     "LLMProvider",
     "ScreeningVerdict",
     "AnthropicLLMProvider",
     "OpenAILLMProvider",
     "OllamaLLMProvider",
     "get_chat_provider",
+    "get_embedding_provider",
+    "get_internal_ai_reasoning_provider",
     "get_llm_provider",
 ]
 
@@ -95,3 +105,53 @@ def get_chat_provider() -> ChatProvider:
             timeout_seconds=settings.sigvi_request_timeout_seconds,
         )
     return _UnconfiguredChatProvider()
+
+
+class _UnconfiguredEmbeddingProvider(EmbeddingProvider):
+    name = "none"
+    model = "none"
+    dimension = 0
+
+    async def embed(
+        self, texts: list[str], *, task_type: EmbeddingTaskType = "RETRIEVAL_DOCUMENT"
+    ) -> list[list[float]]:
+        raise AIProviderNotConfiguredError(
+            "Resume/job embedding is currently unavailable because no AI provider is "
+            "configured. Set GEMINI_API_KEY (see README)."
+        )
+
+
+def get_embedding_provider() -> EmbeddingProvider:
+    """The provider behind resume chunking and the internal AI matching
+    engine's semantic retrieval. Gemini when `GEMINI_API_KEY` is set (the
+    same key Sigvi uses — this is a separate capability, not a separate
+    integration); otherwise a provider that raises, so a resume upload
+    still succeeds (chunking is best-effort, see resume_chunking_service.py)
+    rather than silently storing a fabricated vector."""
+    settings = get_settings()
+    api_key = settings.gemini_api_key.get_secret_value().strip() if settings.gemini_api_key else ""
+    if api_key:
+        return GeminiEmbeddingProvider(
+            api_key=api_key,
+            model=settings.gemini_embedding_model,
+            dimension=settings.gemini_embedding_dimensions,
+            timeout_seconds=settings.internal_ai_request_timeout_seconds,
+        )
+    return _UnconfiguredEmbeddingProvider()
+
+
+def get_internal_ai_reasoning_provider() -> InternalAIReasoningProvider | None:
+    """The provider behind the internal AI's natural-language answers and
+    intent classification. `None` when unconfigured — callers fall back to
+    the deterministic-only path (structured data, no narrative explanation)
+    rather than failing the whole request, since the matching engine's
+    scores and evidence are useful on their own (see match_engine.py)."""
+    settings = get_settings()
+    api_key = settings.gemini_api_key.get_secret_value().strip() if settings.gemini_api_key else ""
+    if not api_key:
+        return None
+    return InternalAIReasoningProvider(
+        api_key=api_key,
+        model=settings.gemini_model,
+        timeout_seconds=settings.internal_ai_request_timeout_seconds,
+    )

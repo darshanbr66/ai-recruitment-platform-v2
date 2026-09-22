@@ -106,6 +106,23 @@ class Settings(BaseSettings):
     sigvi_rate_limit_per_minute: int = 8
     sigvi_global_rate_limit_per_minute: int = 40
 
+    # Internal AI ("Recruitment Intelligence" — POST /api/v1/recruiter/ai/*).
+    # Authenticated-only, never reachable from the public Sigvi surface above
+    # (see app/services/internal_ai/, app/integrations/ai/
+    # internal_ai_reasoning_provider.py). Shares GEMINI_API_KEY — no new
+    # secret — but its own tuning/model settings, so changing Sigvi's never
+    # accidentally changes this and vice versa.
+    gemini_embedding_model: str = "gemini-embedding-001"
+    # Gemini's embedding output is natively 3072-dimensional but supports
+    # Matryoshka truncation via `outputDimensionality`; 768 keeps
+    # resume_chunks.embedding and its similarity index compact (Google's own
+    # guidance: 768/1536/3072 are the recommended sizes). Changing this after
+    # any embeddings have been stored requires re-embedding everything — the
+    # column width is fixed at migration time.
+    gemini_embedding_dimensions: int = 768
+    internal_ai_request_timeout_seconds: float = 25.0
+    internal_ai_max_output_tokens: int = 1200
+
     @model_validator(mode="after")
     def _validate_mongodb_configured_when_selected(self) -> "Settings":
         if self.resume_storage_provider == "mongodb_gridfs" and not self.mongodb_uri:

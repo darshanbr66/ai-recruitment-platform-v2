@@ -99,8 +99,15 @@ async def test_start_creates_a_notification_for_the_inviter(
     assert notifications[0]["title"] == "Assessment started"
     assert notifications[0]["message"] == "Jane Candidate has started the Python Basics assessment."
     assert notifications[0]["read_at"] is None
-    # Privacy: only what the toast shows — no invitation id, email or token.
-    assert set(notifications[0]) == {"id", "type", "title", "message", "created_at", "read_at"}
+    # Privacy: only what the toast shows plus the (empty, for a system-
+    # generated notification) sender/related-entity fields the Notification
+    # Center added — never an invitation id, email or token.
+    assert set(notifications[0]) == {
+        "id", "type", "title", "message", "created_at", "read_at",
+        "sender_id", "sender_name", "related_entity_type", "related_entity_id",
+    }
+    assert notifications[0]["sender_id"] is None
+    assert notifications[0]["sender_name"] is None
     assert "jane@example.com" not in str(notifications[0])
     assert invite["token"] not in str(notifications[0])
 

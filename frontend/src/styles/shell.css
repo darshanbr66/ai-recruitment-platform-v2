@@ -177,6 +177,22 @@
   color: var(--color-text-muted);
 }
 
+.sidebar-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
+  font-size: 0.68rem;
+  font-weight: var(--weight-strong);
+  line-height: 1;
+}
+
 .sidebar-footer {
   display: none;
   flex-direction: column;

@@ -20,6 +20,10 @@ dependencies = [
     "python-docx>=1.1",
     "openpyxl>=3.1",
     "pymongo>=4.9",
+    # SQLAlchemy column type + query operators for Postgres's pgvector
+    # extension (docs/architecture.md § 1 / § 7: pgvector-backed resume
+    # chunk retrieval for the internal AI matching engine).
+    "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]

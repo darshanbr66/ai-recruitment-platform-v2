@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useToast } from "../../../shared/components/ToastContext";
 import { useAuth } from "../../auth/AuthContext";
-import { acknowledgeNotifications, listUnreadNotifications } from "./api";
+import { listUnreadNotifications } from "./api";
 
 /** The server has no push channel, so the recruiter shell checks for new
  * notifications this often — only while the tab is visible. */
@@ -13,21 +13,27 @@ export const NOTIFICATION_POLL_INTERVAL_MS = 30_000;
 const MAX_INDIVIDUAL_TOASTS = 5;
 
 /**
- * Turns the signed-in user's unread server-side notifications (e.g. "a
- * candidate started your assessment") into the app's normal toasts, then
- * acknowledges them so they are never shown again. Renders nothing.
+ * Turns the signed-in user's unread server-side notifications (assessment
+ * events, announcements, direct messages, calendar reminders) into the
+ * app's normal toasts. Deliberately does NOT acknowledge them — a
+ * notification must remain visible, unread, in the Notification Center
+ * (`/recruiter/notifications`) until the recipient explicitly reads it
+ * there, even after it has already been toasted once (product direction:
+ * "it must remain available in Notification Center until read"). Renders
+ * nothing itself.
  *
- * Never shown twice: an id is remembered in `shown` for the life of the page
- * (covering React StrictMode's double effect and a failed acknowledgement that
- * makes the server return the same row again), and once acknowledged the
- * server stops returning it (covering reloads and other tabs).
+ * Never toasted twice in the same session: an id is remembered in `shown`
+ * for the life of the page (covering React StrictMode's double effect and
+ * repeated polls of the same still-unread row) — reloading the page may
+ * re-toast a backlog once, which is the right tradeoff for a poll-only,
+ * no-push-channel design.
  */
 export function NotificationToaster() {
   const { accessToken } = useAuth();
   const { showToast } = useToast();
   const shown = useRef(new Set<string>());
 
-  const { data, dataUpdatedAt } = useQuery({
+  const { data } = useQuery({
     queryKey: ["notifications", "unread"],
     queryFn: () => listUnreadNotifications(accessToken as string),
     enabled: accessToken !== null,
@@ -35,32 +41,24 @@ export function NotificationToaster() {
     refetchIntervalInBackground: false,
   });
 
-  // `dataUpdatedAt` is a dependency so an acknowledgement that failed is
-  // retried on the next poll even when the server returns identical rows.
   useEffect(() => {
-    if (!data || data.length === 0 || accessToken === null) return;
+    if (!data || data.length === 0) return;
 
     const fresh = data
       .filter((notification) => !shown.current.has(notification.id))
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    if (fresh.length === 0) return;
     fresh.forEach((notification) => shown.current.add(notification.id));
 
     const individual = fresh.slice(-MAX_INDIVIDUAL_TOASTS);
     const folded = fresh.length - individual.length;
     if (folded > 0) {
-      showToast(`${folded} earlier assessment update${folded === 1 ? "" : "s"}.`, "info");
+      showToast(`${folded} earlier notification${folded === 1 ? "" : "s"}.`, "info");
     }
     individual.forEach((notification) =>
-      showToast(notification.message, "success", notification.title),
+      showToast(notification.message, "info", notification.title),
     );
-
-    acknowledgeNotifications(
-      data.map((notification) => notification.id),
-      accessToken,
-    ).catch(() => {
-      // Retried on the next poll; `shown` prevents a repeat toast meanwhile.
-    });
-  }, [data, dataUpdatedAt, accessToken, showToast]);
+  }, [data, showToast]);
 
   return null;
 }

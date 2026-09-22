@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../../shared/components/ToastContext";
 import type { JobResponse } from "../../../types/recruitment";
@@ -30,11 +31,13 @@ const sampleJob: JobResponse = {
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <JobsPage />
-      </ToastProvider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <JobsPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
