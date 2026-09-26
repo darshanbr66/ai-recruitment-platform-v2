@@ -3,6 +3,7 @@ happens only through an explicit compose -> preview -> send action by an
 authorized user of the same organization."""
 
 import smtplib
+from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
@@ -12,7 +13,9 @@ from app.core.config import Settings
 from app.integrations import email as email_module
 from app.integrations.email import EmailError
 from app.models.user import User
-from tests.conftest import RecordingEmailProvider, login, make_minimal_pdf
+from app.services import notification_service
+from tests.conftest import RecordingEmailProvider, login
+from tests.public_apply import apply_publicly, apply_to_campus_drive
 from tests.test_assessments import (
     _ASSESSMENT_PAYLOAD,
     _bootstrap_org_with_screening_application,
@@ -20,7 +23,7 @@ from tests.test_assessments import (
     _invite_and_submit_first_attempt,
 )
 from tests.test_campus_drives import _bootstrap_org_with_job, _create_drive
-from tests.test_public_applications import _bootstrap_org_with_open_job, _resume_file
+from tests.test_public_applications import _bootstrap_org_with_open_job
 
 _DUMMY_SMTP_PASSWORD = "dummy-test-password-not-real"
 
@@ -33,11 +36,12 @@ def _email_url(application_id: str, action: str) -> str:
 
 
 async def _public_apply(client: AsyncClient, ctx: dict, email: str = "jane@example.com") -> str:
-    response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": email},
-        files=_resume_file(),
-    )
+    """Applies with the automatic welcome email captured separately, so these
+    manual-email tests see only what a recruiter sends (the welcome email
+    itself is covered by test_candidate_application_sends_only_the_welcome_email
+    and tests/test_candidate_intake.py)."""
+    with patch.object(notification_service, "get_email_provider", RecordingEmailProvider):
+        response = await apply_publicly(client, ctx["slug"], ctx["job_id"], email=email)
     assert response.status_code == 201, response.text
     return str(response.json()["id"])
 
@@ -98,19 +102,27 @@ async def _assigned_assessment(client: AsyncClient, slug: str) -> dict:
 # --- 1-3. nothing is sent automatically -----------------------------------
 
 
-async def test_candidate_application_does_not_send_email(
+async def test_candidate_application_sends_only_the_welcome_email(
     client: AsyncClient, super_admin: User, recording_email: RecordingEmailProvider
 ) -> None:
+    """First HR meeting: the one automatic candidate email is the welcome
+    email on a successful self-service application — nothing else (no
+    "application received" template, no status email)."""
     ctx = await _bootstrap_org_with_open_job(client, "wf-apply-no-email")
 
-    await _public_apply(client, ctx)
+    response = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="jane@example.com")
+    assert response.status_code == 201, response.text
 
-    assert recording_email.sent == []
+    (welcome,) = recording_email.sent
+    assert welcome.to == ["jane@example.com"]
+    assert welcome.subject.startswith("Welcome to Acme Corp")
 
 
-async def test_campus_drive_application_does_not_send_email(
+async def test_campus_drive_application_sends_only_the_welcome_email(
     client: AsyncClient, super_admin: User, recording_email: RecordingEmailProvider
 ) -> None:
+    """A campus drive link is the same self-service flow as the careers
+    site: the automatic welcome email is the only email it sends."""
     ctx = await _bootstrap_org_with_job(client, "wf-campus-no-email")
     drive = await _create_drive(client, ctx)
     await client.patch(
@@ -120,14 +132,12 @@ async def test_campus_drive_application_does_not_send_email(
     )
     token = drive["application_link"].rsplit("/", 1)[-1]
 
-    response = await client.post(
-        f"/api/v1/public/campus-drive/{token}/apply",
-        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
-        files={"resume": ("resume.pdf", make_minimal_pdf("Priya"), "application/pdf")},
-    )
+    response = await apply_to_campus_drive(client, token, email="priya@example.com")
 
     assert response.status_code == 201, response.text
-    assert recording_email.sent == []
+    (welcome,) = recording_email.sent
+    assert welcome.to == ["priya@example.com"]
+    assert welcome.subject.startswith("Welcome to Acme Corp")
 
 
 async def test_assigning_and_retesting_an_assessment_do_not_send_email(
@@ -494,11 +504,14 @@ async def test_html_email_escapes_candidate_supplied_text(
     client: AsyncClient, super_admin: User, recording_email: RecordingEmailProvider
 ) -> None:
     ctx = await _bootstrap_org_with_open_job(client, "wf-escape")
-    response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "<script>alert(1)</script> Mallory", "email": "mallory@example.com"},
-        files=_resume_file(),
-    )
+    with patch.object(notification_service, "get_email_provider", RecordingEmailProvider):
+        response = await apply_publicly(
+            client,
+            ctx["slug"],
+            ctx["job_id"],
+            email="mallory@example.com",
+            full_name="<script>alert(1)</script> Mallory",
+        )
     application_id = response.json()["id"]
     headers = ctx["admin_headers"]
 

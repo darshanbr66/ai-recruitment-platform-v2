@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.models.campus_drive import CampusDriveStatus
+from app.schemas.public import PublicApplicationResult
 
 
 class PublicCampusDriveView(BaseModel):
@@ -17,6 +18,9 @@ class PublicCampusDriveView(BaseModel):
     registration_deadline: date | None
     status: CampusDriveStatus
     has_assessment: bool
+    # The organization's published recruitment contact (None = not
+    # published) — never a hardcoded address.
+    careers_contact_email: str | None = None
 
 
 class PublicCampusDriveUnavailable(BaseModel):
@@ -37,9 +41,10 @@ class PublicCampusDriveUnavailable(BaseModel):
     )
 
 
-class PublicCampusDriveApplicationResult(BaseModel):
-    application_id: str
-    job_title: str
-    candidate_email: str
-    status: str
+class PublicCampusDriveApplicationResult(PublicApplicationResult):
+    """The careers-site result (coarse outcome only — never the internal
+    status, AI score or reasoning) plus the drive's assessment link, set
+    only when the application was fast-tracked into the drive's default
+    assessment."""
+
     assessment_invitation_link: str | None

@@ -11,6 +11,7 @@ from httpx import AsyncClient
 
 from app.models.user import User
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login, make_minimal_pdf
+from tests.public_apply import apply_publicly
 
 _JOB_PAYLOAD = {
     "title": "Full Stack Developer",
@@ -45,10 +46,12 @@ async def _bootstrap_org_with_applied_application(
     await client.patch(f"/api/v1/recruiter/jobs/{job['id']}", json={"status": "OPEN"}, headers=headers)
 
     resume_bytes = make_minimal_pdf(resume_text)
-    apply_response = await client.post(
-        f"/api/v1/public/organizations/{slug}/jobs/{job['id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files={"resume": ("resume.pdf", resume_bytes, "application/pdf")},
+    apply_response = await apply_publicly(
+        client,
+        slug,
+        job["id"],
+        email="jane@example.com",
+        resume=("resume.pdf", resume_bytes, "application/pdf"),
     )
     application_id = apply_response.json()["id"]
 

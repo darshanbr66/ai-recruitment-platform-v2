@@ -10,6 +10,14 @@ export type CalendarEventType =
   | "CAMPUS_EVENT"
   | "GENERAL_REMINDER";
 
+/** One selectable attendee, from GET /recruiter/calendar/attendee-options —
+ * the caller's own organization only. */
+export interface CalendarAttendeeOption {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
 export type CalendarEventStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 
 export interface CalendarEventResponse {

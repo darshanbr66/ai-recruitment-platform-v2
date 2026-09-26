@@ -97,6 +97,40 @@ Defense in depth, per `docs/architecture.md` § 3:
   parameter for the candidate-facing endpoints anyway) is not sufficient;
   only possession of the raw token is.
 
+### 5a. Candidate email verification (anonymous apply flow)
+
+Flow and settings are in `docs/recruitment-workflow.md` § 6. The security
+properties, all implemented in `app/services/email_verification_service.py`:
+
+- **Secrets at rest:** a 6-digit code has only a million possible values,
+  so a plain hash could be brute-forced offline. The code is therefore stored
+  only as an HMAC-SHA256 keyed with the server secret. The verification
+  token (an opaque bearer token, like the assessment tokens above) is stored
+  only as its SHA-256. Neither is logged.
+- **Guessing and flooding:** a code has a limited number of wrong attempts,
+  and the counter is committed before the error is returned, so a rolled-back
+  request can't reset it. Codes expire. Each email address has a resend
+  cooldown and an hourly send cap, stored in the database so they hold across
+  instances. Per-IP budgets sit in front of that.
+- **Token binding:** a token only proves ownership of one email address at
+  one organization. The same email's token from another organization, or a
+  token presented with a different email, is rejected (422
+  `email_not_verified`). It's single-use, and a submission blocked as a
+  duplicate also uses it up, so it can't be replayed to test which mobile
+  numbers are registered.
+- **No enumeration before proof:** asking for a code never reveals whether
+  an address has a profile. "Already registered" is only said once the
+  caller has proven they own the address, and even then it never says which
+  detail matched.
+- **Tenant isolation:** `email_verifications` is tenant-scoped with the
+  standard forced RLS policy. The organization is resolved from the public
+  slug or drive token, and the tenant context is set before any query.
+- **Known limitation:** the per-email hourly send cap stops inbox flooding,
+  but it also means a third party can use up a victim's cap and delay that
+  person's application by up to an hour. Changing this needs a product
+  decision, for example relaxing the cap for a sender who can prove they own
+  the address.
+
 ## 6. Input & file handling
 
 - All request bodies validated via Pydantic — type, length, and format
@@ -116,7 +150,14 @@ Defense in depth, per `docs/architecture.md` § 3:
 - CORS: explicit allow-list of frontend origins per environment, not `*`.
 - Rate limiting: applied first to unauthenticated/high-abuse-risk endpoints
   (login, register, assessment token lookup) in Phase 2/7; general API rate
-  limiting considered in Phase 12 if needed.
+  limiting considered in Phase 12 if needed. The anonymous candidate-intake
+  endpoints (code request, code verify, apply) have per-IP budgets
+  (`PUBLIC_*_LIMIT_PER_WINDOW`) on top of the database-backed per-email
+  limits in § 5a.
+- Candidate identity fields: mobile numbers are parsed and normalized to
+  E.164 with `phonenumbers` (`app/core/phone.py`), not with hand-written
+  rules. Date of birth must be in the past and give an age from 16 to 100.
+  Languages must be real names (1–15 of them), and URLs are validated.
 
 ## 7. Data exposure boundaries
 

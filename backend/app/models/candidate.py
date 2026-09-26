@@ -1,9 +1,20 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -39,6 +50,9 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     organizations on this platform is two independent Candidate rows (see
     docs/architecture.md § 3.3).
 
+    `phone` is always stored E.164-normalized (app/core/phone.py) and is
+    unique per organization, like `email`.
+
     `hashed_password` stays NULL until the candidate self-registers a portal
     login (Phase 4) — a recruiter-added candidate may never do so.
     """
@@ -46,6 +60,27 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     __tablename__ = "candidates"
     __table_args__ = (
         Index("uq_candidates_org_email", "organization_id", "email", unique=True),
+        # The mobile number is a person's identity key alongside email (one
+        # profile per person per organization). Always stored E.164-normalized
+        # (app/core/phone.py) so formatting differences can't dodge this.
+        Index(
+            "uq_candidates_org_phone",
+            "organization_id",
+            "phone",
+            unique=True,
+            postgresql_where="phone IS NOT NULL",
+        ),
+        Index("ix_candidates_languages", "languages", postgresql_using="gin"),
+        # A candidate who came in through the email-verified self-service flow
+        # always has the identity fields that flow makes mandatory — enforced
+        # here too, not only in the API, so no later edit can blank them.
+        # Recruiter-added/imported candidates (never email-verified) are
+        # unaffected.
+        CheckConstraint(
+            "email_verified_at IS NULL OR (phone IS NOT NULL AND date_of_birth IS NOT NULL "
+            "AND place_of_birth IS NOT NULL AND cardinality(languages) > 0)",
+            name="ck_candidates_verified_identity_complete",
+        ),
     )
 
     email: Mapped[str] = mapped_column(String(320), nullable=False)
@@ -70,6 +105,21 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     qualification: Mapped[str | None] = mapped_column(String(255), nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     github_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    place_of_birth: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Validated, de-duplicated, display-cased language names
+    # (app/schemas/candidate.py::normalize_languages) — a typed text[] with a
+    # GIN index so "who speaks Tamil" is an indexed containment query, not a
+    # free-text blob. Empty for candidates who never supplied it.
+    languages: Mapped[list[str]] = mapped_column(
+        ARRAY(String(50)), nullable=False, default=list, server_default="{}"
+    )
+    # Set once the candidate proved ownership of `email` with a one-time code
+    # (app/services/email_verification_service.py). NULL for recruiter-added
+    # and imported candidates, whose email was never verified by the platform.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     source: Mapped[CandidateSource] = mapped_column(
         Enum(CandidateSource, name="candidate_source", native_enum=True),
         nullable=False,

@@ -48,6 +48,8 @@ export interface OrganizationResponse {
   name: string;
   slug: string;
   status: string;
+  /** Published recruitment contact shown to candidates (null = none). */
+  careers_contact_email: string | null;
   created_at: string;
 }
 

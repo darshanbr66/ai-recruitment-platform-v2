@@ -177,15 +177,52 @@ describe("AppShell", () => {
     const sidebar = container.querySelector(".sidebar") as HTMLElement;
     expect(sidebar).not.toHaveClass("sidebar-collapsed");
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    // Expanded: the toggle offers to collapse, and shows the collapse glyph.
+    const expandedToggle = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(expandedToggle.querySelector("[data-icon='sidebar-collapse']")).toBeInTheDocument();
+
+    fireEvent.click(expandedToggle);
     expect(sidebar).toHaveClass("sidebar-collapsed");
     // The icon is still present and the link still navigable; only the
     // visible label text is hidden by CSS, not removed from the DOM's
     // accessible name (the link's name).
     expect(within(sidebar).getByRole("link", { name: "Jobs" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    const collapsedToggle = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(collapsedToggle.querySelector("[data-icon='sidebar-expand']")).toBeInTheDocument();
+
+    fireEvent.click(collapsedToggle);
     expect(sidebar).not.toHaveClass("sidebar-collapsed");
+    expect(
+      screen.getByRole("button", { name: "Collapse sidebar" }).querySelector("[data-icon='sidebar-collapse']"),
+    ).toBeInTheDocument();
+  });
+
+  it("settles the collapse toggle on the first render after collapsing, with no navigation", () => {
+    const { container } = renderShell();
+    const sidebar = container.querySelector(".sidebar") as HTMLElement;
+    const toggle = screen.getByRole("button", { name: "Collapse sidebar" });
+
+    fireEvent.click(toggle);
+
+    // Everything the toggle's collapsed appearance depends on has to be true
+    // on this render — the route never changed, so nothing else will come
+    // along to correct it.
+    expect(sidebar).toHaveClass("sidebar-collapsed");
+    // Same element, re-styled rather than remounted: a remount here would
+    // drop keyboard focus off the control the user just activated.
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBe(toggle);
+    expect(toggle.querySelector("[data-icon='sidebar-expand']")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    // No tooltip left pointing at where the toggle used to be.
+    expect(document.querySelector(".shell-tooltip")).not.toBeInTheDocument();
+
+    // And the same on the way back out.
+    fireEvent.click(toggle);
+    expect(sidebar).not.toHaveClass("sidebar-collapsed");
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBe(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(document.querySelector(".shell-tooltip")).not.toBeInTheDocument();
   });
 
   it("shows a floating tooltip on hover only once collapsed, and hides it on mouse leave", () => {

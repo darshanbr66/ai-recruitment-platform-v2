@@ -15,6 +15,7 @@ from app.integrations.storage import _PROVIDERS, MongoGridFSResumeStorage
 from app.models.user import User
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login
 from tests.fakes_mongo import FakeAsyncGridFSBucket
+from tests.public_apply import apply_publicly
 
 _JOB_PAYLOAD = {
     "title": "Backend Engineer",
@@ -89,10 +90,12 @@ async def test_apply_stores_resume_in_gridfs_and_is_downloadable(
 ) -> None:
     ctx = await _bootstrap_org_with_open_job(client, "mongo-apply-happy")
 
-    response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files={"resume": ("resume.pdf", b"%PDF-1.4 gridfs resume content", "application/pdf")},
+    response = await apply_publicly(
+        client,
+        ctx["slug"],
+        ctx["job_id"],
+        email="jane@example.com",
+        resume=("resume.pdf", b"%PDF-1.4 gridfs resume content", "application/pdf"),
     )
     assert response.status_code == 201, response.text
 
@@ -131,10 +134,12 @@ async def test_cross_tenant_download_is_still_blocked_on_gridfs(
     ctx_a = await _bootstrap_org_with_open_job(client, "mongo-tenant-a")
     ctx_b = await _bootstrap_org_with_open_job(client, "mongo-tenant-b")
 
-    await client.post(
-        f"/api/v1/public/organizations/{ctx_a['slug']}/jobs/{ctx_a['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files={"resume": ("resume.pdf", b"content", "application/pdf")},
+    await apply_publicly(
+        client,
+        ctx_a["slug"],
+        ctx_a["job_id"],
+        email="jane@example.com",
+        resume=("resume.pdf", b"%PDF-1.4 content", "application/pdf"),
     )
     applications = await client.get(
         "/api/v1/recruiter/applications", headers=ctx_a["admin_headers"]

@@ -10,11 +10,14 @@ org/tenant isolation via Postgres RLS), Jobs/Candidates/Applications CRUD
 and pipeline, a public career site with resume upload, AI-assisted resume
 screening, MCQ assessments with token-based candidate access (no login
 required), campus drives, application notes, live reports, and outbound
-template-based candidate email (Resend over HTTPS in production, SMTP for local development). Email is **manual only**: a
+template-based candidate email (Resend over HTTPS in production, SMTP for local development). Recruiter email is **manual**: a
 recruiter picks one of six professional HTML templates (application received,
 interview invitation, assessment invitation, next steps, rejection, general),
-edits it if needed, previews it, and sends. Applying, assigning an assessment
-and changing a status never send email on their own. The same composer is also
+edits it if needed, previews it, and sends. Assigning an assessment and
+changing a status never send email on their own. The only automatic emails
+are the two system emails of the candidate intake flow: the email
+verification code, and the welcome email after a self-service application.
+The same composer is also
 available as a general **Email** page for messages that aren't tied to an
 application. The Team page shows a live organization chart built from the
 organization's departments and employees. Employees appear in a stored order —
@@ -22,6 +25,20 @@ new employees are added at the end of their department, and an org admin can
 drag them (or use the arrow keys on the drag handle) to rearrange a department;
 the position itself is internal and never shown. An org admin can also delete
 activity entries in bulk (a selection, or every entry of their own organization).
+
+**Candidate intake** (careers site and campus drive links, no account): the
+candidate first verifies their email with a one-time code, then fills in a
+mandatory form (including mobile number, date of birth, place of birth and
+languages known) and uploads a resume. Each person gets one profile and one
+self-service application per organization, matched by email or mobile
+number. Mobile numbers are normalized, so "98765 43210" and "+91
+98765-43210" are the same person. The application is saved first, then
+AI-screened against the job. A non-match becomes `AI_SCREENED_OUT`: it is
+kept and HR can override it (with a reason) or reject it. HR can also match
+the candidate to other jobs (a new `HR_MATCH` application) and see their
+full history. Each organization's public careers contact address
+(`careers_contact_email`, set by a super admin) is shown to candidates. See
+[`docs/recruitment-workflow.md`](docs/recruitment-workflow.md) § 6.
 
 The visual language, motion rules, the lazy-loaded 3D landing hero (with its
 static fallback) and the accessibility approach are described in
@@ -106,11 +123,12 @@ rather than faking success/results:
 
 | Variable | Enables |
 |---|---|
-| `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_TLS` (default `true`) | Outbound email over SMTP for the recruiter's manual "Send Email" / "Send Assessment Invitation" actions (nothing is emailed automatically). `SMTP_PASSWORD` is a secret — keep it in your local `.env` / the host's secret store only, never in source or `.env.example`. With any of host/username/password/from-address missing, sends fail with a clear `email_not_configured` error. |
+| `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_TLS` (default `true`) | Outbound email over SMTP for the recruiter's manual "Send Email" / "Send Assessment Invitation" actions, and for the candidate intake system emails (verification code, welcome email). Without email configured, candidates can't verify their address, so self-service applications can't be submitted. `SMTP_PASSWORD` is a secret — keep it in your local `.env` / the host's secret store only, never in source or `.env.example`. With any of host/username/password/from-address missing, sends fail with a clear `email_not_configured` error. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email over HTTPS via [Resend](https://resend.com) — **the production provider** (hosts like Render's free web services block outbound SMTP ports). When both are set, Resend is used in preference to SMTP. `RESEND_API_KEY` is a secret. `EMAIL_FROM` must be an address on a domain verified in Resend, e.g. `SIGVITAS <hr@yourdomain.com>`. Leave both empty locally to keep using SMTP. |
 | `OLLAMA_BASE_URL` (+ `OLLAMA_MODEL`) | AI-assisted resume screening via a **free, local** [Ollama](https://ollama.com) model — no API key, nothing leaves your machine. Preferred over the paid options below when set. |
 | `ANTHROPIC_API_KEY` *or* `OPENAI_API_KEY` | AI-assisted resume screening via a paid cloud provider, if you'd rather not run Ollama. Only used when `OLLAMA_BASE_URL` isn't set. |
-| `GEMINI_API_KEY` (+ `GEMINI_MODEL`, `SIGVI_*`) | **Sigvi**, the public AI assistant on the careers site, via Google Gemini's free tier ([get a key](https://aistudio.google.com/apikey)). Without it the assistant says it's temporarily unavailable; the rest of the site is unaffected. `GEMINI_API_KEY` is a secret. See [`docs/sigvi.md`](docs/sigvi.md). |
+| `GEMINI_API_KEY` (+ `GEMINI_MODEL`, `SIGVI_*`) | **Sigvi**, the public AI assistant on the careers site, via Google Gemini's free tier ([get a key](https://aistudio.google.com/apikey)). Without it the assistant says it's temporarily unavailable; the rest of the site is unaffected. The same key is the **last-fallback resume screening provider**, used when none of the above is set ([`docs/ai-screening.md`](docs/ai-screening.md)). `GEMINI_API_KEY` is a secret. See [`docs/sigvi.md`](docs/sigvi.md). |
+| `DEFAULT_PHONE_REGION` (default `IN`), `EMAIL_OTP_*`, `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`, `PUBLIC_*_LIMIT_PER_WINDOW` | Candidate intake tuning: the region assumed for mobile numbers typed without a country code, the email one-time-code expiry, attempt and resend limits, and per-IP request budgets. All have safe defaults (listed in `.env.example`). |
 
 Backend checks:
 

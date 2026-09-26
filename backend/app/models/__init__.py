@@ -3,6 +3,7 @@ Alembic autogenerate and for `Base.metadata.create_all()` in tests.
 """
 
 from app.models.activity import Activity
+from app.models.admin_message import AdminConversation, AdminMessage
 from app.models.application import (
     Application,
     ApplicationSource,
@@ -29,7 +30,9 @@ from app.models.calendar_event import (
 )
 from app.models.campus_drive import CampusDrive, CampusDriveStatus
 from app.models.candidate import Candidate, CandidateSource
+from app.models.candidate_reapply_grant import CandidateReapplyGrant
 from app.models.candidate_resume_profile import CandidateResumeProfile
+from app.models.email_verification import EmailVerification, EmailVerificationPurpose
 from app.models.job import Job, JobStatus
 from app.models.job_requirement import JobRequirement, RequirementCategory
 from app.models.match_result import AI_MATCH_DISCLAIMER, MatchResult, MatchStatus
@@ -39,7 +42,7 @@ from app.models.organization import Organization
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.resume import Resume
 from app.models.resume_chunk import EMBEDDING_DIMENSIONS, ResumeChunk
-from app.models.screening import ScreeningRun, ScreeningStatus
+from app.models.screening import ScreeningDecision, ScreeningRun, ScreeningStatus
 from app.models.team_hierarchy import Department, Employee, EmploymentStatus
 from app.models.user import User, UserRefreshToken
 
@@ -63,6 +66,9 @@ __all__ = [
     "Resume",
     "ScreeningRun",
     "ScreeningStatus",
+    "ScreeningDecision",
+    "EmailVerification",
+    "EmailVerificationPurpose",
     "Assessment",
     "Question",
     "QuestionType",
@@ -94,4 +100,7 @@ __all__ = [
     "CalendarEventAttendee",
     "CalendarEventType",
     "CalendarEventStatus",
+    "CandidateReapplyGrant",
+    "AdminConversation",
+    "AdminMessage",
 ]

@@ -93,16 +93,22 @@ nothing sensitive is stored in the Blueprint file itself.
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | No | Optional, free/local AI screening — not reachable from Render, only useful if you run Ollama somewhere Render can reach it. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No | Optional paid AI screening providers. Do not set unless you intend to enable AI screening. |
 | `GEMINI_API_KEY` | **For the Sigvi assistant** | **Secret** — a Google Gemini API key (free tier: <https://aistudio.google.com/apikey>); set only in the Render dashboard (`sync: false`). Unset ⇒ Sigvi answers "temporarily unavailable"; nothing else is affected. Never commit it. |
-| `GEMINI_MODEL` | No (default `gemini-3.5-flash-lite`) | The Gemini model Sigvi uses. |
+| `GEMINI_MODEL` | No (default `gemini-3.5-flash-lite`) | The Gemini model Sigvi and the internal AI use. Does not affect resume screening. |
+| `GEMINI_SCREENING_MODEL` / `GEMINI_SCREENING_THINKING_BUDGET` | No (defaults `gemini-2.5-flash` / `0`) | The Gemini model used for AI resume screening (when Gemini is the screening provider), and its thinking budget (`0` = thinking off; empty = send no `thinkingConfig`). See `docs/ai-screening.md`. |
 | `SIGVI_*` | No | `SIGVI_REQUEST_TIMEOUT_SECONDS`, `SIGVI_MAX_OUTPUT_TOKENS`, `SIGVI_ORGANIZATION_SLUG`, `SIGVI_RATE_LIMIT_PER_MINUTE`, `SIGVI_GLOBAL_RATE_LIMIT_PER_MINUTE` — see `docs/sigvi.md` § 9. |
+| `DEFAULT_PHONE_REGION`, `EMAIL_OTP_*`, `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`, `PUBLIC_*_LIMIT_PER_WINDOW` | No (safe defaults) | Candidate intake tuning. Defaults and meanings are in `backend/.env.example`; the flow is in `docs/recruitment-workflow.md` § 6. |
 
-Email is optional: with neither Resend nor SMTP configured, the manual send
-action returns a `503 email_not_configured` error rather than failing
-silently or faking success.
+Email is optional for startup: with neither Resend nor SMTP configured, the
+manual send action returns a `503 email_not_configured` error rather than
+failing silently or faking success. **But the self-service apply flow depends
+on it.** Candidates must verify their email with a one-time code before
+applying. Without email, requesting that code returns `503
+email_not_configured`, so no one can apply through the careers site or a
+campus drive link.
 
-None of the optional integrations block startup or any core workflow if
-left unset — this is enforced in code (`app/integrations/email`,
-`app/integrations/ai`), not just a deployment convention.
+None of the optional integrations block startup if left unset. This is
+enforced in code (`app/integrations/email`, `app/integrations/ai`), not just
+a deployment convention.
 
 ## 4. Run Alembic migrations against the production database
 
@@ -169,6 +175,33 @@ backend code goes live**: code that selects the column fails every employee
 query with `UndefinedColumn` on a database that doesn't have it yet, whereas
 migrating first only makes employee *creation* by the previous code version
 fail until the deploy finishes.
+
+**Candidate intake (`b4c5d6e7f8a9`).** Changes the following:
+
+- adds `AI_SCREENED_OUT` / `HR_MATCH` to the application enums;
+- adds `organizations.careers_contact_email`;
+- adds the candidate identity columns (`date_of_birth`, `place_of_birth`,
+  `languages`, `email_verified_at`);
+- adds the `screening_runs` decision columns;
+- adds the RLS-protected `email_verifications` table;
+- normalizes existing candidate phones to E.164 (using
+  `DEFAULT_PHONE_REGION`, default `IN`), then adds the unique
+  `(organization_id, phone)` index.
+
+**Before deploying it, check production for duplicate mobile numbers.** If
+two candidates in one organization have the same number in different formats
+("98765 43210" vs "+919876543210"), the migration rewrites nothing and fails
+with the affected candidate ids. Because DDL is transactional, the whole
+upgrade rolls back and `uvicorn` doesn't start. Render keeps the previous
+deploy live, so nothing breaks, but the new version won't ship until the
+duplicates are fixed by hand (edit or clear the phone on the duplicate
+records). To find out in advance, run `alembic upgrade head` against a copy
+of the production database.
+
+Its **downgrade refuses to run** while any application or status-history row
+uses `AI_SCREENED_OUT` or `HR_MATCH` (`docs/database.md` § 3.5). The
+upgrade → `downgrade -1` → upgrade round trip was verified locally, and the
+data guards are covered by `backend/tests/test_candidate_intake_migration.py`.
 
 After migrating, create the platform super admin (needed to bootstrap the
 first organization via `/api/v1/admin/organizations`):
@@ -444,15 +477,23 @@ recipients or the message body.
 ## 13. AI provider — production behavior
 
 Optional by construction (`app/integrations/ai/__init__.py::get_llm_provider`):
-if none of `OLLAMA_BASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` is set,
-AI-assisted screening returns a clear "not configured" error rather than
-failing startup or fabricating a result. **Do not set any AI provider
-key as part of this deployment** unless you've decided to enable AI
-screening — the platform is fully usable without it.
+if none of `OLLAMA_BASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
+`GEMINI_API_KEY` is set, AI-assisted screening returns a clear "not
+configured" error rather than failing startup or fabricating a result. A
+self-service application is then kept at `APPLIED` for manual review; it is
+never screened out. **Do not set any AI provider key as part of this
+deployment** unless you've decided to enable AI screening. The platform is
+fully usable without it.
+
+**Note:** `GEMINI_API_KEY` (below) also enables screening, as the last
+fallback, when none of the other three is set. Setting it for Sigvi therefore
+also turns on automatic submission-time screening
+(`docs/ai-screening.md`).
 
 ### Sigvi (the public AI assistant)
 
-Sigvi is separate from screening and uses Google Gemini. To enable it on
+Sigvi uses Google Gemini, and the same key serves as the screening fallback
+described above. To enable it on
 Render: **Environment tab → add `GEMINI_API_KEY` (a key from Google AI Studio)
 → Save and deploy.** That is the only required change; `GEMINI_MODEL` defaults
 to `gemini-3.5-flash-lite` and the `SIGVI_*` limits have safe defaults. No

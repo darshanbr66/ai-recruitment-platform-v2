@@ -11,6 +11,8 @@ planned for Arq, CLAUDE.md § 3) if a shared budget is ever needed.
 import time
 from collections import deque
 
+from starlette.requests import Request
+
 # Bounds memory: keys tracked at once. Beyond this, idle keys are swept first;
 # if still full, the oldest-idle key is evicted (its holder just gets a fresh
 # window — failing open for one client beats unbounded growth).
@@ -51,3 +53,16 @@ class SlidingWindowRateLimiter:
         if len(self._hits) >= _MAX_KEYS:
             oldest = min(self._hits, key=lambda k: self._hits[k][-1])
             del self._hits[oldest]
+
+
+def client_key(request: Request) -> str:
+    """Behind Render's proxy `request.client` is the proxy, so the caller's
+    address is the first `X-Forwarded-For` entry. That header is
+    client-controlled at its left end, so a per-client budget alone can be
+    dodged by rotating it — every caller pairs it with a harder limit
+    (a global budget, or the database-backed per-email limits)."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    first = forwarded.split(",")[0].strip()
+    if first:
+        return first
+    return request.client.host if request.client else "unknown"

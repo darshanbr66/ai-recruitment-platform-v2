@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -130,6 +130,51 @@ class Settings(BaseSettings):
     # Same empirical basis as `sigvi_request_timeout_seconds` above.
     internal_ai_request_timeout_seconds: float = 45.0
     internal_ai_max_output_tokens: int = 1200
+
+    # Gemini resume screening (the last-fallback screening provider —
+    # app/integrations/ai/__init__.py `get_llm_provider`). Its own model
+    # setting, deliberately separate from GEMINI_MODEL above, so moving
+    # screening to another model never changes Sigvi or the internal AI.
+    # Empirically measured (2026-09-24, real API): gemini-3.5-flash-lite
+    # returned sustained 503 "high demand" errors, so screening uses
+    # gemini-2.5-flash. That model thinks by default and counts thinking
+    # tokens against maxOutputTokens — with thinking on, ~1,965 of the
+    # 2,048-token budget went to thinking and the JSON verdict was cut off.
+    # Hence a thinking budget of 0 (thinking disabled). Set it empty to send
+    # no `thinkingConfig` at all, for a model that rejects one.
+    gemini_screening_model: str = "gemini-2.5-flash"
+    gemini_screening_thinking_budget: int | None = 0
+
+    # Candidate application flow (public careers site).
+    # Region assumed for a mobile number typed without a "+<country code>"
+    # prefix (ISO 3166-1 alpha-2). Numbers with an explicit prefix are always
+    # parsed as written.
+    default_phone_region: str = "IN"
+    # Email one-time-code verification (app/services/email_verification_service.py).
+    email_otp_ttl_minutes: int = 10
+    email_otp_max_attempts: int = 5
+    email_otp_resend_cooldown_seconds: int = 60
+    email_otp_max_sends_per_hour: int = 5
+    # How long a verified email may be used to submit an application.
+    email_verification_token_ttl_minutes: int = 60
+    # Per-client (IP) request budgets for the anonymous candidate endpoints,
+    # per 10-minute window — in-process, the DB-backed per-email limits above
+    # are the authoritative ones.
+    public_otp_request_limit_per_window: int = 10
+    public_otp_verify_limit_per_window: int = 30
+    public_apply_limit_per_window: int = 10
+    # A candidate may self-apply again this many calendar months after their
+    # previous self-service application (app/services/reapply_service.py).
+    # HR can grant an earlier, single-use reapply.
+    candidate_reapply_cooldown_months: int = 3
+    # Talk to Admin: longest message body accepted, in characters.
+    admin_message_max_length: int = 4000
+
+    @field_validator("gemini_screening_thinking_budget", mode="before")
+    @classmethod
+    def _blank_thinking_budget_means_none(cls, value: object) -> object:
+        # An empty env var means "send no thinkingConfig", not a parse error.
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _validate_mongodb_configured_when_selected(self) -> "Settings":

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -21,6 +21,11 @@ class ApplicationStatus(StrEnum):
     """
 
     APPLIED = "APPLIED"
+    # Set only by the system, right after the submission-time AI screening
+    # judged the resume a NOT_MATCH for the job. Advisory, never final: an
+    # HR user can override it back into review (with a recorded reason) or
+    # confirm it as REJECTED. Distinct from REJECTED on purpose.
+    AI_SCREENED_OUT = "AI_SCREENED_OUT"
     UNDER_REVIEW = "UNDER_REVIEW"
     SCREENING = "SCREENING"
     ASSESSMENT_INVITED = "ASSESSMENT_INVITED"
@@ -39,6 +44,11 @@ class ApplicationSource(StrEnum):
     CAMPUS_IMPORT = "CAMPUS_IMPORT"
     REFERRAL = "REFERRAL"
     OTHER = "OTHER"
+    # Created by an HR user matching an existing candidate to another job
+    # (application_service.match_candidate_to_job) — never by the candidate,
+    # who self-applies at most once per reapply window. The original PORTAL
+    # application stays untouched alongside it.
+    HR_MATCH = "HR_MATCH"
 
 
 class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
@@ -57,6 +67,13 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     __tablename__ = "applications"
     __table_args__ = (
         Index("uq_applications_candidate_job", "candidate_id", "job_id", unique=True),
+        # The reapply-window check: one candidate's self-service applications.
+        Index(
+            "ix_applications_candidate_self_service",
+            "candidate_id",
+            "applied_at",
+            postgresql_where="is_self_service",
+        ),
     )
 
     candidate_id: Mapped[uuid.UUID] = mapped_column(
@@ -88,6 +105,14 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     )
     applied_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # True only for an application the candidate submitted themselves through
+    # the email-verified careers-site / campus-drive-link flow. `source` alone
+    # can't say this (staff may create an application with any source), and
+    # the 3-month self-apply rule (app/services/reapply_service.py) counts
+    # only these.
+    is_self_service: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     # Soft delete — same rationale/shape as Candidate's (app/models/candidate.py).

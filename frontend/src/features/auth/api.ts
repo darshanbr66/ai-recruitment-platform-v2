@@ -51,3 +51,16 @@ export function listOrganizations(accessToken: string) {
 export function createOrganization(payload: OrganizationCreateRequest, accessToken: string) {
   return apiClient.post<OrganizationResponse>("/api/v1/admin/organizations", payload, accessToken);
 }
+
+/** SUPER_ADMIN: company-level settings, e.g. the careers contact email. */
+export function updateOrganizationSettings(
+  organizationId: string,
+  payload: { careers_contact_email: string | null },
+  accessToken: string,
+) {
+  return apiClient.patch<OrganizationResponse>(
+    `/api/v1/admin/organizations/${organizationId}`,
+    payload,
+    accessToken,
+  );
+}

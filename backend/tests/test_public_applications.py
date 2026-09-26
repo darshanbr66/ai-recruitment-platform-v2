@@ -9,6 +9,7 @@ from httpx import AsyncClient
 
 from app.models.user import User
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login
+from tests.public_apply import apply_publicly, request_code, verify_email
 
 _JOB_PAYLOAD = {
     "title": "Senior Backend Engineer",
@@ -55,9 +56,10 @@ async def _bootstrap_org_with_open_job(client: AsyncClient, slug: str) -> dict:
     return {"slug": slug, "job_id": job["id"], "admin_headers": admin_headers}
 
 
-def _resume_file(
-    name: str = "resume.pdf", content: bytes = b"%PDF-1.4 fake resume content"
-) -> dict:
+_PDF_CONTENT = b"%PDF-1.4 fake resume content"
+
+
+def _resume_file(name: str = "resume.pdf", content: bytes = _PDF_CONTENT) -> dict:
     return {"resume": (name, content, "application/pdf")}
 
 
@@ -115,16 +117,22 @@ async def test_apply_creates_candidate_application_and_resume(
 ) -> None:
     ctx = await _bootstrap_org_with_open_job(client, "public-apply-happy")
 
-    response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com", "phone": "555-0100"},
-        files=_resume_file(),
+    response = await apply_publicly(
+        client,
+        ctx["slug"],
+        ctx["job_id"],
+        email="jane@example.com",
+        resume=("resume.pdf", _PDF_CONTENT, "application/pdf"),
     )
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["job_title"] == _JOB_PAYLOAD["title"]
     assert body["candidate_email"] == "jane@example.com"
-    assert body["status"] == "APPLIED"
+    # No AI provider in tests -> screening can't run -> the application is
+    # never screened out; it waits for a recruiter.
+    assert body["outcome"] == "RECEIVED"
+    # Internal state never leaks to the candidate.
+    assert "status" not in body
 
     applications = await client.get(
         "/api/v1/recruiter/applications", headers=ctx["admin_headers"]
@@ -133,6 +141,7 @@ async def test_apply_creates_candidate_application_and_resume(
         a for a in applications.json() if a["candidate_full_name"] == "Jane Candidate"
     )
     assert application["source"] == "PORTAL"
+    assert application["status"] == "APPLIED"
     assert application["resume_filename"] == "resume.pdf"
 
     download = await client.get(
@@ -140,7 +149,7 @@ async def test_apply_creates_candidate_application_and_resume(
         headers=ctx["admin_headers"],
     )
     assert download.status_code == 200
-    assert download.content == b"%PDF-1.4 fake resume content"
+    assert download.content == _PDF_CONTENT
     assert download.headers["content-type"] == "application/pdf"
 
 
@@ -153,64 +162,77 @@ async def test_second_applicant_to_the_same_org_succeeds(
     `mkdir` needs `exist_ok=True`)."""
     ctx = await _bootstrap_org_with_open_job(client, "public-apply-second")
 
-    first = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files=_resume_file(),
-    )
+    first = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="jane@example.com")
     assert first.status_code == 201, first.text
 
-    second = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "John Candidate", "email": "john@example.com"},
-        files=_resume_file(),
+    second = await apply_publicly(
+        client, ctx["slug"], ctx["job_id"], email="john@example.com", full_name="John Candidate"
     )
     assert second.status_code == 201, second.text
 
 
-async def test_duplicate_application_is_rejected(client: AsyncClient, super_admin: User) -> None:
+async def test_duplicate_application_is_rejected(
+    client: AsyncClient, super_admin: User, otp_settings
+) -> None:
+    otp_settings(email_otp_resend_cooldown_seconds=0)
     ctx = await _bootstrap_org_with_open_job(client, "public-apply-dup")
 
-    first = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files=_resume_file(),
-    )
+    first = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="jane@example.com")
     assert first.status_code == 201
 
-    second = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files=_resume_file(),
+    # The same person can't even get past email verification a second time.
+    # They applied moments ago, so the block is the reapply window
+    # (app/services/reapply_service.py) rather than "already registered":
+    # having just proven they own the address, they are told both dates.
+    code_response, code = await request_code(client, ctx["slug"], "jane@example.com")
+    assert code_response.status_code == 202
+    verify = await client.post(
+        f"/api/v1/public/organizations/{ctx['slug']}/email-verification/verify",
+        json={"email": "jane@example.com", "code": code},
     )
-    assert second.status_code == 409
+    assert verify.status_code == 409
+    error = verify.json()["error"]
+    assert error["code"] == "reapply_locked"
+    assert error["data"]["eligible_from"] > error["data"]["last_applied_at"]
 
 
 async def test_apply_with_disallowed_file_type_is_rejected(
     client: AsyncClient, super_admin: User
 ) -> None:
     ctx = await _bootstrap_org_with_open_job(client, "public-apply-bad-file")
+    # A rejected file never spends the verification token, so one token
+    # serves every attempt below.
+    token = await verify_email(client, ctx["slug"], "jane@example.com")
 
-    response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files=_resume_file(name="resume.exe", content=b"MZ fake binary"),
-    )
-    assert response.status_code == 400
+    for name, content in (
+        ("resume.exe", b"MZ fake binary"),
+        ("resume.docx", b"PK fake docx"),
+        # Right extension, wrong bytes: a renamed file is not a PDF.
+        ("resume.pdf", b"MZ not really a pdf"),
+    ):
+        response = await apply_publicly(
+            client,
+            ctx["slug"],
+            ctx["job_id"],
+            email="jane@example.com",
+            token=token,
+            resume=(name, content, "application/pdf"),
+        )
+        assert response.status_code == 400, (name, response.text)
+        assert response.json()["error"]["code"] == "invalid_file_type"
 
 
 async def test_apply_to_a_non_open_job_is_404(client: AsyncClient, super_admin: User) -> None:
     ctx = await _bootstrap_org_with_open_job(client, "public-apply-closed")
+    token = await verify_email(client, ctx["slug"], "jane@example.com")
     await client.patch(
         f"/api/v1/recruiter/jobs/{ctx['job_id']}",
         json={"status": "CLOSED"},
         headers=ctx["admin_headers"],
     )
 
-    response = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/jobs/{ctx['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files=_resume_file(),
+    response = await apply_publicly(
+        client, ctx["slug"], ctx["job_id"], email="jane@example.com", token=token
     )
     assert response.status_code == 404
 
@@ -221,11 +243,7 @@ async def test_recruiter_cannot_download_another_orgs_resume(
     ctx_a = await _bootstrap_org_with_open_job(client, "public-apply-tenant-a")
     ctx_b = await _bootstrap_org_with_open_job(client, "public-apply-tenant-b")
 
-    await client.post(
-        f"/api/v1/public/organizations/{ctx_a['slug']}/jobs/{ctx_a['job_id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files=_resume_file(),
-    )
+    await apply_publicly(client, ctx_a["slug"], ctx_a["job_id"], email="jane@example.com")
     applications = await client.get(
         "/api/v1/recruiter/applications", headers=ctx_a["admin_headers"]
     )

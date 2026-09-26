@@ -14,12 +14,19 @@ import type {
   CalendarEventResponse,
   CalendarEventType,
 } from "../../../types/calendar";
-import { listUsers } from "../../auth/api";
 import { useAuth } from "../../auth/AuthContext";
 import { listApplications } from "../applications/api";
 import { listCandidates } from "../candidates/api";
 import { listJobs } from "../jobs/api";
-import { createEvent, deleteEvent, getEvent, listEvents, updateEvent } from "./api";
+import {
+  createEvent,
+  deleteEvent,
+  getEvent,
+  listAttendeeOptions,
+  listEvents,
+  updateEvent,
+} from "./api";
+import { AttendeeSelector } from "./AttendeeSelector";
 import {
   addDays,
   browserTimezone,
@@ -196,11 +203,17 @@ export function CalendarPage() {
     queryFn: () => listApplications(token),
     enabled: accessToken !== null && showForm,
   });
-  const usersQuery = useQuery({
-    queryKey: ["recruiter", "users"],
-    queryFn: () => listUsers(token),
-    enabled: accessToken !== null && showForm,
+  // Attendee options come from the calendar's own directory endpoint rather
+  // than /recruiter/users: that one needs `user.read` (ORG_ADMIN only), so a
+  // RECRUITER creating an event got an empty attendee list. Also loaded for
+  // the detail modal, to show attendees by name instead of by id.
+  const attendeesQuery = useQuery({
+    queryKey: ["recruiter", "calendar", "attendee-options"],
+    queryFn: () => listAttendeeOptions(token),
+    enabled: accessToken !== null && (showForm || detailEvent !== null),
   });
+  const attendeeOptions = attendeesQuery.data ?? [];
+  const attendeeNameById = new Map(attendeeOptions.map((option) => [option.id, option.full_name]));
 
   const events = eventsQuery.data ?? [];
 
@@ -259,15 +272,6 @@ export function CalendarPage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     saveMutation.mutate();
-  }
-
-  function toggleAttendee(userId: string) {
-    setForm((prev) => ({
-      ...prev,
-      attendeeIds: prev.attendeeIds.includes(userId)
-        ? prev.attendeeIds.filter((id) => id !== userId)
-        : [...prev.attendeeIds, userId],
-    }));
   }
 
   function navigate(direction: -1 | 1) {
@@ -477,6 +481,14 @@ export function CalendarPage() {
             <p className="muted" style={{ margin: 0 }}>Timezone: {detailEvent.timezone}</p>
             {detailEvent.description && <p>{detailEvent.description}</p>}
             <p className="muted" style={{ margin: 0 }}>Organizer: {detailEvent.organizer_name}</p>
+            {detailEvent.attendee_ids.length > 0 && (
+              <p className="muted" style={{ margin: 0 }}>
+                Attendees:{" "}
+                {detailEvent.attendee_ids
+                  .map((id) => attendeeNameById.get(id) ?? "Former team member")
+                  .join(", ")}
+              </p>
+            )}
             {detailEvent.reminder_minutes_before != null && (
               <p className="muted" style={{ margin: 0 }}>
                 Reminder {detailEvent.reminder_minutes_before} minute(s) before
@@ -649,23 +661,14 @@ export function CalendarPage() {
 
             <fieldset className="field" style={{ border: "none", padding: 0 }}>
               <legend style={{ padding: 0, marginBottom: "0.35rem" }}>Attendees</legend>
-              <div className="stack-sm" style={{ maxHeight: "160px", overflowY: "auto" }}>
-                {usersQuery.data
-                  ?.filter((u) => u.id !== user?.id)
-                  .map((u) => (
-                    <label key={u.id} className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={form.attendeeIds.includes(u.id)}
-                        onChange={() => toggleAttendee(u.id)}
-                        disabled={saveMutation.isPending}
-                      />
-                      <span>
-                        {u.full_name} <span className="muted">({u.email})</span>
-                      </span>
-                    </label>
-                  ))}
-              </div>
+              <AttendeeSelector
+                options={attendeeOptions.filter((option) => option.id !== user?.id)}
+                selectedIds={form.attendeeIds}
+                onChange={(attendeeIds) => setForm((prev) => ({ ...prev, attendeeIds }))}
+                isPending={attendeesQuery.isPending}
+                isError={attendeesQuery.isError}
+                disabled={saveMutation.isPending}
+              />
             </fieldset>
 
             {formError && <Alert>{formError}</Alert>}

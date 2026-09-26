@@ -64,7 +64,11 @@ always `uuid`.
 ### 3.1 Identity & Tenancy
 
 **organizations**
-`id, name, slug (unique), status (ACTIVE/SUSPENDED), created_at, updated_at`
+`id, name, slug (unique), status (ACTIVE/SUSPENDED), careers_contact_email
+NULL, created_at, updated_at`
+`careers_contact_email` is the recruitment team's public contact address.
+It is set by a SUPER_ADMIN only and published on the careers site and in
+candidate emails (`docs/recruitment-workflow.md` § 6).
 
 **users** (staff)
 `id, organization_id NULL (NULL only for SUPER_ADMIN), email, hashed_password,
@@ -94,8 +98,26 @@ separate uniqueness for `SUPER_ADMIN` rows on `email` alone.
 self-registers a login; recruiter-imported candidates may not have one yet),
 full_name, phone, location, current_title, years_experience, source
 (PORTAL/RECRUITER_ADDED/CAMPUS_IMPORT/REFERRAL/OTHER), is_active, created_at,
-updated_at`
-Unique: `(organization_id, email)`.
+updated_at, date_of_birth NULL, place_of_birth NULL, languages text[]
+(default '{}'), email_verified_at NULL`
+Unique: `(organization_id, email)`; `uq_candidates_org_phone` on
+`(organization_id, phone) WHERE phone IS NOT NULL`. Phones are stored
+normalized to E.164 (`app/core/phone.py`), so different formats of the same
+number collide on this index.
+Check `ck_candidates_verified_identity_complete`: when `email_verified_at` is
+set (self-service applicants), `phone`, `date_of_birth`, `place_of_birth` and
+at least one `languages` entry are required. `languages` has a GIN index for
+filtering by language.
+
+**email_verifications** (tenant-scoped, RLS)
+`id, organization_id, email, purpose (CANDIDATE_APPLICATION), code_hash NULL
+(an HMAC of the code, never the code itself), code_expires_at, failed_attempts,
+last_sent_at, send_window_started_at, sends_in_window, verified_at, token_hash
+NULL (SHA-256), token_expires_at, consumed_at, created_at, updated_at`
+Unique: `(organization_id, email, purpose)`, `token_hash`. There is one row
+per email address, reused across resends. The table holds the email
+one-time-code state for the anonymous apply flow
+(`docs/recruitment-workflow.md` § 6).
 
 **candidate_refresh_tokens**
 Mirrors `user_refresh_tokens`, keyed to `candidate_id`.
@@ -144,9 +166,10 @@ configured; recorded in `docs/ai-screening.md` once a provider is chosen.
 
 **applications**
 `id, organization_id, candidate_id, job_id, campus_drive_id NULL, status
-(APPLIED/UNDER_REVIEW/SCREENING/ASSESSMENT_INVITED/ASSESSMENT_STARTED/
-ASSESSMENT_COMPLETED/SHORTLISTED/INTERVIEW/SELECTED/REJECTED/HIRED),
-source (PORTAL/RECRUITER_ADDED/CAMPUS_IMPORT/REFERRAL/OTHER), applied_at,
+(APPLIED/AI_SCREENED_OUT/UNDER_REVIEW/SCREENING/ASSESSMENT_INVITED/
+ASSESSMENT_STARTED/ASSESSMENT_COMPLETED/SHORTLISTED/INTERVIEW/SELECTED/
+REJECTED/HIRED), source (PORTAL/RECRUITER_ADDED/CAMPUS_IMPORT/REFERRAL/OTHER/
+HR_MATCH), applied_at,
 resume_id NULL (the resume used for this specific application, may differ
 across applications), created_at, updated_at`
 Unique: `(candidate_id, job_id)` — one active application per candidate per
@@ -163,6 +186,15 @@ native Postgres enum (`backend/alembic/versions/
 c1a2f3b4d5e6_merge_withdrawn_into_rejected_add_hired.py`). `HIRED` was
 added as the new terminal state reachable only from `SELECTED`.
 
+`AI_SCREENED_OUT` (set only by the submission-time AI screening) and
+`HR_MATCH` (an application HR created by matching an existing candidate to
+another job) were added by `b4c5d6e7f8a9_candidate_intake_hr_requirements.py`.
+Postgres can't drop an enum value, and older code can't read these two, so
+that migration's **downgrade refuses to run** while any application or
+status-history row uses them. It never rewrites them into older values,
+because that would falsify the status history. A person has to resolve those
+rows deliberately first.
+
 **application_status_history**
 `id, application_id, from_status NULL, to_status, changed_by_user_id NULL,
 changed_by_candidate_id NULL, reason NULL, created_at`
@@ -172,7 +204,10 @@ changed_by_candidate_id NULL, reason NULL, created_at`
 **screening_runs**
 `id, organization_id, application_id, triggered_by_user_id NULL (NULL if
 system-triggered), status (PENDING/RUNNING/COMPLETED/FAILED), overall_score
-NULL, started_at, completed_at`
+NULL, started_at, completed_at, decision NULL (MATCH/NOT_MATCH),
+matched_requirements JSONB NULL, missing_requirements JSONB NULL`
+`decision` is the binary outcome that the submission-time screening gate
+acts on (`docs/recruitment-workflow.md` § 6). HR can always override it.
 
 **ai_runs**
 `id, screening_run_id, job_requirement_id NULL, provider, model,
@@ -316,3 +351,15 @@ Alembic from Phase 1 onward. One migration per logical schema change, no
 hand-edited production schema, migrations committed to version control.
 Seed data (system roles/permissions) ships as a data migration, not
 application-startup logic.
+
+**Data-safety guards, not guesses.** When a migration's data step could
+lose or misattribute data, it stops with an explicit message for a person to
+resolve. It never picks a winner on its own. Example:
+`b4c5d6e7f8a9_candidate_intake_hr_requirements.py` normalizes existing
+candidate phones to E.164 before creating `uq_candidates_org_phone`. It first
+checks for numbers that only collide *after* normalization ("98765 43210" and
+"+919876543210" in one organization). If there are any, it rewrites nothing
+and fails, listing the affected candidate ids but never the numbers. Deploys
+run `alembic upgrade head` automatically, so before deploying that revision,
+run the same check against production data and fix any duplicates by hand.
+Its downgrade guard is described in § 3.5.

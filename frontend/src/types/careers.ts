@@ -5,6 +5,8 @@ import type { CandidateType } from "./recruitment";
 export interface PublicOrganizationSummary {
   name: string;
   slug: string;
+  /** The recruitment team's published contact address (null = not published). */
+  careers_contact_email: string | null;
 }
 
 export interface PublicJobSummary {
@@ -23,21 +25,42 @@ export interface PublicJobDetail extends PublicJobSummary {
   organization: PublicOrganizationSummary;
 }
 
+/** Deliberately coarse — the candidate never sees AI reasoning, scores or
+ * internal statuses. */
+export type PublicApplicationOutcome = "RECEIVED" | "NOT_SHORTLISTED_FOR_ROLE";
+
 export interface PublicApplicationResult {
   id: string;
   job_title: string;
   candidate_email: string;
-  status: string;
+  outcome: PublicApplicationOutcome;
+  /** true only if the confirmation email was actually sent. */
+  confirmation_email_sent: boolean;
+  careers_contact_email: string | null;
   submitted_at: string;
+}
+
+export interface EmailVerificationRequested {
+  expires_in_seconds: number;
+  resend_available_in_seconds: number;
+}
+
+export interface EmailVerificationConfirmed {
+  verification_token: string;
+  expires_at: string;
 }
 
 /** All text inputs are kept as strings (the form's own state); `applyToJob`
  * decides what is sent — experience/availability fields only for
- * EXPERIENCED candidates, and never an empty value. */
+ * EXPERIENCED candidates. Every field is mandatory (the backend enforces it
+ * too). */
 export interface JobApplicationFormValues {
   full_name: string;
   email: string;
   phone: string;
+  date_of_birth: string;
+  place_of_birth: string;
+  languages: string[];
   candidate_type: CandidateType;
   years_experience: string;
   notice_period_days: string;

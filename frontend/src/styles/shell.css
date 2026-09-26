@@ -46,6 +46,17 @@
   min-width: var(--sidebar-width-collapsed);
   padding-left: 0.4rem;
   padding-right: 0.4rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+/* The rail carries every nav item at once with no section labels to break it
+   up, so the expanded rhythm (2.5rem rows, 1.1rem between groups) overflowed
+   a laptop-height viewport and put a scrollbar on the rail itself. Tightened
+   here only — the expanded sidebar keeps its original spacing. `.nav-group`
+   needs no override: its base 0.15rem row gap already suits the rail. */
+.sidebar-collapsed .sidebar-nav {
+  gap: 0.75rem;
 }
 
 .sidebar-collapsed .brand-name,
@@ -57,13 +68,28 @@
   justify-content: center;
   padding-left: 0;
   padding-right: 0;
+  padding-bottom: 0.8rem;
 }
 
 .sidebar-collapsed .sidebar-link {
   justify-content: center;
-  padding-left: 0.6rem;
-  padding-right: 0.6rem;
+  /* Shorter rows than the expanded rail: with the label hidden there is no
+     text to give the row height, so the box only has to frame the icon. The
+     ceiling is the shortest window this has to fit without a scrollbar — all
+     15 items plus the brand and toggle come to ~653px, against the ~655px a
+     maximized browser has on a 768px-tall screen. */
+  min-height: 2.1rem;
+  padding: 0.35rem 0.6rem;
   gap: 0;
+}
+
+/* A slightly larger glyph than the expanded rail's 18px: on the icon-only
+   rail the icon is the only thing identifying the destination, and the extra
+   2px costs no height inside the row box above. Set here rather than on the
+   `size` prop so the expanded sidebar is untouched. */
+.sidebar-collapsed .sidebar-link svg {
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar-collapsed .sidebar-link span:not(.sidebar-badge) {
@@ -103,18 +129,34 @@
   transition: color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
 }
 
+/* On the rail the toggle reads as one more icon row, not a floating chip: it
+   drops the pill border and circular radius for the same full-rail box,
+   `--radius-md` corners and transparent rest state as a `.sidebar-link`, so
+   its hover fill and the global 2px `:focus-visible` outline trace the same
+   rectangle as the icons below instead of ringing a detached circle. Height
+   stays 1.9rem and `border-color` (not `border-width`) is what changes, so
+   the rail's overall height is untouched. The `:hover` rule below still
+   applies — it is later in the cascade at equal specificity. */
 .sidebar-collapsed .sidebar-collapse-toggle {
   align-self: center;
-  margin: -0.25rem auto 0.6rem;
+  /* An explicit width, NOT `100%`: the rail animates its own `width` over
+     --dur-slow, and a percentage resolves against that animating box, so the
+     toggle was the one control still being re-laid-out for 380ms after the
+     class flip instead of settling immediately. A fixed box is final on the
+     first frame. It also leaves the 2px `:focus-visible` ring (drawn 2px
+     outside the box) ~10px of clearance inside the rail rather than pressing
+     it against both edges. Height is untouched, so the rail's total height
+     does not change. */
+  width: 1.9rem;
+  margin: 0 auto 0.4rem;
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
 }
 
 .sidebar-collapse-toggle:hover {
   color: var(--color-text);
   background: var(--color-bg-subtle);
-}
-
-.sidebar-collapse-toggle svg.flip-h {
-  transform: scaleX(-1);
 }
 
 /* --- floating tooltip (portalled to <body>, positioned via JS) -----------

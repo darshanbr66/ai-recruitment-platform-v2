@@ -66,6 +66,16 @@ export function changeApplicationStatus(
   );
 }
 
+/** HR overrides the submission-time AI screen-out: back into review
+ * (UNDER_REVIEW). The reason is required and audited server-side. */
+export function overrideAiScreening(applicationId: string, reason: string, accessToken: string) {
+  return apiClient.post<ApplicationResponse>(
+    `/api/v1/recruiter/applications/${applicationId}/ai-override`,
+    { reason },
+    accessToken,
+  );
+}
+
 export function listEmailTemplates(accessToken: string) {
   return apiClient.get<EmailTemplate[]>("/api/v1/recruiter/email-templates", accessToken);
 }

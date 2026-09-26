@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
 import { Alert } from "../../../shared/components/Alert";
 import { Avatar } from "../../../shared/components/Avatar";
 import { BackLink } from "../../../shared/components/BackLink";
+import { Collapsible } from "../../../shared/components/Collapsible";
 import { Icon } from "../../../shared/components/Icon";
 import { PipelineTrack } from "../../../shared/components/PipelineTrack";
 import { EmptyState } from "../../../shared/components/EmptyState";
@@ -14,16 +15,34 @@ import { statusTone, toneBadgeClass } from "../../../shared/lib/statusTone";
 import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModal";
 import { useAuth } from "../../auth/AuthContext";
 import { downloadResume, listApplicationsForCandidate } from "../applications/api";
-import { getCandidate } from "./api";
+import { getCandidate, getReapplyStatus } from "./api";
+import { AddResumeAndRoleModal } from "./AddResumeAndRoleModal";
+import { AllowReapplyModal } from "./AllowReapplyModal";
+import { CandidateJourney } from "./CandidateJourney";
+
+/** Roles holding `candidate.reapply.grant` on the backend (see the reapply
+ * migration seeding it). UX only — the API re-checks the permission. */
+const REAPPLY_GRANT_ROLES = ["ORG_ADMIN", "RECRUITER"];
+
+function formatDay(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
 
 export function CandidateDetailPage() {
   const { candidateId = "" } = useParams<{ candidateId: string }>();
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const token = accessToken as string;
   const navigate = useNavigate();
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<{ applicationId: string; filename: string } | null>(null);
+  const [showAllowReapply, setShowAllowReapply] = useState(false);
+  const [showAddResume, setShowAddResume] = useState(false);
+  const canGrantReapply = user?.roles.some((role) => REAPPLY_GRANT_ROLES.includes(role)) ?? false;
 
   const candidateQuery = useQuery({
     queryKey: ["recruiter", "candidates", candidateId],
@@ -34,6 +53,12 @@ export function CandidateDetailPage() {
   const applicationsQuery = useQuery({
     queryKey: ["recruiter", "applications", "candidate", candidateId],
     queryFn: () => listApplicationsForCandidate(candidateId, token),
+    enabled: accessToken !== null,
+  });
+
+  const reapplyQuery = useQuery({
+    queryKey: ["recruiter", "candidates", candidateId, "reapply-status"],
+    queryFn: () => getReapplyStatus(candidateId, token),
     enabled: accessToken !== null,
   });
 
@@ -76,6 +101,32 @@ export function CandidateDetailPage() {
   const appliedRoles: [string, string][] = applicationsQuery.data
     ? [...new Map(applicationsQuery.data.map((a) => [a.job_title, a.id])).entries()]
     : [];
+
+  // The self-apply cooldown in the recruiter's words. HR adding a role for
+  // this candidate is never restricted — only the candidate's own
+  // applications are, which is what this row reports on.
+  const reapply = reapplyQuery.data;
+  let reapplyNote: ReactNode = "—";
+  if (reapply) {
+    if (reapply.open_grant) {
+      reapplyNote = (
+        <>
+          <span className="badge badge-active">Reapply allowed</span>
+          <br />
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            Granted by {reapply.open_grant.granted_by_name ?? "a team member"} on{" "}
+            {formatDay(reapply.open_grant.created_at)}
+          </span>
+        </>
+      );
+    } else if (reapply.can_self_apply_now) {
+      reapplyNote = reapply.last_self_applied_at
+        ? `Can apply now (last applied ${formatDay(reapply.last_self_applied_at)})`
+        : "Can apply now";
+    } else if (reapply.eligible_from) {
+      reapplyNote = `Can apply again from ${formatDay(reapply.eligible_from)} (${reapply.cooldown_months}-month window)`;
+    }
+  }
 
   return (
     <div className="stack-lg">
@@ -143,6 +194,23 @@ export function CandidateDetailPage() {
             <Icon name="sparkles" size={14} />
             Analyze with AI
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+            onClick={() => setShowAddResume(true)}
+          >
+            <Icon name="plus" size={14} />
+            Add resume &amp; role
+          </button>
+          {/* Only offered while there is a restriction to lift — granting is
+              refused server-side otherwise, so a button that always showed
+              would mostly be a dead end. */}
+          {canGrantReapply && reapplyQuery.data && !reapplyQuery.data.can_self_apply_now && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAllowReapply(true)}>
+              Allow Reapply
+            </button>
+          )}
         </div>
       </div>
 
@@ -209,102 +277,155 @@ export function CandidateDetailPage() {
 
         <section className="card">
           <h2>Profile</h2>
-          <div className="detail-row">
-            <span className="detail-row-label">Phone</span>
-            <span>{candidate.phone ?? "—"}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Location</span>
-            <span>{candidate.location ?? "—"}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Current title</span>
-            <span>{candidate.current_title ?? "—"}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Applied roles</span>
-            <span>
-              {appliedRoles.length === 0 ? (
-                "—"
-              ) : (
-                <span style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
-                  {appliedRoles.map(([jobTitle, applicationId]) => (
-                    <Link key={applicationId} to={`/recruiter/applications/${applicationId}`}>
-                      {jobTitle}
-                    </Link>
-                  ))}
-                </span>
-              )}
-            </span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Experience</span>
-            <span>
-              {candidate.years_experience !== null ? `${candidate.years_experience} yrs` : "—"}
-            </span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Candidate type</span>
-            <span>
-              {candidate.candidate_type === null
-                ? "—"
-                : candidate.candidate_type === "FRESHER"
-                  ? "Fresher"
-                  : "Experienced"}
-            </span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Current company</span>
-            <span>{candidate.current_company ?? "—"}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Preferred location</span>
-            <span>{candidate.preferred_location ?? "—"}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Notice period</span>
-            <span>
-              {candidate.immediate_joiner
-                ? "Immediate joiner"
-                : candidate.notice_period_days !== null
-                  ? `${candidate.notice_period_days} days`
+          <Collapsible collapsedHeight={360} label="Candidate profile details">
+            <div className="detail-row">
+              <span className="detail-row-label">Mobile</span>
+              <span>{candidate.phone ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Email verification</span>
+              <span>
+                {candidate.email_verified_at ? (
+                  <span className="badge badge-active">
+                    Verified {new Date(candidate.email_verified_at).toLocaleDateString()}
+                  </span>
+                ) : (
+                  <span className="badge badge-inactive">Not verified</span>
+                )}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Date of birth</span>
+              <span>
+                {candidate.date_of_birth
+                  ? new Date(`${candidate.date_of_birth}T00:00:00`).toLocaleDateString()
                   : "—"}
-            </span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Qualification</span>
-            <span>{candidate.qualification ?? "—"}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">LinkedIn</span>
-            <span>
-              {candidate.linkedin_url ? (
-                <a href={candidate.linkedin_url} target="_blank" rel="noopener noreferrer">
-                  {candidate.linkedin_url}
-                </a>
-              ) : (
-                "—"
-              )}
-            </span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">GitHub</span>
-            <span>
-              {candidate.github_url ? (
-                <a href={candidate.github_url} target="_blank" rel="noopener noreferrer">
-                  {candidate.github_url}
-                </a>
-              ) : (
-                "—"
-              )}
-            </span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-row-label">Source</span>
-            <span>{candidate.source}</span>
-          </div>
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Place of birth</span>
+              <span>{candidate.place_of_birth ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Languages</span>
+              <span>{candidate.languages.length > 0 ? candidate.languages.join(", ") : "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Location</span>
+              <span>{candidate.location ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Current title</span>
+              <span>{candidate.current_title ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Applied roles</span>
+              <span>
+                {appliedRoles.length === 0 ? (
+                  "—"
+                ) : (
+                  <span style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                    {appliedRoles.map(([jobTitle, applicationId]) => (
+                      <Link key={applicationId} to={`/recruiter/applications/${applicationId}`}>
+                        {jobTitle}
+                      </Link>
+                    ))}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Experience</span>
+              <span>
+                {candidate.years_experience !== null ? `${candidate.years_experience} yrs` : "—"}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Candidate type</span>
+              <span>
+                {candidate.candidate_type === null
+                  ? "—"
+                  : candidate.candidate_type === "FRESHER"
+                    ? "Fresher"
+                    : "Experienced"}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Current company</span>
+              <span>{candidate.current_company ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Preferred location</span>
+              <span>{candidate.preferred_location ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Notice period</span>
+              <span>
+                {candidate.immediate_joiner
+                  ? "Immediate joiner"
+                  : candidate.notice_period_days !== null
+                    ? `${candidate.notice_period_days} days`
+                    : "—"}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Qualification</span>
+              <span>{candidate.qualification ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">LinkedIn</span>
+              <span>
+                {candidate.linkedin_url ? (
+                  <a href={candidate.linkedin_url} target="_blank" rel="noopener noreferrer">
+                    {candidate.linkedin_url}
+                  </a>
+                ) : (
+                  "—"
+                )}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">GitHub</span>
+              <span>
+                {candidate.github_url ? (
+                  <a href={candidate.github_url} target="_blank" rel="noopener noreferrer">
+                    {candidate.github_url}
+                  </a>
+                ) : (
+                  "—"
+                )}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Source</span>
+              <span>{candidate.source}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-row-label">Self-apply</span>
+              <span style={{ textAlign: "right" }}>{reapplyNote}</span>
+            </div>
+          </Collapsible>
         </section>
       </div>
+
+      <CandidateJourney candidateId={candidate.id} />
+
+      {showAllowReapply && (
+        <AllowReapplyModal
+          candidateId={candidate.id}
+          candidateName={candidate.full_name}
+          eligibleFrom={reapply?.eligible_from ?? null}
+          onClose={() => setShowAllowReapply(false)}
+        />
+      )}
+
+      {showAddResume && (
+        <AddResumeAndRoleModal
+          candidateId={candidate.id}
+          candidateName={candidate.full_name}
+          onClose={() => setShowAddResume(false)}
+        />
+      )}
 
       {previewing && (
         <ResumePreviewModal

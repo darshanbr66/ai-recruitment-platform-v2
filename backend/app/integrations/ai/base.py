@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AIProviderError(Exception):
@@ -18,12 +18,22 @@ class AIProviderNotConfiguredError(AIProviderError):
     `ANTHROPIC_API_KEY` nor `OPENAI_API_KEY` is set."""
 
 
+#: Recommendations that count as a MATCH when a provider omits the explicit
+#: `decision` (older prompt shape): a borderline "possible" match stays in
+#: the pipeline for a human to judge — the AI only screens out clear misfits.
+_MATCH_RECOMMENDATIONS = frozenset({"STRONG_MATCH", "POSSIBLE_MATCH"})
+
+
 class ScreeningVerdict(BaseModel):
     """The structured result an `LLMProvider` must produce — persisted
     as-is onto `ScreeningRun` (app/models/screening.py). Presented in the
     UI as an AI-assisted opinion for a recruiter to review, never as an
-    automatic decision (CLAUDE.md § 12 / docs/ai-screening.md)."""
+    automatic decision (CLAUDE.md § 12 / docs/ai-screening.md).
 
+    `decision` is the binary outcome business logic acts on (the
+    submission-time screening gate); HR can always override it."""
+
+    decision: Literal["MATCH", "NOT_MATCH"] | None = None
     overall_score: int = Field(ge=0, le=100)
     recommendation: str
     summary: str
@@ -33,6 +43,16 @@ class ScreeningVerdict(BaseModel):
     concerns: list[str] = Field(default_factory=list)
     experience_assessment: str = ""
     education_assessment: str = ""
+    matched_requirements: list[str] = Field(default_factory=list)
+    missing_requirements: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _derive_decision(self) -> "ScreeningVerdict":
+        if self.decision is None:
+            self.decision = (
+                "MATCH" if self.recommendation.upper() in _MATCH_RECOMMENDATIONS else "NOT_MATCH"
+            )
+        return self
 
 
 class LLMProvider(ABC):

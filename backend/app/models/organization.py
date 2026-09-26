@@ -27,3 +27,9 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=OrganizationStatus.ACTIVE,
         server_default=OrganizationStatus.ACTIVE.value,
     )
+    # The recruitment team's public contact address — shown to candidates
+    # on the careers site ("need to update your information?"), used as the
+    # reply-to of system emails (verification code, welcome). Configured by
+    # a platform administrator per organization, never hardcoded. NULL means
+    # "not published": candidate-facing copy then omits the address.
+    careers_contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)

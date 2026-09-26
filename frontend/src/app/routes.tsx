@@ -33,6 +33,7 @@ const ApplicationsPage = page(() => import("../features/recruiter/applications/A
 const AssessmentDetailPage = page(() => import("../features/recruiter/assessments/AssessmentDetailPage"), "AssessmentDetailPage");
 const AssessmentsPage = page(() => import("../features/recruiter/assessments/AssessmentsPage"), "AssessmentsPage");
 const CalendarPage = page(() => import("../features/recruiter/calendar/CalendarPage"), "CalendarPage");
+const TalkToAdminPage = page(() => import("../features/recruiter/adminMessages/TalkToAdminPage"), "TalkToAdminPage");
 const CampusDriveDetailPage = page(() => import("../features/recruiter/campusDrives/CampusDriveDetailPage"), "CampusDriveDetailPage");
 const CampusDrivesPage = page(() => import("../features/recruiter/campusDrives/CampusDrivesPage"), "CampusDrivesPage");
 const CandidateDetailPage = page(() => import("../features/recruiter/candidates/CandidateDetailPage"), "CandidateDetailPage");
@@ -107,6 +108,7 @@ export function AppRoutes() {
           <Route path="users" element={<UsersPage />} />
           <Route path="activities" element={<ActivitiesPage />} />
           <Route path="email" element={<EmailPage />} />
+          <Route path="talk-to-admin" element={<TalkToAdminPage />} />
         </Route>
 
         <Route

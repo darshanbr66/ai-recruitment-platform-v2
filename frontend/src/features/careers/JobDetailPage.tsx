@@ -71,7 +71,11 @@ export function JobDetailPage() {
             )}
 
             <div id="apply">
-              <JobApplicationForm slug={slug} jobId={jobId} />
+              <JobApplicationForm
+                slug={slug}
+                jobId={jobId}
+                contactEmail={jobQuery.data.organization.careers_contact_email}
+              />
             </div>
           </div>
         )}

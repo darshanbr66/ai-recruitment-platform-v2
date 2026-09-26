@@ -5,7 +5,8 @@ public application link (docs/campus-hiring.md)."""
 from httpx import AsyncClient
 
 from app.models.user import User
-from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login, make_minimal_pdf
+from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login
+from tests.public_apply import apply_to_campus_drive
 
 
 async def _bootstrap_org_with_job(client: AsyncClient, slug: str) -> dict:
@@ -202,16 +203,14 @@ async def test_public_candidate_can_view_and_apply_to_active_drive(
     assert view_body["status"] == "ACTIVE"
     assert view_body["has_assessment"] is False
 
-    resume_bytes = make_minimal_pdf("Priya Candidate")
-    apply_response = await client.post(
-        f"/api/v1/public/campus-drive/{token}/apply",
-        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
-        files={"resume": ("resume.pdf", resume_bytes, "application/pdf")},
-    )
+    apply_response = await apply_to_campus_drive(client, token, email="priya@example.com")
     assert apply_response.status_code == 201, apply_response.text
     body = apply_response.json()
     assert body["job_title"] == "Graduate Engineer"
     assert body["assessment_invitation_link"] is None
+    # Coarse outcome only — never the internal status.
+    assert body["outcome"] == "RECEIVED"
+    assert "status" not in body
 
     applications = (
         await client.get(
@@ -238,13 +237,17 @@ async def test_apply_to_paused_drive_is_rejected(client: AsyncClient, super_admi
     )
     token = _extract_token(drive["application_link"])
 
-    response = await client.post(
-        f"/api/v1/public/campus-drive/{token}/apply",
-        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
-        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
+    response = await apply_to_campus_drive(
+        client, token, email="priya@example.com", token="never-issued"
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "drive_not_active"
+    code_request = await client.post(
+        f"/api/v1/public/campus-drive/{token}/email-verification/request",
+        json={"email": "priya@example.com"},
+    )
+    assert code_request.status_code == 400
+    assert code_request.json()["error"]["code"] == "drive_not_active"
 
 
 async def test_public_view_of_paused_drive_still_shows_details(
@@ -301,10 +304,8 @@ async def test_public_view_of_closed_drive_hides_all_recruitment_content(
     assert "college_name" not in body
     assert "has_assessment" not in body
 
-    apply_response = await client.post(
-        f"/api/v1/public/campus-drive/{token}/apply",
-        data={"full_name": "Priya Candidate", "email": "priya-closed@example.com"},
-        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
+    apply_response = await apply_to_campus_drive(
+        client, token, email="priya-closed@example.com", token="never-issued"
     )
     assert apply_response.status_code == 400
     assert apply_response.json()["error"]["code"] == "drive_not_active"
@@ -367,15 +368,16 @@ async def test_apply_with_default_assessment_auto_invites(
     )
     token = _extract_token(drive["application_link"])
 
-    apply_response = await client.post(
-        f"/api/v1/public/campus-drive/{token}/apply",
-        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
-        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
-    )
+    apply_response = await apply_to_campus_drive(client, token, email="priya@example.com")
     assert apply_response.status_code == 201, apply_response.text
     body = apply_response.json()
     assert body["assessment_invitation_link"] is not None
-    assert body["status"] == "ASSESSMENT_INVITED"
+    (application,) = (
+        await client.get(
+            f"/api/v1/recruiter/applications?campus_drive_id={drive['id']}", headers=ctx["headers"]
+        )
+    ).json()
+    assert application["status"] == "ASSESSMENT_INVITED"
 
 
 async def test_funnel_counts_reflect_real_applications(client: AsyncClient, super_admin: User) -> None:
@@ -393,11 +395,8 @@ async def test_funnel_counts_reflect_real_applications(client: AsyncClient, supe
     ).json()
     assert empty_funnel["registered"] == 0
 
-    await client.post(
-        f"/api/v1/public/campus-drive/{token}/apply",
-        data={"full_name": "Priya Candidate", "email": "priya@example.com"},
-        files={"resume": ("resume.pdf", make_minimal_pdf("x"), "application/pdf")},
-    )
+    applied = await apply_to_campus_drive(client, token, email="priya@example.com")
+    assert applied.status_code == 201, applied.text
 
     funnel = (
         await client.get(f"/api/v1/recruiter/campus-drives/{drive['id']}/funnel", headers=ctx["headers"])

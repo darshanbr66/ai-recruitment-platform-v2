@@ -19,6 +19,7 @@ from app.models.application import Application, ApplicationSource, ApplicationSt
 from app.models.candidate import CandidateType
 from app.models.user import User
 from app.schemas.application import (
+    AIScreeningOverrideRequest,
     ApplicationCreateRequest,
     ApplicationDeleteRequest,
     ApplicationResponse,
@@ -44,7 +45,7 @@ from app.services import (
 router = APIRouter(prefix="/applications", tags=["recruiter-applications"])
 
 
-def _to_response(application: Application) -> ApplicationResponse:
+def to_response(application: Application) -> ApplicationResponse:
     return ApplicationResponse(
         id=application.id,
         organization_id=application.organization_id,
@@ -57,6 +58,7 @@ def _to_response(application: Application) -> ApplicationResponse:
         campus_drive_id=application.campus_drive_id,
         status=application.status,
         source=application.source,
+        is_self_service=application.is_self_service,
         applied_at=application.applied_at,
         created_at=application.created_at,
         updated_at=application.updated_at,
@@ -81,7 +83,7 @@ async def create_application(
         source=payload.source,
         actor_user_id=current_user.id,
     )
-    return _to_response(application)
+    return to_response(application)
 
 
 # Upper bound on one page. The Applications page asks for 25; anything the
@@ -170,7 +172,7 @@ async def list_applications(
         else await application_service.count_applications(db, current_user.organization_id, filters)
     )
     response.headers["X-Total-Count"] = str(total)
-    return [_to_response(application) for application in applications]
+    return [to_response(application) for application in applications]
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)
@@ -182,7 +184,7 @@ async def get_application(
     application = await application_service.get_application(db, application_id)
     if application is None:
         raise NotFoundError("Application not found.")
-    return _to_response(application)
+    return to_response(application)
 
 
 @router.post("/{application_id}/delete", response_model=ApplicationResponse)
@@ -198,7 +200,7 @@ async def delete_application(
     deleted = await application_service.delete_application(
         db, application, actor=current_user, reason=payload.reason
     )
-    return _to_response(deleted)
+    return to_response(deleted)
 
 
 @router.get("/{application_id}/resume")
@@ -316,7 +318,25 @@ async def change_application_status(
 
     # Deliberately no email here: candidate email is manual-only, sent from
     # the explicit "Send Email" action (`POST .../email/send`).
-    return _to_response(updated)
+    return to_response(updated)
+
+
+@router.post("/{application_id}/ai-override", response_model=ApplicationResponse)
+async def override_ai_screening(
+    application_id: uuid.UUID,
+    payload: AIScreeningOverrideRequest,
+    current_user: User = Depends(require_permission("application.status.change")),
+    db: AsyncSession = Depends(get_db),
+) -> ApplicationResponse:
+    """HR has final authority: moves an AI-screened-out application back into
+    review (UNDER_REVIEW). The reason is required and audited."""
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    updated = await application_service.override_ai_screening(
+        db, application, actor=current_user, reason=payload.reason
+    )
+    return to_response(updated)
 
 
 @router.post("/{application_id}/email/compose", response_model=EmailComposeResponse)

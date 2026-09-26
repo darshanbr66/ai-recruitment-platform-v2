@@ -8,6 +8,8 @@ export type Tone = "neutral" | "info" | "brand" | "success" | "danger" | "accent
 
 const TONES: Record<string, Tone> = {
   APPLIED: "neutral",
+  // Advisory, not final — HR can override it back into review.
+  AI_SCREENED_OUT: "warn",
   UNDER_REVIEW: "info",
   SCREENING: "info",
   ASSESSMENT_INVITED: "brand",
@@ -53,8 +55,14 @@ export function toneColor(tone: Tone): string {
   return TONE_COLOR[tone];
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  AI_SCREENED_OUT: "AI screened out",
+  HR_MATCH: "HR match",
+};
+
 /** "UNDER_REVIEW" -> "Under review". */
 export function humanizeStatus(status: string): string {
+  if (STATUS_LABELS[status]) return STATUS_LABELS[status];
   const text = status.replace(/_/g, " ").toLowerCase();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }

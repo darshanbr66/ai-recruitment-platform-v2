@@ -12,10 +12,10 @@ from sqlalchemy.orm import contains_eager, joinedload
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.application import Application, ApplicationSource, ApplicationStatus
 from app.models.candidate import Candidate, CandidateType
-from app.models.job import Job
+from app.models.job import Job, JobStatus
 from app.models.user import User
 from app.schemas.application import ApplicationSortField, SortDirection
-from app.services import activity_service
+from app.services import activity_service, resume_service
 from app.workflows import application_workflow
 
 _WITH_CANDIDATE_AND_JOB = (
@@ -34,7 +34,11 @@ async def create_application(
     source: ApplicationSource,
     actor_user_id: uuid.UUID | None,
     campus_drive_id: uuid.UUID | None = None,
+    is_self_service: bool = False,
 ) -> Application:
+    """`is_self_service` is set only by the candidate-facing apply flow
+    (app/services/public_application_service.py) — it is what the 3-month
+    reapply rule counts, so staff-facing callers never pass it."""
     # RLS already scopes db.get() to the caller's own tenant (see
     # docs/security.md § 2) — a cross-tenant id is indistinguishable from a
     # nonexistent one, which is exactly the 404 this raises.
@@ -50,6 +54,7 @@ async def create_application(
         status=ApplicationStatus.APPLIED,
         source=source,
         campus_drive_id=campus_drive_id,
+        is_self_service=is_self_service,
     )
     db.add(application)
     try:
@@ -328,3 +333,88 @@ async def delete_application(
         reason=reason,
     )
     return application
+
+
+async def override_ai_screening(
+    db: AsyncSession, application: Application, *, actor: User, reason: str
+) -> Application:
+    """HR overruling the submission-time AI screening: AI_SCREENED_OUT ->
+    UNDER_REVIEW. The workflow requires the reason and writes both the
+    status history and the AI_SCREENING_OVERRIDDEN audit entry."""
+    if application.status != ApplicationStatus.AI_SCREENED_OUT:
+        raise ConflictError("Only an AI-screened-out application can be overridden.")
+    return await application_workflow.transition(
+        db,
+        application,
+        to_status=ApplicationStatus.UNDER_REVIEW,
+        actor_user_id=actor.id,
+        reason=reason,
+    )
+
+
+#: Jobs HR may match a candidate to — anything still live (a DRAFT or
+#: ON_HOLD role can be staffed in advance); never a CLOSED/WITHDRAWN one.
+MATCHABLE_JOB_STATUSES = frozenset({JobStatus.OPEN, JobStatus.DRAFT, JobStatus.ON_HOLD})
+
+
+async def match_candidate_to_job(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    job_id: uuid.UUID,
+    actor: User,
+    reason: str | None,
+) -> Application:
+    """HR moving an existing candidate to another job — whether or not the
+    AI thinks they fit (HR has final authority). Creates a *new* HR_MATCH
+    application on the same Candidate (never a new candidate, never an edit
+    of the original application, whose history stays intact) and attaches
+    the candidate's latest stored resume to it so screening, preview and
+    download work for the new role straight away.
+
+    RLS already hides other tenants' rows; the explicit organization checks
+    are the application-layer half of the two-layer isolation rule, so a
+    cross-tenant id is a 404 even if RLS were ever misconfigured."""
+    candidate = await db.get(Candidate, candidate_id)
+    if (
+        candidate is None
+        or candidate.deleted_at is not None
+        or candidate.organization_id != organization_id
+    ):
+        raise NotFoundError("Candidate not found.")
+    job = await db.get(Job, job_id)
+    if job is None or job.deleted_at is not None or job.organization_id != organization_id:
+        raise NotFoundError("Job not found.")
+    if job.status not in MATCHABLE_JOB_STATUSES:
+        raise ConflictError("This job is closed; a candidate can't be matched to it.")
+
+    latest_resume = await resume_service.get_latest_resume_for_candidate(db, candidate_id)
+    application = await create_application(
+        db,
+        organization_id=organization_id,
+        candidate_id=candidate_id,
+        job_id=job_id,
+        source=ApplicationSource.HR_MATCH,
+        actor_user_id=actor.id,
+    )
+    if latest_resume is not None:
+        await resume_service.link_existing_resume(
+            db, source=latest_resume, application_id=application.id
+        )
+        await db.refresh(application, attribute_names=["resume"])
+
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=actor,
+        action="CANDIDATE_MATCHED_TO_JOB",
+        entity_type="candidate",
+        entity_id=candidate.id,
+        entity_label=f"{candidate.full_name} ({candidate.email})",
+        description=f'{candidate.full_name} was matched by HR to "{job.title}".',
+        reason=reason,
+    )
+    reloaded = await get_application(db, application.id)
+    assert reloaded is not None
+    return reloaded

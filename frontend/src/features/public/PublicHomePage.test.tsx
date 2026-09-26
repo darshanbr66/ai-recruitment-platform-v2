@@ -17,71 +17,48 @@ function renderWithProviders(ui: React.ReactElement) {
   );
 }
 
-const job = {
-  id: "job-1",
-  title: "Backend Engineer",
-  department: "Engineering",
-  location: "Remote",
-  employment_type: "Full-time",
-  openings_count: 1,
-  created_at: new Date().toISOString(),
-};
-
 describe("PublicHomePage", () => {
-  it("presents SIGVITAS' own careers site: SIGVITAS-first, with the AI shown as the intelligence behind it, not the brand", async () => {
-    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
-
+  it("presents the company first: SIGVITAS-branded, with Careers as a deliberate choice", async () => {
     renderWithProviders(<PublicHomePage />);
 
-    expect(await screen.findByText("SIGVITAS")).toBeInTheDocument();
+    expect((await screen.findAllByText("SIGVITAS")).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/build what's next,\s*with sigvitas/i);
+    expect(screen.getByRole("heading", { name: "Who we are" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Our values" })).toBeInTheDocument();
 
-    // The public brand is SIGVITAS — never "AI Recruitment Platform" (that is the staff portal's name).
+    // The public brand is SIGVITAS — never "AI Recruitment Platform" (the staff portal's name).
     expect(screen.queryByText(/ai recruitment platform/i)).not.toBeInTheDocument();
-    // ...while the AI is still explained honestly: it assists, a person decides.
-    expect(screen.getByText(/a person always makes the decision/i)).toBeInTheDocument();
 
-    // Every occurrence of the primary CTA points at the real SIGVITAS
-    // careers route, and no generic multi-tenant/SaaS language leaks in.
-    for (const link of screen.getAllByRole("link", { name: /explore open roles/i })) {
+    // Careers is reachable, and every careers link points at the real careers route.
+    const careersLinks = screen.getAllByRole("link", { name: /careers/i });
+    expect(careersLinks.length).toBeGreaterThan(0);
+    for (const link of careersLinks) {
       expect(link).toHaveAttribute("href", "/org/sigvitas");
     }
     for (const link of screen.getAllByRole("link", { name: /staff sign in/i })) {
       expect(link).toHaveAttribute("href", "/recruiter/login");
     }
-
     expect(screen.queryByText(/create your organization/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/for organizations/i)).not.toBeInTheDocument();
   });
 
-  it("shows a live preview of current openings from the real jobs API", async () => {
-    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([job]);
+  it("is not a job board: no openings, no 'Explore Open Roles', no hiring process", async () => {
+    const listOpenJobs = vi.spyOn(careersApi, "listOpenJobs");
 
     renderWithProviders(<PublicHomePage />);
+    await screen.findByRole("heading", { name: "Who we are" });
 
-    expect(await screen.findByText("Backend Engineer")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /backend engineer/i })).toHaveAttribute(
-      "href",
-      "/org/sigvitas/jobs/job-1",
-    );
-    // the live count in the hero comes from the same response
-    expect(await screen.findByText(/1 open role right now/i)).toBeInTheDocument();
-  });
-
-  it("shows a designed empty state, and no live count, when nothing is open", async () => {
-    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
-
-    renderWithProviders(<PublicHomePage />);
-
-    expect(await screen.findByText("No open roles right now")).toBeInTheDocument();
-    expect(screen.queryByText(/^\d+ open roles? right now/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/explore open roles/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/our hiring process/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/current openings/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/open roles? right now/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /openings/i })).not.toBeInTheDocument();
+    // The homepage doesn't even fetch jobs.
+    expect(listOpenJobs).not.toHaveBeenCalled();
   });
 
   it("falls back to the static network poster where WebGL isn't available", async () => {
-    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
-
     const { container } = renderWithProviders(<PublicHomePage />);
-    await screen.findByText("SIGVITAS");
+    await screen.findByRole("heading", { level: 1 });
 
     // jsdom has no WebGL: the poster is the (complete) final state, no error UI.
     expect(container.querySelector(".hero-scene")).toHaveAttribute("data-scene-status", "fallback");
@@ -90,8 +67,6 @@ describe("PublicHomePage", () => {
   });
 
   it("explains the network with a legend whose categories can be highlighted", async () => {
-    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
-
     const { container } = renderWithProviders(<PublicHomePage />);
     const legend = await screen.findByRole("group", { name: "What the network represents" });
     const poster = () => container.querySelector(".network-poster");
@@ -113,15 +88,5 @@ describe("PublicHomePage", () => {
     expect(poster()).toHaveAttribute("data-highlight", "job");
     fireEvent.click(jobs);
     expect(jobs).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("marks where AI helps and where only a person decides in the hiring process", async () => {
-    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
-
-    renderWithProviders(<PublicHomePage />);
-    await screen.findByText("SIGVITAS");
-
-    expect(screen.getAllByText("AI-assisted").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Human decision").length).toBeGreaterThan(0);
   });
 });

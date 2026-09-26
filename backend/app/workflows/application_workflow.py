@@ -11,13 +11,25 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, UnprocessableError
 from app.models.application import Application, ApplicationStatus, ApplicationStatusHistory
 from app.models.user import User
 from app.services import activity_service
 
 TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
     ApplicationStatus.APPLIED: frozenset(
+        {
+            ApplicationStatus.UNDER_REVIEW,
+            ApplicationStatus.REJECTED,
+            # System-only (see SYSTEM_ONLY_TARGETS): the submission-time AI
+            # screening found the resume a NOT_MATCH for the job.
+            ApplicationStatus.AI_SCREENED_OUT,
+        }
+    ),
+    # AI screening is advisory: HR either overrides it back into review
+    # (reason required, audited as AI_SCREENING_OVERRIDDEN) or confirms it
+    # as a final REJECTED. Never a dead end.
+    ApplicationStatus.AI_SCREENED_OUT: frozenset(
         {ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED}
     ),
     ApplicationStatus.UNDER_REVIEW: frozenset(
@@ -67,8 +79,24 @@ TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
 }
 
 
+#: Statuses only the system itself may set (`actor_user_id=None`) — a person
+#: can't label an application "AI screened out"; only the AI screening can.
+SYSTEM_ONLY_TARGETS: frozenset[ApplicationStatus] = frozenset(
+    {ApplicationStatus.AI_SCREENED_OUT}
+)
+
+
 def allowed_next_statuses(current: ApplicationStatus) -> frozenset[ApplicationStatus]:
     return TRANSITIONS[current]
+
+
+def is_ai_override(from_status: ApplicationStatus, to_status: ApplicationStatus) -> bool:
+    """Moving an AI-screened-out application back into the pipeline — HR
+    overruling the AI's advisory decision."""
+    return (
+        from_status == ApplicationStatus.AI_SCREENED_OUT
+        and to_status != ApplicationStatus.REJECTED
+    )
 
 
 async def transition(
@@ -83,6 +111,15 @@ async def transition(
     if to_status not in TRANSITIONS[from_status]:
         raise ConflictError(
             f"Cannot move an application from {from_status.value} to {to_status.value}."
+        )
+    if to_status in SYSTEM_ONLY_TARGETS and actor_user_id is not None:
+        raise ConflictError(
+            f"{to_status.value} is set only by the automatic AI screening, not manually."
+        )
+    override = is_ai_override(from_status, to_status)
+    if override and not (reason and reason.strip()):
+        raise UnprocessableError(
+            "Overriding the AI screening decision requires a reason.", code="reason_required"
         )
 
     application.status = to_status
@@ -112,6 +149,21 @@ async def transition(
         description=f"Status changed from {from_status.value} to {to_status.value}.",
         reason=reason,
     )
+    if override:
+        await activity_service.record_activity(
+            db,
+            organization_id=application.organization_id,
+            actor=actor,
+            action="AI_SCREENING_OVERRIDDEN",
+            entity_type="application",
+            entity_id=application.id,
+            entity_label=f"Application #{str(application.id)[:8]}",
+            description=(
+                "The AI screening decision (AI screened out) was overridden by HR; the "
+                f"application moved to {to_status.value}."
+            ),
+            reason=reason,
+        )
     return application
 
 

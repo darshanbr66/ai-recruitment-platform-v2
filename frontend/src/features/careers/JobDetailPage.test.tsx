@@ -16,7 +16,7 @@ const baseJob: PublicJobDetail = {
   openings_count: 1,
   created_at: new Date().toISOString(),
   description: "Own the recruitment platform's backend.",
-  organization: { name: "SIGVITAS", slug: "sigvitas" },
+  organization: { name: "SIGVITAS", slug: "sigvitas", careers_contact_email: "careers@example.com" },
 };
 
 function renderPage() {

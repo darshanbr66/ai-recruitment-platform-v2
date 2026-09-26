@@ -5,6 +5,7 @@ from httpx import AsyncClient
 
 from app.models.user import User
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login, make_minimal_pdf
+from tests.public_apply import apply_publicly
 
 _ASSESSMENT_PAYLOAD = {
     "title": "Python Basics",
@@ -66,10 +67,13 @@ async def _bootstrap_org_with_screening_application(client: AsyncClient, slug: s
     )
 
     resume_bytes = make_minimal_pdf("Jane Candidate")
-    apply_response = await client.post(
-        f"/api/v1/public/organizations/{slug}/jobs/{job['id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files={"resume": ("resume.pdf", resume_bytes, "application/pdf")},
+    apply_response = await apply_publicly(
+        client,
+        slug,
+        job["id"],
+        email="jane@example.com",
+        resume=("resume.pdf", resume_bytes, "application/pdf"),
+        isolate_welcome_email=True,
     )
     application_id = apply_response.json()["id"]
 

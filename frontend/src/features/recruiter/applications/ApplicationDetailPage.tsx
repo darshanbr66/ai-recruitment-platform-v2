@@ -36,6 +36,7 @@ import {
   changeApplicationStatus,
   downloadResume,
   getApplication,
+  overrideAiScreening,
 } from "./api";
 import { EmailComposerModal } from "./EmailComposerModal";
 
@@ -91,6 +92,7 @@ export function ApplicationDetailPage() {
   // null = composer closed; "" = open with no template chosen yet.
   const [composerTemplate, setComposerTemplate] = useState<EmailTemplateKey | "" | null>(null);
   const [emailFeedback, setEmailFeedback] = useState<string | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const applicationQuery = useQuery({
     queryKey: ["recruiter", "applications", applicationId],
@@ -143,6 +145,18 @@ export function ApplicationDetailPage() {
     },
     onError: (err) => {
       showToast(err instanceof ApiError ? err.message : "Could not update the status.", "error");
+    },
+  });
+
+  const overrideMutation = useMutation({
+    mutationFn: () => overrideAiScreening(applicationId, overrideReason.trim(), token),
+    onSuccess: () => {
+      setOverrideReason("");
+      showToast("AI decision overridden — moved to Under review.", "success");
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications"] });
+    },
+    onError: (err) => {
+      showToast(err instanceof ApiError ? err.message : "Could not override the AI decision.", "error");
     },
   });
 
@@ -334,6 +348,45 @@ export function ApplicationDetailPage() {
         <PipelineTrack status={application.status} />
       </section>
 
+      {application.status === "AI_SCREENED_OUT" && (
+        <section className="card ai-override-card" aria-labelledby="ai-override-title">
+          <h2 id="ai-override-title">AI screened out — advisory only</h2>
+          <p className="muted">
+            The automatic screening at submission judged this resume not to match the role's
+            requirements. AI screening is advisory: you have the final say. Review the evidence
+            below, then either move the candidate forward or confirm the rejection from the status
+            menu.
+          </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              overrideMutation.mutate();
+            }}
+          >
+            <label className="field">
+              <span>
+                Reason for overriding <span className="required-mark" aria-hidden="true">*</span>
+              </span>
+              <textarea
+                required
+                rows={2}
+                maxLength={1000}
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="e.g. Relevant experience the resume under-describes"
+              />
+            </label>
+            <button
+              type="submit"
+              className="btn btn-primary btn-sm"
+              disabled={overrideMutation.isPending || !overrideReason.trim()}
+            >
+              {overrideMutation.isPending ? <Spinner label="Overriding…" /> : "Override — move to review"}
+            </button>
+          </form>
+        </section>
+      )}
+
       <div className="detail-grid">
         <div className="stack-lg" style={{ gap: "1.5rem" }}>
           {/* Resume */}
@@ -392,8 +445,38 @@ export function ApplicationDetailPage() {
                   >
                     {latestScreening.recommendation?.replace(/_/g, " ")}
                   </span>
+                  {latestScreening.decision && (
+                    <span
+                      className={`badge ${latestScreening.decision === "MATCH" ? "badge-active" : "badge-warn"}`}
+                    >
+                      {latestScreening.decision === "MATCH" ? "Match" : "Not a match"}
+                    </span>
+                  )}
+                  {latestScreening.requested_by_user_id === null && (
+                    <span className="chip">Automatic at submission</span>
+                  )}
                 </div>
                 <p>{latestScreening.summary}</p>
+                {(latestScreening.matched_requirements?.length ?? 0) > 0 && (
+                  <div>
+                    <strong>Requirements evidenced</strong>
+                    <ul>
+                      {latestScreening.matched_requirements?.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(latestScreening.missing_requirements?.length ?? 0) > 0 && (
+                  <div>
+                    <strong>Requirements not evidenced</strong>
+                    <ul>
+                      {latestScreening.missing_requirements?.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {(latestScreening.matching_skills?.length ?? 0) > 0 && (
                   <p>
                     <strong>Matching skills:</strong> {latestScreening.matching_skills?.join(", ")}

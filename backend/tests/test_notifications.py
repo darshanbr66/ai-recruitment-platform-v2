@@ -10,6 +10,7 @@ from app.integrations.email.base import EmailNotConfiguredError
 from app.models.user import User
 from app.services import notification_service
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login
+from tests.public_apply import apply_publicly
 
 
 async def test_unconfigured_provider_raises_rather_than_faking_success() -> None:
@@ -69,10 +70,8 @@ async def test_apply_with_unconfigured_email_still_succeeds(
         f"/api/v1/recruiter/jobs/{job['id']}", json={"status": "OPEN"}, headers=admin_headers
     )
 
-    response = await client.post(
-        f"/api/v1/public/organizations/{org_payload['slug']}/jobs/{job['id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files={"resume": ("resume.pdf", b"%PDF-1.4 fake resume", "application/pdf")},
+    response = await apply_publicly(
+        client, org_payload["slug"], job["id"], email="jane@example.com"
     )
     assert response.status_code == 201, response.text
 

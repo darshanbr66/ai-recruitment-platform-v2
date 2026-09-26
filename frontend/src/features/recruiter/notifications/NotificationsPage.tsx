@@ -161,9 +161,16 @@ export function NotificationsPage() {
               + Announcement
             </button>
           )}
+          {/* Two distinct features, deliberately side by side: "Message a
+              colleague" fires a one-off direct notification at a chosen
+              person, while Talk to Admin opens the caller's ongoing thread
+              with the organization's admins (features/recruiter/adminMessages). */}
           <button type="button" className="btn btn-ghost" onClick={() => setComposer("message")}>
             + Message a colleague
           </button>
+          <Link to="/recruiter/talk-to-admin" className="btn btn-ghost">
+            <Icon name="send" size={16} /> Talk to Admin
+          </Link>
           {tab === "received" && (
             <button
               type="button"

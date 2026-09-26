@@ -130,6 +130,22 @@ const PATHS = {
   plus: <path d="M12 5v14M5 12h14" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   x: <path d="M6 6l12 12M18 6L6 18" />,
+  /* Panel outline with the rail filled in and a chevron pointing at the rail
+   * — collapse pushes the sidebar closed, expand pulls it back out. */
+  "sidebar-collapse": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="M16.5 9.5L14 12l2.5 2.5" />
+    </>
+  ),
+  "sidebar-expand": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="M13 9.5l2.5 2.5-2.5 2.5" />
+    </>
+  ),
   "arrow-right": <path d="M5 12h14M13 6l6 6-6 6" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   sun: (
@@ -185,6 +201,9 @@ export function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      /* Which glyph is drawn — the only thing that distinguishes two
+       * otherwise identical decorative SVGs to CSS and to tests. */
+      data-icon={name}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}

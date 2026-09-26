@@ -8,7 +8,7 @@ import { ThemeToggle } from "../theme/ThemeToggle";
  * (so the 3D stage reads edge to edge), it settles into a frosted bar once
  * the page has scrolled — a state change the user can see, not decoration.
  */
-export function LandingNav() {
+export function LandingNav({ careersPath }: { careersPath: string }) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -25,9 +25,9 @@ export function LandingNav() {
         <span className="landing-brand-name">SIGVITAS</span>
       </Link>
       <nav className="landing-nav-links" aria-label="Sections">
-        <a href="#openings">Openings</a>
-        <a href="#process">Hiring Process</a>
-        <a href="#campus">Campus</a>
+        <a href="#about">About</a>
+        <a href="#values">Values</a>
+        <Link to={careersPath}>Careers</Link>
       </nav>
       <div className="landing-nav-actions">
         <ThemeToggle />

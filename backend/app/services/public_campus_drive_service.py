@@ -3,7 +3,16 @@ required (docs/campus-hiring.md § 3). Same RLS-bootstrap pattern as
 app/services/assessment_public_service.py: resolve the drive's tenant via
 `rls_bypass` (the token is looked up before any org is known), then set
 tenant context so the rest of the request runs under ordinary RLS.
+
+Applying through a drive link follows exactly the same candidate identity
+rules as the careers site — email verified by one-time code, unique
+normalized mobile, unique email, one self-service application per person,
+AI screening against the drive's job, automatic welcome email — because it
+*is* the same flow (public_application_service.submit_application). The
+only campus-specific step is the default-assessment fast-track below.
 """
+
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,15 +22,18 @@ from app.core.exceptions import AppError, NotFoundError
 from app.core.security import hash_opaque_token
 from app.db.rls import rls_bypass, set_tenant_context
 from app.integrations.storage import ResumeStorage
-from app.models.application import ApplicationSource, ApplicationStatus
+from app.models.application import ApplicationStatus
 from app.models.campus_drive import CampusDrive, CampusDriveStatus
-from app.models.candidate import Candidate, CandidateSource
+from app.models.organization import Organization
+from app.schemas.candidate import PublicApplicantProfile
+from app.schemas.public import PublicApplicationOutcome
 from app.services import (
     application_service,
     assessment_service,
-    candidate_service,
-    resume_service,
+    email_verification_service,
+    public_application_service,
 )
+from app.services.email_verification_service import CodeSent, IssuedToken
 
 _INVALID_MESSAGE = "This campus drive link is no longer valid."
 
@@ -47,62 +59,90 @@ async def get_drive_by_token(db: AsyncSession, token: str) -> CampusDrive:
     return drive
 
 
-async def apply_to_drive(
-    db: AsyncSession,
-    storage: ResumeStorage,
-    *,
-    token: str,
-    full_name: str,
-    email: str,
-    phone: str | None,
-    resume_filename: str,
-    resume_content_type: str,
-    resume_bytes: bytes,
-) -> tuple:
-    drive = await get_drive_by_token(db, token)
+async def get_organization(db: AsyncSession, drive: CampusDrive) -> Organization:
+    organization = await db.get(Organization, drive.organization_id)
+    if organization is None:  # FK RESTRICT makes this unreachable in practice
+        raise NotFoundError(_INVALID_MESSAGE)
+    return organization
+
+
+def _require_active(drive: CampusDrive) -> None:
     if drive.status != CampusDriveStatus.ACTIVE:
         raise AppError(
             "This campus drive is not currently accepting applications.",
             code="drive_not_active",
         )
 
-    candidate = await candidate_service.get_candidate_by_email(
-        db, organization_id=drive.organization_id, email=email
-    )
-    if candidate is None:
-        candidate = Candidate(
-            organization_id=drive.organization_id,
-            email=email,
-            full_name=full_name,
-            phone=phone,
-            source=CandidateSource.CAMPUS_IMPORT,
-        )
-        db.add(candidate)
-        await db.flush()
 
-    application = await application_service.create_application(
-        db,
-        organization_id=drive.organization_id,
-        candidate_id=candidate.id,
-        job_id=drive.job_id,
-        source=ApplicationSource.CAMPUS_IMPORT,
-        actor_user_id=None,
-        campus_drive_id=drive.id,
+async def request_email_code(
+    db: AsyncSession, *, token: str, email: str
+) -> CodeSent:
+    """Same one-time-code flow (and the same per-email limits) as the careers
+    site, scoped to the drive's organization."""
+    drive = await get_drive_by_token(db, token)
+    _require_active(drive)
+    organization = await get_organization(db, drive)
+    return await email_verification_service.request_code(
+        db, organization=organization, email=email
     )
 
-    await resume_service.save_resume(
+
+async def verify_email_code(
+    db: AsyncSession, *, token: str, email: str, code: str
+) -> IssuedToken:
+    drive = await get_drive_by_token(db, token)
+    _require_active(drive)
+    organization = await get_organization(db, drive)
+    return await public_application_service.verify_applicant_email(
+        db, organization=organization, email=email, code=code
+    )
+
+
+@dataclass(frozen=True)
+class DriveSubmissionResult:
+    submission: public_application_service.SubmissionResult
+    organization: Organization
+    assessment_invitation_link: str | None
+
+
+async def apply_to_drive(
+    db: AsyncSession,
+    storage: ResumeStorage,
+    *,
+    token: str,
+    email: str,
+    verification_token: str | None,
+    profile: PublicApplicantProfile,
+    resume_filename: str,
+    resume_bytes: bytes,
+) -> DriveSubmissionResult:
+    drive = await get_drive_by_token(db, token)
+    _require_active(drive)
+    organization = await get_organization(db, drive)
+
+    submission = await public_application_service.submit_application(
         db,
         storage,
-        organization_id=drive.organization_id,
-        candidate_id=candidate.id,
-        application_id=application.id,
-        original_filename=resume_filename,
-        content_type=resume_content_type,
-        content=resume_bytes,
+        organization=organization,
+        job_id=drive.job_id,
+        email=email,
+        verification_token=verification_token,
+        profile=profile,
+        resume_filename=resume_filename,
+        resume_content_type="application/pdf",
+        resume_bytes=resume_bytes,
+        campus_drive=drive,
     )
 
     invitation_link: str | None = None
-    if drive.default_assessment_id is not None:
+    # Only an application that entered the pipeline is fast-tracked into
+    # the drive's assessment. An AI-screened-out one waits for HR, who can
+    # override the screening and invite the candidate manually.
+    if (
+        drive.default_assessment_id is not None
+        and submission.outcome == PublicApplicationOutcome.RECEIVED
+    ):
+        application = submission.application
         # Fast-track through the ordinary application workflow so a
         # campus-drive application with a default assessment still goes
         # through the same legal transitions as any other application
@@ -123,9 +163,8 @@ async def apply_to_drive(
         )
         invitation_link = f"/assessment/{raw_token}"
 
-    reloaded = await application_service.get_application(db, application.id)
-    assert reloaded is not None
-
-    # No email is sent here — candidate email is manual-only. The candidate
-    # takes the assessment straight from `invitation_link` in this response.
-    return reloaded, invitation_link
+    return DriveSubmissionResult(
+        submission=submission,
+        organization=organization,
+        assessment_invitation_link=invitation_link,
+    )

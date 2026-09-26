@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import TooManyRequestsError
-from app.core.rate_limit import SlidingWindowRateLimiter
+from app.core.rate_limit import SlidingWindowRateLimiter, client_key
 from app.db.session import get_db
 from app.integrations.ai import ChatProvider, get_chat_provider
 from app.schemas.sigvi import ChatRequest, ChatResponse
@@ -38,15 +38,7 @@ def get_sigvi_rate_limiters() -> SigviRateLimiters:
 
 
 def _client_key(request: Request) -> str:
-    """Behind Render's proxy `request.client` is the proxy, so the caller's
-    address is the first `X-Forwarded-For` entry. That header is
-    client-controlled at its left end, so the per-client budget alone can be
-    dodged by rotating it — the global budget is the backstop."""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    first = forwarded.split(",")[0].strip()
-    if first:
-        return first
-    return request.client.host if request.client else "unknown"
+    return client_key(request)
 
 
 @router.post("/chat", response_model=ChatResponse)

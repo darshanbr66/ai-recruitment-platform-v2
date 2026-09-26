@@ -97,17 +97,31 @@ Same opaque-bearer-token pattern as assessment invitations
 one), only its SHA-256 hash is persisted.
 
 ```
-GET  /api/v1/public/campus-drive/{token}         -- drive/job/college details, no auth
-POST /api/v1/public/campus-drive/{token}/apply    -- name, email, phone, resume — no account
+GET  /api/v1/public/campus-drive/{token}                            -- drive/job/college details, no auth
+POST /api/v1/public/campus-drive/{token}/email-verification/request -- email a one-time code
+POST /api/v1/public/campus-drive/{token}/email-verification/verify  -- confirm it, get a verification token
+POST /api/v1/public/campus-drive/{token}/apply                      -- verified token + full form + resume — no account
 ```
 
-`apply` upserts the `Candidate` by (organization, email), creates the
-`Application` with `source=CAMPUS_IMPORT`, saves the resume, and — only if
-the drive has a `default_assessment_id` — fast-tracks the application
-through `UNDER_REVIEW → SCREENING` and creates an `AssessmentInvitation`
-immediately, returning its link in the response so the candidate can take
-the assessment right after applying. If no assessment is attached, the
-application simply stays at `APPLIED` for a recruiter to review.
+`apply` is the careers site's self-service flow
+(`docs/recruitment-workflow.md` § 6), applied to the drive's job, with the
+same identity rules: a verified email, the full mandatory form (including
+date of birth, place of birth and languages), one profile per person by
+email or normalized mobile number, and one self-service application per
+person *across the careers site and every drive*. A duplicate is refused,
+never merged or upserted. The `Application` is created with
+`source=CAMPUS_IMPORT` and tied to the drive, the resume is saved, the
+application is AI-screened against the drive's job, and a welcome email is
+sent.
+
+Only after that comes the campus-specific step. If the drive has a
+`default_assessment_id` **and** the screening didn't screen the candidate out,
+the application is fast-tracked through `UNDER_REVIEW → SCREENING` and an
+`AssessmentInvitation` is created immediately. Its link comes back in the
+response, so the candidate can take the assessment straight after applying.
+An `AI_SCREENED_OUT` application is kept but never fast-tracked; HR decides
+(override or reject). If the drive has no assessment attached, the
+application stays at `APPLIED` for a recruiter to review.
 
 **Import/add never sends an assessment invitation** unless the drive was
 explicitly configured with one — this is a hard requirement, not a

@@ -1,43 +1,21 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
 import { PublicHeader } from "../public/PublicHeader";
-import { applyToCampusDrive, getCampusDriveByToken } from "./api";
+import { getCampusDriveByToken } from "./api";
+import { JobApplicationForm } from "./JobApplicationForm";
 
+/** A campus drive's public link. Applying uses the same form and the same
+ * candidate identity rules as the careers site (email one-time code, every
+ * field mandatory, unique email and mobile, one application per person, AI
+ * screening against the drive's job). */
 export function CampusDriveApplyPage() {
   const { token = "" } = useParams<{ token: string }>();
   const driveQuery = useQuery({
     queryKey: ["public", "campus-drive", token],
     queryFn: () => getCampusDriveByToken(token),
   });
-
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [resume, setResume] = useState<File | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const applyMutation = useMutation({
-    mutationFn: () => {
-      if (!resume) throw new Error("Resume is required.");
-      return applyToCampusDrive(token, { full_name: fullName, email, phone }, resume);
-    },
-    onError: (err) => {
-      setFormError(err instanceof ApiError ? err.message : "Unable to submit your application.");
-    },
-  });
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setFormError(null);
-    if (!resume) {
-      setFormError("Please attach your resume.");
-      return;
-    }
-    applyMutation.mutate();
-  }
 
   return (
     <div>
@@ -91,82 +69,20 @@ export function CampusDriveApplyPage() {
 
             {driveQuery.data.status !== "ACTIVE" ? (
               <Alert>This campus drive is not currently accepting applications.</Alert>
-            ) : applyMutation.isSuccess ? (
-              <section className="card stack-sm">
-                <Alert variant="success">
-                  Thanks, {applyMutation.data.candidate_email}! Your application for{" "}
-                  <strong>{applyMutation.data.job_title}</strong> has been received.
-                  {applyMutation.data.assessment_invitation_link
-                    ? " This drive includes an assessment — start it now, or use the link we've sent to your email."
-                    : " We'll be in touch."}
-                </Alert>
-                {applyMutation.data.assessment_invitation_link && (
-                  <Link
-                    to={applyMutation.data.assessment_invitation_link}
-                    className="btn btn-primary"
-                    style={{ alignSelf: "flex-start" }}
-                  >
-                    Start Assessment
-                  </Link>
-                )}
-              </section>
             ) : (
-              <section className="card">
-                <h2>Apply for this drive</h2>
+              <>
                 {driveQuery.data.has_assessment && (
                   <p className="field-hint" style={{ marginBottom: "1rem" }}>
-                    This drive includes an assessment — after you apply, you'll be directed to take it.
+                    This drive includes an assessment — once your application is accepted, you'll be
+                    directed to take it.
                   </p>
                 )}
-                <form onSubmit={handleSubmit}>
-                  <label className="field">
-                    <span>Full name</span>
-                    <input
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Email</span>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Phone</span>
-                    <input
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Resume (PDF, DOC, or DOCX)</span>
-                    <input
-                      type="file"
-                      required
-                      accept=".pdf,.doc,.docx"
-                      onChange={(e) => setResume(e.target.files?.[0] ?? null)}
-                      disabled={applyMutation.isPending}
-                    />
-                  </label>
-
-                  {formError && <Alert>{formError}</Alert>}
-
-                  <button type="submit" className="btn btn-primary" disabled={applyMutation.isPending}>
-                    {applyMutation.isPending ? "Submitting…" : "Submit application"}
-                  </button>
-                </form>
-              </section>
+                <JobApplicationForm
+                  campusToken={token}
+                  title="Apply for this drive"
+                  contactEmail={driveQuery.data.careers_contact_email}
+                />
+              </>
             )}
           </>
         )}

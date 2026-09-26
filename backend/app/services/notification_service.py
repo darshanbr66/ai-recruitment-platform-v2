@@ -2,12 +2,20 @@
 SDK directly (CLAUDE.md § 2: "Email provider != business logic") — they come
 through here, which resolves the configured provider (app/integrations/email).
 
-Email is MANUAL ONLY. Nothing in the application calls this as a side effect
-of a workflow event — applying, assigning an assessment, or changing a status
-never sends anything. The single caller is the explicit "Send" action in
-`app/services/email_composer.py`, and failures propagate as `EmailError`
-(including `EmailNotConfiguredError`) so the sender is told exactly what
-happened rather than being shown a fake success.
+Recruitment email is manual. Assigning an assessment, changing a status,
+rejecting or selecting never sends anything on its own — those emails go out
+only through the explicit "Send" action in `app/services/email_composer.py`.
+
+Exactly two system emails exist, both from the candidate self-service flow
+(first HR meeting requirements): the email verification code the candidate
+requests (app/services/email_verification_service.py) and the welcome email
+sent once their application is accepted into the pipeline
+(app/services/public_application_service.py). Templates live in
+app/email_templates/system.py.
+
+Failures always propagate as `EmailError` (including
+`EmailNotConfiguredError`), so every caller reports exactly what happened
+rather than a fake success.
 """
 
 from collections.abc import Sequence
@@ -27,7 +35,10 @@ async def send_email(
     reply_to: str | None = None,
     cc: Sequence[str] = (),
     bcc: Sequence[str] = (),
+    kind: str = "manual_email",
 ) -> None:
+    """`kind` only labels the structured log line (e.g. "manual_email",
+    "email_verification_code", "candidate_welcome")."""
     provider = get_email_provider()
     try:
         await provider.send(
@@ -36,7 +47,7 @@ async def send_email(
     except EmailError as exc:
         logger.warning(
             "Email not sent",
-            extra={"extra_fields": {"kind": "manual_email", "reason": str(exc)}},
+            extra={"extra_fields": {"kind": kind, "reason": str(exc)}},
         )
         raise
     # Counts only — never addresses, subject or body.
@@ -44,7 +55,7 @@ async def send_email(
         "Email sent",
         extra={
             "extra_fields": {
-                "kind": "manual_email",
+                "kind": kind,
                 "recipients": len(to) + len(cc) + len(bcc),
             }
         },

@@ -1,9 +1,12 @@
 import { apiClient } from "../../lib/apiClient";
 import type {
+  EmailVerificationConfirmed,
+  EmailVerificationRequested,
   JobApplicationFormValues,
   PublicApplicationResult,
   PublicJobDetail,
   PublicJobSummary,
+  PublicOrganizationSummary,
 } from "../../types/careers";
 import type {
   AnswerSubmission,
@@ -12,7 +15,6 @@ import type {
   PublicSubmissionResult,
 } from "../../types/assessment";
 import type {
-  CampusDriveApplicationFormValues,
   PublicCampusDriveApplicationResult,
   PublicCampusDriveResult,
 } from "../../types/publicCampusDrive";
@@ -25,12 +27,31 @@ export function getOpenJob(slug: string, jobId: string) {
   return apiClient.get<PublicJobDetail>(`/api/v1/public/organizations/${slug}/jobs/${jobId}`);
 }
 
-export function applyToJob(
-  slug: string,
-  jobId: string,
+export function getPublicOrganization(slug: string) {
+  return apiClient.get<PublicOrganizationSummary>(`/api/v1/public/organizations/${slug}`);
+}
+
+export function requestEmailCode(slug: string, email: string) {
+  return apiClient.post<EmailVerificationRequested>(
+    `/api/v1/public/organizations/${slug}/email-verification/request`,
+    { email },
+  );
+}
+
+export function verifyEmailCode(slug: string, email: string, code: string) {
+  return apiClient.post<EmailVerificationConfirmed>(
+    `/api/v1/public/organizations/${slug}/email-verification/verify`,
+    { email, code },
+  );
+}
+
+/** The complete application form — shared by the careers site and campus
+ * drive links, which take exactly the same fields. */
+function buildApplicationFormData(
   values: JobApplicationFormValues,
   resume: File,
-) {
+  verificationToken: string,
+): FormData {
   const formData = new FormData();
   // Only non-empty values are sent — the backend treats an absent field as
   // "not provided", while an empty string would fail number/enum parsing.
@@ -41,7 +62,11 @@ export function applyToJob(
 
   append("full_name", values.full_name);
   append("email", values.email);
+  formData.append("email_verification_token", verificationToken);
   append("phone", values.phone);
+  append("date_of_birth", values.date_of_birth);
+  append("place_of_birth", values.place_of_birth);
+  for (const language of values.languages) append("languages", language);
   formData.append("candidate_type", values.candidate_type);
   if (values.candidate_type === "EXPERIENCED") {
     append("years_experience", values.years_experience);
@@ -59,10 +84,19 @@ export function applyToJob(
   append("linkedin_url", values.linkedin_url);
   append("github_url", values.github_url);
   formData.append("resume", resume);
+  return formData;
+}
 
+export function applyToJob(
+  slug: string,
+  jobId: string,
+  values: JobApplicationFormValues,
+  resume: File,
+  verificationToken: string,
+) {
   return apiClient.postForm<PublicApplicationResult>(
     `/api/v1/public/organizations/${slug}/jobs/${jobId}/apply`,
-    formData,
+    buildApplicationFormData(values, resume, verificationToken),
   );
 }
 
@@ -88,19 +122,28 @@ export function getCampusDriveByToken(token: string) {
   return apiClient.get<PublicCampusDriveResult>(`/api/v1/public/campus-drive/${token}`);
 }
 
+export function requestCampusEmailCode(token: string, email: string) {
+  return apiClient.post<EmailVerificationRequested>(
+    `/api/v1/public/campus-drive/${token}/email-verification/request`,
+    { email },
+  );
+}
+
+export function verifyCampusEmailCode(token: string, email: string, code: string) {
+  return apiClient.post<EmailVerificationConfirmed>(
+    `/api/v1/public/campus-drive/${token}/email-verification/verify`,
+    { email, code },
+  );
+}
+
 export function applyToCampusDrive(
   token: string,
-  values: CampusDriveApplicationFormValues,
+  values: JobApplicationFormValues,
   resume: File,
+  verificationToken: string,
 ) {
-  const formData = new FormData();
-  formData.append("full_name", values.full_name);
-  formData.append("email", values.email);
-  if (values.phone) formData.append("phone", values.phone);
-  formData.append("resume", resume);
-
   return apiClient.postForm<PublicCampusDriveApplicationResult>(
     `/api/v1/public/campus-drive/${token}/apply`,
-    formData,
+    buildApplicationFormData(values, resume, verificationToken),
   );
 }

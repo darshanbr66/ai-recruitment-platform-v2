@@ -145,10 +145,15 @@ export function AppShell({
     .find((item) => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)));
 
   // Move the sliding indicator to whichever link React Router marked active.
+  // `isCollapsed` is a dependency because collapsing drops the section labels
+  // out of the DOM and shortens every link: the links all shift up, so a
+  // measurement taken in the expanded layout would leave the indicator
+  // sitting below the icon it belongs to. Collapsing is local state here, so
+  // nothing else in this list changes to trigger a re-measure.
   useLayoutEffect(() => {
     const active = navRef.current?.querySelector<HTMLElement>(".sidebar-link.active");
     setIndicator(active ? { y: active.offsetTop, h: active.offsetHeight } : null);
-  }, [location.pathname, sections]);
+  }, [location.pathname, sections, isCollapsed]);
 
   // Enable the indicator's transition only after its first placement, so it
   // doesn't visibly fly in from the top on initial load.
@@ -219,7 +224,7 @@ export function AppShell({
             onFocus={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
             onBlur={hideTooltip}
           >
-            <Icon name="arrow-right" size={14} className={isCollapsed ? "" : "flip-h"} />
+            <Icon name={isCollapsed ? "sidebar-expand" : "sidebar-collapse"} size={16} />
           </button>
         )}
 

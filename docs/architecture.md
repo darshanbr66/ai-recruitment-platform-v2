@@ -59,10 +59,23 @@ differently from the CRUD API) doesn't require a rewrite.
 | **Reporting** | (read-only aggregation over the above; no owned writable tables initially) | all of the above |
 | **Audit** | AuditLog | all of the above (write-only sink) |
 | **Notification** | EmailMessage (log), templates | Identity/Candidate (recipients), Storage of templates |
+| **Internal messaging** | AdminConversation, AdminMessage ("Talk to Admin") | Identity & Tenancy (both sides are staff users) |
 
 Cross-cutting infrastructure (not domain modules): **Storage abstraction**,
 **AI provider integrations** (embeddings/LLM/document extraction),
 **Email provider integrations**.
+
+**Talk to Admin** (`app/services/admin_messaging_service.py`) is internal
+staff-to-admin messaging, not a candidate-facing channel: one conversation
+per staff member with their organization's admins as a *role*, so any
+ORG_ADMIN can read and reply and each message records which admin sent it.
+`admin_message.send` reaches only the caller's own thread (no conversation
+id is accepted anywhere on that route); `admin_message.manage` sees the
+organization's inbox. Both sides are tenant-scoped in the query layer and
+by RLS, like every other tenant-owned table. It is plain REST, polled by
+the client — deliberately no WebSockets, which this architecture does not
+otherwise use. It is distinct from the `DIRECT_MESSAGE` notification, which
+is a one-off, reply-less note from one user to another.
 
 ## 3. Multi-tenancy strategy
 

@@ -1,13 +1,16 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import hash_password
 from app.db.rls import rls_bypass
 from app.models.organization import Organization
 from app.models.rbac import Role, UserRole
 from app.models.user import User
+from app.schemas.organization import OrganizationSettingsUpdateRequest
 
 
 async def bootstrap_organization(
@@ -71,3 +74,21 @@ async def get_organization_by_slug(db: AsyncSession, slug: str) -> Organization 
     the one lookup needed to find the org id in the first place."""
     async with rls_bypass(db):
         return await db.scalar(select(Organization).where(Organization.slug == slug))
+
+
+async def update_organization_settings(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    payload: OrganizationSettingsUpdateRequest,
+) -> Organization:
+    """SUPER_ADMIN path only — the caller (`get_current_super_admin`) has
+    already enabled the RLS bypass a platform-level edit of a tenant root
+    row needs."""
+    organization = await db.get(Organization, organization_id)
+    if organization is None:
+        raise NotFoundError("Organization not found.")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(organization, field, value)
+    await db.flush()
+    return organization

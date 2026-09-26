@@ -1,29 +1,46 @@
 """Anonymous job application submission — the candidate-facing entry point
 into the recruiting pipeline (CLAUDE.md § 1: "public career site... entry
-point into candidate apply flow"). Resume upload is required; the file is
-actually validated and persisted (app/services/resume_service.py), never
-faked.
+point into candidate apply flow").
+
+Every field is mandatory and validated here, server-side, regardless of what
+the React form enforces; the email must have been verified with a one-time
+code (the `email_verification_token` from
+`POST .../email-verification/verify`); the resume must be a real PDF. The
+orchestration (identity check, AI screening, welcome email) lives in
+app/services/public_application_service.py.
+
+`applicant_submission` is the one definition of that form: the campus drive
+link (app/api/v1/public/campus_drives.py) takes exactly the same fields.
 """
 
 import uuid
+from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import EmailStr, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
-from app.db.rls import set_tenant_context
+from app.api.v1.public.candidate_intake import (
+    CandidateIntakeRateLimiters,
+    enforce,
+    get_candidate_intake_rate_limiters,
+    resolve_organization,
+)
+from app.core.config import get_settings
+from app.core.exceptions import AppError
 from app.db.session import get_db
 from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.models.candidate import CandidateType
 from app.schemas.candidate import PublicApplicantProfile
 from app.schemas.public import PublicApplicationResult
-from app.services import organization_service, public_application_service
+from app.services import public_application_service
 
 # The schema's `location` is the form's `current_location`.
 _FIELD_ALIASES = {"location": "current_location"}
+
 
 def _as_request_errors(exc: ValidationError) -> list[Any]:
     """Re-shapes a schema ValidationError as body-field errors, renaming the
@@ -34,41 +51,54 @@ def _as_request_errors(exc: ValidationError) -> list[Any]:
     ]
 
 
-router = APIRouter(prefix="/organizations/{slug}/jobs", tags=["public-applications"])
+@dataclass(frozen=True)
+class ApplicantSubmission:
+    email: str
+    verification_token: str
+    profile: PublicApplicantProfile
+    resume_filename: str
+    resume_bytes: bytes
 
 
-@router.post("/{job_id}/apply", response_model=PublicApplicationResult, status_code=201)
-async def apply_to_job(
-    slug: str,
-    job_id: uuid.UUID,
+async def applicant_submission(
+    request: Request,
     full_name: str = Form(..., min_length=1, max_length=255),
-    email: str = Form(...),
-    phone: str | None = Form(default=None, max_length=32),
-    candidate_type: CandidateType | None = Form(default=None),
+    email: EmailStr = Form(...),
+    email_verification_token: str = Form(..., min_length=1, max_length=200),
+    phone: str = Form(..., min_length=1, max_length=32),
+    date_of_birth: date = Form(...),
+    place_of_birth: str = Form(..., min_length=1, max_length=255),
+    # Repeat the field once per language (multipart list semantics).
+    languages: list[str] = Form(...),
+    candidate_type: CandidateType = Form(...),
     years_experience: int | None = Form(default=None, ge=0, le=80),
     notice_period_days: int | None = Form(default=None, ge=0, le=365),
     immediate_joiner: bool | None = Form(default=None),
     current_title: str | None = Form(default=None, max_length=255),
     current_company: str | None = Form(default=None, max_length=255),
-    current_location: str | None = Form(default=None, max_length=255),
-    preferred_location: str | None = Form(default=None, max_length=255),
-    qualification: str | None = Form(default=None, max_length=255),
-    linkedin_url: str | None = Form(default=None, max_length=500),
-    github_url: str | None = Form(default=None, max_length=500),
+    current_location: str = Form(..., min_length=1, max_length=255),
+    preferred_location: str = Form(..., min_length=1, max_length=255),
+    qualification: str = Form(..., min_length=1, max_length=255),
+    linkedin_url: str = Form(..., min_length=1, max_length=500),
+    github_url: str = Form(..., min_length=1, max_length=500),
     resume: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    storage: ResumeStorage = Depends(get_resume_storage),
-) -> PublicApplicationResult:
-    organization = await organization_service.get_organization_by_slug(db, slug)
-    if organization is None:
-        raise NotFoundError("Organization not found.")
-    await set_tenant_context(db, organization.id)
+    limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
+) -> ApplicantSubmission:
+    """The complete, mandatory self-service application form, validated.
+    The per-IP apply budget is spent first, before any validation work."""
+    enforce(limiters.apply, request)
 
-    # Cross-field rules (EXPERIENCED needs experience + notice period, URL
-    # host checks) live on the schema; surface failures through the same
-    # 422 envelope FastAPI's own form validation uses.
+    # Cross-field rules (EXPERIENCED needs experience/role/notice period,
+    # mobile normalization, URL host checks, DOB bounds) live on the schema;
+    # surface failures through the same 422 envelope as FastAPI's own form
+    # validation.
     try:
         profile = PublicApplicantProfile(
+            full_name=full_name,
+            phone=phone,
+            date_of_birth=date_of_birth,
+            place_of_birth=place_of_birth,
+            languages=languages,
             candidate_type=candidate_type,
             years_experience=years_experience,
             notice_period_days=notice_period_days,
@@ -84,25 +114,56 @@ async def apply_to_job(
     except ValidationError as exc:
         raise RequestValidationError(_as_request_errors(exc)) from exc
 
-    resume_bytes = await resume.read()
-    application = await public_application_service.apply_to_job(
-        db,
-        storage,
-        organization_id=organization.id,
-        job_id=job_id,
-        full_name=full_name,
-        email=email,
-        phone=phone,
+    # Read at most one byte past the limit: an oversized upload is rejected
+    # without ever being held in memory in full.
+    max_bytes = get_settings().max_resume_size_mb * 1024 * 1024
+    resume_bytes = await resume.read(max_bytes + 1)
+    if len(resume_bytes) > max_bytes:
+        raise AppError(
+            f"Resume must be smaller than {get_settings().max_resume_size_mb}MB.",
+            code="file_too_large",
+        )
+
+    return ApplicantSubmission(
+        email=str(email),
+        verification_token=email_verification_token,
         profile=profile,
-        resume_filename=resume.filename or "resume",
-        resume_content_type=resume.content_type or "application/octet-stream",
+        resume_filename=resume.filename or "resume.pdf",
         resume_bytes=resume_bytes,
     )
 
+
+router = APIRouter(prefix="/organizations/{slug}/jobs", tags=["public-applications"])
+
+
+@router.post("/{job_id}/apply", response_model=PublicApplicationResult, status_code=201)
+async def apply_to_job(
+    slug: str,
+    job_id: uuid.UUID,
+    submission: ApplicantSubmission = Depends(applicant_submission),
+    db: AsyncSession = Depends(get_db),
+    storage: ResumeStorage = Depends(get_resume_storage),
+) -> PublicApplicationResult:
+    organization = await resolve_organization(db, slug)
+    result = await public_application_service.submit_application(
+        db,
+        storage,
+        organization=organization,
+        job_id=job_id,
+        email=submission.email,
+        verification_token=submission.verification_token,
+        profile=submission.profile,
+        resume_filename=submission.resume_filename,
+        resume_content_type="application/pdf",
+        resume_bytes=submission.resume_bytes,
+    )
+
     return PublicApplicationResult(
-        id=application.id,
-        job_title=application.job.title,
-        candidate_email=application.candidate.email,
-        status=application.status.value,
-        submitted_at=application.applied_at,
+        id=result.application.id,
+        job_title=result.application.job.title,
+        candidate_email=result.application.candidate.email,
+        outcome=result.outcome,
+        confirmation_email_sent=result.confirmation_email_sent,
+        careers_contact_email=organization.careers_contact_email,
+        submitted_at=result.application.applied_at,
     )

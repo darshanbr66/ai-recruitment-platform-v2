@@ -16,13 +16,24 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: { field: string; message: string }[];
+  /** Structured context the backend attached to this error (the envelope's
+   * `error.data`) — e.g. the id of the candidate a create collided with, or
+   * the date a reapply window opens. Shape varies by `code`. */
+  readonly data: Record<string, unknown> | null;
 
-  constructor(message: string, status: number, code: string, details: { field: string; message: string }[] = []) {
+  constructor(
+    message: string,
+    status: number,
+    code: string,
+    details: { field: string; message: string }[] = [],
+    data: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.data = data;
   }
 }
 
@@ -32,6 +43,7 @@ interface ErrorEnvelope {
     message: string;
     request_id: string | null;
     details?: { field: string; message: string }[];
+    data?: Record<string, unknown>;
   };
 }
 
@@ -60,15 +72,17 @@ async function request<T>(path: string, method: string, options?: RequestOptions
     let code = "unknown_error";
     let message = "Request failed.";
     let details: { field: string; message: string }[] = [];
+    let data: Record<string, unknown> | null = null;
     try {
       const body = (await response.json()) as ErrorEnvelope;
       code = body.error?.code ?? code;
       message = body.error?.message ?? message;
       details = body.error?.details ?? [];
+      data = body.error?.data ?? null;
     } catch {
       // Non-JSON error body — fall back to the defaults above.
     }
-    throw new ApiError(message, response.status, code, details);
+    throw new ApiError(message, response.status, code, details, data);
   }
 
   if (response.status === 204) {
@@ -95,15 +109,17 @@ async function requestForm<T>(path: string, formData: FormData, accessToken?: st
     let code = "unknown_error";
     let message = "Request failed.";
     let details: { field: string; message: string }[] = [];
+    let data: Record<string, unknown> | null = null;
     try {
       const body = (await response.json()) as ErrorEnvelope;
       code = body.error?.code ?? code;
       message = body.error?.message ?? message;
       details = body.error?.details ?? [];
+      data = body.error?.data ?? null;
     } catch {
       // Non-JSON error body — fall back to the defaults above.
     }
-    throw new ApiError(message, response.status, code, details);
+    throw new ApiError(message, response.status, code, details, data);
   }
 
   return response.json() as Promise<T>;
@@ -145,15 +161,17 @@ async function requestPage<T>(path: string, accessToken: string): Promise<PagedR
     let code = "unknown_error";
     let message = "Request failed.";
     let details: { field: string; message: string }[] = [];
+    let data: Record<string, unknown> | null = null;
     try {
       const body = (await response.json()) as ErrorEnvelope;
       code = body.error?.code ?? code;
       message = body.error?.message ?? message;
       details = body.error?.details ?? [];
+      data = body.error?.data ?? null;
     } catch {
       // Non-JSON error body — fall back to the defaults above.
     }
-    throw new ApiError(message, response.status, code, details);
+    throw new ApiError(message, response.status, code, details, data);
   }
 
   const items = (await response.json()) as T[];

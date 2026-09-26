@@ -172,7 +172,9 @@ def render_email(
     """`body` is the already-resolved plain-text body. `job_title` is optional
     (a general email has no role) and only changes the footer wording. `cta_*` add the
     button (and a plain-text link line); both must be present and the URL
-    http(s), otherwise no button is rendered."""
+    http(s), otherwise no button is rendered. An empty `recruiter_email`
+    (a system email for an organization that publishes no contact address)
+    drops the "contact ... at" line rather than rendering a blank address."""
     has_cta = bool(cta_label and cta_url and is_safe_http_url(cta_url))
     reason = (
         f"You are receiving this message regarding your application for {job_title} at {company_name}."
@@ -189,7 +191,10 @@ def render_email(
         f"Questions? Reply to this email or contact {_text(recruiter_name)} at "
         f'<a href="mailto:{escape(recruiter_email, quote=True)}" '
         f'style="color:{_ACCENT};text-decoration:underline;">{_text(recruiter_email)}</a>.'
+        if recruiter_email
+        else ""
     )
+    contact_html = f'<p style="margin:0 0 6px 0;{footer_small}">{contact}</p>' if contact else ""
 
     html = (
         "<!DOCTYPE html>"
@@ -210,7 +215,7 @@ def render_email(
         f'<tr><td style="padding:20px 32px;border-top:1px solid {_BORDER};background:{_CARD_BG};">'
         f'<p style="margin:0 0 6px 0;{footer_small}"><strong style="color:{_TEXT};">'
         f"{_text(recruiter_name)}</strong> · {_text(company_name)}</p>"
-        f'<p style="margin:0 0 6px 0;{footer_small}">{contact}</p>'
+        f"{contact_html}"
         f'<p style="margin:0;{footer_small}">{_text(reason)}</p>'
         "</td></tr></table></td></tr></table></body></html>"
     )
@@ -218,10 +223,8 @@ def render_email(
     text_parts = [body.strip()]
     if has_cta:
         text_parts.append(f"{cta_label}: {cta_url}")
-    text_parts.append(
-        "--\n"
-        f"{recruiter_name} | {company_name}\n"
-        f"Questions? Reply to this email or contact {recruiter_email}.\n"
-        f"{reason}"
+    contact_text = (
+        f"Questions? Reply to this email or contact {recruiter_email}.\n" if recruiter_email else ""
     )
+    text_parts.append(f"--\n{recruiter_name} | {company_name}\n{contact_text}{reason}")
     return RenderedEmail(subject=subject, html=html, text="\n\n".join(text_parts))

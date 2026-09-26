@@ -16,8 +16,9 @@ scoring (app/services/matching/match_engine.py).
 import re
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.logging import get_logger
 from app.integrations.ai import AIProviderError, get_embedding_provider
@@ -126,10 +127,21 @@ async def backfill_missing_resume_chunks(
     deterministic scoring still runs from Candidate/JobRequirement fields
     alone (app/services/matching/deterministic_scorer.py).
     """
+    # A resume row that re-uses an earlier row's stored file (an HR job
+    # match, resume_service.link_existing_resume) is the same text — chunking
+    # it again would only duplicate retrieval evidence.
+    earlier = aliased(Resume)
     result = await db.execute(
         select(Resume)
         .outerjoin(ResumeChunk, ResumeChunk.resume_id == Resume.id)
-        .where(Resume.organization_id == organization_id, ResumeChunk.id.is_(None))
+        .where(
+            Resume.organization_id == organization_id,
+            ResumeChunk.id.is_(None),
+            ~exists().where(
+                earlier.storage_path == Resume.storage_path,
+                earlier.created_at < Resume.created_at,
+            ),
+        )
         .limit(limit)
     )
     resumes = list(result.scalars().all())

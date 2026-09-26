@@ -31,20 +31,35 @@ each prefix (not per-endpoint, to avoid one endpoint being forgotten).
 
 ### Public
 ```
+GET  /api/v1/public/organizations/{org_slug}                                -- name + careers_contact_email
+POST /api/v1/public/organizations/{org_slug}/email-verification/request     -- {email} -> 202, code emailed
+POST /api/v1/public/organizations/{org_slug}/email-verification/verify      -- {email, code} -> {verification_token, ...}
 GET  /api/v1/public/organizations/{org_slug}/jobs
 GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}
-POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply   (multipart)
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply             (multipart)
 ```
-`apply` takes `full_name`, `email`, `resume` plus optional profile fields:
-`candidate_type` (`FRESHER`|`EXPERIENCED`), `years_experience`,
-`notice_period_days`, `immediate_joiner`, `current_title`, `current_company`,
-`current_location`, `preferred_location`, `qualification`, `linkedin_url`,
-`github_url`. `EXPERIENCED` requires `years_experience` and either
-`notice_period_days` or `immediate_joiner`; a `FRESHER` is stored with 0 years
-and no notice period; profile URLs must be http(s) on linkedin.com /
-github.com. Profile data lands on the (tenant-scoped) Candidate; an existing
-candidate's already-filled fields are never overwritten by an anonymous
-submission.
+`apply` needs `email_verification_token` (from `verify`), `full_name`,
+`email`, `phone`, `date_of_birth`, `place_of_birth`, `languages` (1–15),
+`candidate_type` (`FRESHER`|`EXPERIENCED`), `current_location`,
+`preferred_location`, `qualification`, `linkedin_url`, `github_url` and a
+`resume`. `years_experience`, `notice_period_days`, `immediate_joiner`,
+`current_title` and `current_company` are optional. `EXPERIENCED` requires
+`years_experience` and either `notice_period_days` or `immediate_joiner`; a
+`FRESHER` is stored with 0 years and no notice period. Profile URLs must be
+http(s) on linkedin.com / github.com, and `phone` is normalized to E.164.
+
+A person gets one profile and one self-service application per
+organization, matched by email or normalized mobile number. A duplicate is
+refused with 409 `already_registered` and nothing is created; an existing
+profile is never updated or merged by an anonymous submission. The response
+is `{outcome: RECEIVED | NOT_SHORTLISTED_FOR_ROLE, confirmation_email_sent,
+careers_contact_email}`. It never includes the internal status, AI decision,
+score or reasoning. Errors: 422 `email_not_verified`, `otp_invalid`,
+`otp_expired`, `otp_incorrect`; 429 `otp_locked`, `otp_resend_throttled`,
+`otp_send_limit`, `rate_limited`; 409 `already_registered`. The full flow is
+in `docs/recruitment-workflow.md` § 6. Campus drive links have the same three
+endpoints under `/api/v1/public/campus-drive/{token}` (`docs/campus-hiring.md`
+§ 3).
 
 Only published (`status=OPEN`) jobs, minimal fields (title, department,
 location, employment_type, description, requirements summary).
@@ -90,10 +105,26 @@ GET/POST      /api/v1/recruiter/jobs
 GET/PATCH     /api/v1/recruiter/jobs/{job_id}
 GET/POST      /api/v1/recruiter/candidates
 GET/PATCH     /api/v1/recruiter/candidates/{candidate_id}
+GET           /api/v1/recruiter/candidates/{candidate_id}/history      (candidate.read + screening.read; every application,
+                                                                         original flagged, screenings, timeline; 404 across tenants)
+POST          /api/v1/recruiter/candidates/{candidate_id}/job-matches  (application.create; {job_id, reason?} -> 201 new HR_MATCH
+                                                                         application; 409 if already matched; 404 across tenants)
+POST          /api/v1/recruiter/candidates/{candidate_id}/applications (application.create; multipart: job_id, resume,
+                                                                         run_screening=true -> 201 RECRUITER_ADDED application
+                                                                         + AI screening run; fills the resume in on an existing
+                                                                         resume-less application for that role instead of
+                                                                         duplicating it)
+GET           /api/v1/recruiter/candidates/{candidate_id}/reapply-status (candidate.read; when the candidate may self-apply
+                                                                         again, plus any open HR grant)
+POST          /api/v1/recruiter/candidates/{candidate_id}/reapply-grants (candidate.reapply.grant; {reason} required ->
+                                                                         201 single-use grant letting them self-apply before
+                                                                         the window ends; 409 if nothing to lift or one is open)
 GET           /api/v1/recruiter/applications                  (application.read; searched, filtered, sorted and paged
                                                                 in the database — see "Applications list" below)
 GET/PATCH     /api/v1/recruiter/applications/{application_id}
 POST          /api/v1/recruiter/applications/{application_id}/status
+POST          /api/v1/recruiter/applications/{application_id}/ai-override  (application.status.change; {reason} required;
+                                                                             AI_SCREENED_OUT -> UNDER_REVIEW, else 409)
 POST          /api/v1/recruiter/applications/{application_id}/screening-runs
 GET           /api/v1/recruiter/applications/{application_id}/screening-runs
 POST          /api/v1/recruiter/applications/{application_id}/notes
@@ -106,6 +137,14 @@ POST          /api/v1/recruiter/campus-drives/{drive_id}/candidates
 POST          /api/v1/recruiter/campus-drives/{drive_id}/assessment-invitations:bulk
 GET           /api/v1/recruiter/reports/funnel
 GET           /api/v1/recruiter/reports/campus/{drive_id}
+GET           /api/v1/recruiter/admin-messages/unread-count  (Talk to Admin; counts whichever side the caller is on)
+GET/POST      /api/v1/recruiter/admin-messages/mine           (admin_message.send; the caller's own thread with the
+                                                                organization's admins — no conversation id is accepted)
+POST          /api/v1/recruiter/admin-messages/mine/read
+GET           /api/v1/recruiter/admin-messages/conversations  (admin_message.manage; the admin inbox, own organization only)
+GET           /api/v1/recruiter/admin-messages/conversations/{conversation_id}
+POST          /api/v1/recruiter/admin-messages/conversations/{conversation_id}/messages
+POST          /api/v1/recruiter/admin-messages/conversations/{conversation_id}/read
 GET/POST      /api/v1/recruiter/users
 GET           /api/v1/recruiter/auth/me                       (includes organization_name)
 GET           /api/v1/recruiter/activities                    (activity.read, ORG_ADMIN)
@@ -146,7 +185,7 @@ in the **`X-Total-Count`** response header (exposed through CORS).
 | Parameter | Meaning |
 |---|---|
 | `q` | Up to 5 words (max 100 chars); **every** word must match the candidate's name, email or phone (digits-only comparison, so `98765 43210` finds `+91 98765-43210`) **or** the job title. `%` and `_` are literal. |
-| `job_id`, `status`, `source`, `campus_drive_id`, `candidate_id` | Exact matches. `status` and `source` are enums (`PORTAL`, `RECRUITER_ADDED`, `CAMPUS_IMPORT`, `REFERRAL`, `OTHER`); unknown values are a 422. |
+| `job_id`, `status`, `source`, `campus_drive_id`, `candidate_id` | Exact matches. `status` and `source` are enums (`source`: `PORTAL`, `RECRUITER_ADDED`, `CAMPUS_IMPORT`, `REFERRAL`, `OTHER`, `HR_MATCH`; `status` includes `AI_SCREENED_OUT`); unknown values are a 422. |
 | `candidate_type` | `FRESHER` / `EXPERIENCED`. |
 | `current_title`, `current_company`, `location` (current), `preferred_location`, `qualification` | Case-insensitive "contains" (max 255). |
 | `min_experience`, `max_experience` | Years, 0–80, inclusive. Candidates with no experience recorded never match a bound. `min > max` is a 422. |
@@ -167,7 +206,7 @@ action via a dependency (e.g. `require_permission("application.status.change")`)
 ### Admin
 ```
 GET/POST /api/v1/admin/organizations
-PATCH    /api/v1/admin/organizations/{org_id}
+PATCH    /api/v1/admin/organizations/{org_id}      (SUPER_ADMIN; {careers_contact_email} — null or "" un-publishes it)
 ```
 
 ## 3. Conventions

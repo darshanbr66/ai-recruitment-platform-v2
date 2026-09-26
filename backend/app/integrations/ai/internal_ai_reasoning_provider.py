@@ -69,16 +69,24 @@ class InternalAIReasoningProvider:
         user_content: str,
         response_schema: dict[str, Any],
         max_output_tokens: int = 512,
+        thinking_budget: int | None = None,
     ) -> dict[str, Any]:
         """`response_schema` is a Gemini-flavored OpenAPI subset schema
         (`type`/`properties`/`required`/`enum` — no `$ref`). Gemini is
         constrained to emit only JSON matching it; a reply that still fails
-        to parse is treated as an empty response, never guessed at."""
+        to parse (including one cut off at `maxOutputTokens`) is treated as
+        an empty response, never guessed at.
+
+        `thinking_budget` is sent as `thinkingConfig.thinkingBudget` only
+        when given: thinking models (e.g. gemini-2.5-flash) count thinking
+        tokens against `maxOutputTokens`, while some models reject a
+        `thinkingConfig` outright — so callers opt in per model."""
         payload = await self._call(
             system_prompt=system_prompt,
             messages=[ChatMessage("user", user_content)],
             max_output_tokens=max_output_tokens,
             response_schema=response_schema,
+            thinking_budget=thinking_budget,
         )
         text = _extract_text(payload)
         try:
@@ -98,6 +106,7 @@ class InternalAIReasoningProvider:
         messages: list[ChatMessage],
         max_output_tokens: int,
         response_schema: dict[str, Any] | None,
+        thinking_budget: int | None = None,
     ) -> dict[str, Any]:
         generation_config: dict[str, Any] = {
             "maxOutputTokens": max_output_tokens,
@@ -106,6 +115,8 @@ class InternalAIReasoningProvider:
         if response_schema is not None:
             generation_config["responseMimeType"] = "application/json"
             generation_config["responseSchema"] = response_schema
+        if thinking_budget is not None:
+            generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
 
         body: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system_prompt}]},

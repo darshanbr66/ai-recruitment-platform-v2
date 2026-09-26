@@ -1,5 +1,6 @@
 /** Mirrors backend/app/schemas/public_campus_drive.py. */
 
+import type { PublicApplicationResult } from "./careers";
 import type { CampusDriveStatus } from "./campusDrive";
 
 export interface PublicCampusDriveView {
@@ -13,6 +14,8 @@ export interface PublicCampusDriveView {
   registration_deadline: string | null;
   status: CampusDriveStatus;
   has_assessment: boolean;
+  /** The recruitment team's published contact address (null = not published). */
+  careers_contact_email: string | null;
 }
 
 /** Returned once a drive is CLOSED — deliberately carries no JD, drive
@@ -24,16 +27,9 @@ export interface PublicCampusDriveUnavailable {
 
 export type PublicCampusDriveResult = PublicCampusDriveView | PublicCampusDriveUnavailable;
 
-export interface PublicCampusDriveApplicationResult {
-  application_id: string;
-  job_title: string;
-  candidate_email: string;
-  status: string;
+/** The careers-site result (coarse outcome only) plus the drive's assessment
+ * link — set only when the application was fast-tracked into the drive's
+ * default assessment. */
+export interface PublicCampusDriveApplicationResult extends PublicApplicationResult {
   assessment_invitation_link: string | null;
-}
-
-export interface CampusDriveApplicationFormValues {
-  full_name: string;
-  email: string;
-  phone: string;
 }

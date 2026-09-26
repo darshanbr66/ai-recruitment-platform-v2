@@ -5,13 +5,19 @@ Organization creation must go through the privileged/bypass path
 it exists (docs/security.md § 3).
 """
 
+import uuid
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.organization import OrganizationCreateRequest, OrganizationResponse
+from app.schemas.organization import (
+    OrganizationCreateRequest,
+    OrganizationResponse,
+    OrganizationSettingsUpdateRequest,
+)
 from app.services import organization_service
 
 router = APIRouter(prefix="/organizations", tags=["admin-organizations"])
@@ -41,3 +47,18 @@ async def list_organizations(
 ) -> list[OrganizationResponse]:
     organizations = await organization_service.list_organizations(db)
     return [OrganizationResponse.model_validate(org) for org in organizations]
+
+
+@router.patch("/{organization_id}", response_model=OrganizationResponse)
+async def update_organization_settings(
+    organization_id: uuid.UUID,
+    payload: OrganizationSettingsUpdateRequest,
+    _: User = Depends(get_current_super_admin),
+    db: AsyncSession = Depends(get_db),
+) -> OrganizationResponse:
+    """Company-level configuration — e.g. the careers contact email shown to
+    candidates and used as the reply-to of system emails."""
+    organization = await organization_service.update_organization_settings(
+        db, organization_id=organization_id, payload=payload
+    )
+    return OrganizationResponse.model_validate(organization)

@@ -104,16 +104,21 @@ def require_permission(
         user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        result = await db.execute(
-            select(Permission.code)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(Role, Role.id == RolePermission.role_id)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == user.id)
-        )
-        granted_codes = set(result.scalars().all())
-        if code not in granted_codes:
+        if code not in await granted_permission_codes(db, user):
             raise ForbiddenError("You do not have permission to perform this action.")
         return user
 
     return dependency
+
+
+async def granted_permission_codes(db: AsyncSession, user: User) -> set[str]:
+    """Every permission code the user's roles grant — the one definition
+    `require_permission` and any "one of several permissions" check share."""
+    result = await db.execute(
+        select(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user.id)
+    )
+    return set(result.scalars().all())

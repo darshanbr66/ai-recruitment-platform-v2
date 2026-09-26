@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../features/auth/AuthContext";
+import { getAdminMessageUnreadCount } from "../features/recruiter/adminMessages/api";
 import { getUnreadCount } from "../features/recruiter/notifications/api";
 import { NotificationToaster } from "../features/recruiter/notifications/NotificationToaster";
 import { AppShell, type NavItem, type NavSection } from "./AppShell";
@@ -47,6 +48,19 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { to: "/recruiter/activities", label: "Activities", icon: "activities" },
 ];
 
+/** Talk to Admin is for *organization* accounts on either side: staff hold
+ * `admin_message.send`, ORG_ADMIN holds `admin_message.manage`. The page
+ * picks the view; the badge counts whichever side the caller is on.
+ *
+ * It sits in Workspace beside Notifications rather than under Organization:
+ * for an HR/employee account it is a day-to-day destination, and buried at
+ * the bottom of the second section it read as an admin-only setting. */
+const TALK_TO_ADMIN_NAV_ITEM: NavItem = {
+  to: "/recruiter/talk-to-admin",
+  label: "Talk to Admin",
+  icon: "send",
+};
+
 /**
  * Sourcing isn't built yet — AI Screening and Notes live inline on the
  * application detail page rather than as their own nav entries — so only
@@ -78,6 +92,21 @@ export function RecruiterLayout() {
     badge: unreadQuery.data?.unread,
   };
 
+  const adminMessagesQuery = useQuery({
+    queryKey: ["admin-messages", "unread-count"],
+    queryFn: () => getAdminMessageUnreadCount(accessToken as string),
+    enabled: accessToken !== null,
+    refetchInterval: UNREAD_BADGE_POLL_MS,
+    refetchIntervalInBackground: false,
+    // A super-admin (no organization) has neither permission — a 403 here
+    // is the expected answer, not a failure worth retrying.
+    retry: false,
+  });
+  const talkToAdminNavItem: NavItem = {
+    ...TALK_TO_ADMIN_NAV_ITEM,
+    badge: adminMessagesQuery.data?.unread,
+  };
+
   async function handleLogout() {
     await logout();
     navigate("/recruiter/login", { replace: true });
@@ -86,7 +115,12 @@ export function RecruiterLayout() {
   const sections: NavSection[] = [
     {
       label: "Workspace",
-      items: [...(canUseAi ? [AI_NAV_ITEM] : []), notificationsNavItem, ...WORKSPACE_ITEMS],
+      items: [
+        ...(canUseAi ? [AI_NAV_ITEM] : []),
+        notificationsNavItem,
+        talkToAdminNavItem,
+        ...WORKSPACE_ITEMS,
+      ],
     },
     {
       label: "Organization",

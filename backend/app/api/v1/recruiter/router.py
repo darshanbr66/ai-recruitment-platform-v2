@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.recruiter.activities import router as activities_router
+from app.api.v1.recruiter.admin_messages import router as admin_messages_router
 from app.api.v1.recruiter.applications import router as applications_router
 from app.api.v1.recruiter.assessments import router as assessments_router
 from app.api.v1.recruiter.auth import router as auth_router
@@ -40,3 +41,4 @@ router.include_router(email_templates_router)
 router.include_router(general_email_router)
 router.include_router(notifications_router)
 router.include_router(internal_ai_router)
+router.include_router(admin_messages_router)

@@ -16,11 +16,12 @@ from app.db.session import get_db
 from app.models.calendar_event import CalendarEvent
 from app.models.user import User
 from app.schemas.calendar_event import (
+    CalendarAttendeeOption,
     CalendarEventCreateRequest,
     CalendarEventResponse,
     CalendarEventUpdateRequest,
 )
-from app.services import calendar_service
+from app.services import calendar_service, user_service
 
 router = APIRouter(prefix="/calendar", tags=["recruiter-calendar"])
 
@@ -48,6 +49,25 @@ async def _to_response(db: AsyncSession, event: CalendarEvent) -> CalendarEventR
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
+
+
+@router.get("/attendee-options", response_model=list[CalendarAttendeeOption])
+async def list_attendee_options(
+    current_user: User = Depends(require_permission("calendar.read")),
+    db: AsyncSession = Depends(get_db),
+) -> list[CalendarAttendeeOption]:
+    """People the caller may invite to an event — active users of the
+    caller's own organization, and nobody else. `organization_id` comes from
+    the authenticated caller, never the request, so this can never leak a
+    neighbouring tenant's staff.
+    """
+    assert current_user.organization_id is not None
+    users = await user_service.list_organization_users(db, current_user.organization_id)
+    return [
+        CalendarAttendeeOption(id=user.id, full_name=user.full_name, email=user.email)
+        for user in users
+        if user.is_active
+    ]
 
 
 @router.get("/events", response_model=list[CalendarEventResponse])

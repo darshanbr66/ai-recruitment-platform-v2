@@ -3,9 +3,81 @@ import { useState, type FormEvent } from "react";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { useAuth } from "../../auth/AuthContext";
-import { createOrganization, listOrganizations } from "../../auth/api";
+import type { OrganizationResponse } from "../../../types/auth";
+import { createOrganization, listOrganizations, updateOrganizationSettings } from "../../auth/api";
 
 const ORGANIZATIONS_QUERY_KEY = ["admin", "organizations"];
+
+/** Inline editor for the organization's careers contact email — the address
+ * candidates see on the careers site and in system emails ("need to update
+ * your information? contact ..."). Configuration, never hardcoded. */
+function CareersContactCell({ org }: { org: OrganizationResponse }) {
+  const { accessToken } = useAuth();
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(org.careers_contact_email ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateOrganizationSettings(
+        org.id,
+        { careers_contact_email: value.trim() || null },
+        accessToken as string,
+      ),
+    onSuccess: () => {
+      setEditing(false);
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ORGANIZATIONS_QUERY_KEY });
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Could not save."),
+  });
+
+  if (!editing) {
+    return (
+      <span className="contact-cell">
+        {org.careers_contact_email ?? <span className="muted">Not set</span>}
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            setValue(org.careers_contact_email ?? "");
+            setEditing(true);
+          }}
+          aria-label={`Edit careers contact for ${org.name}`}
+        >
+          Edit
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <form
+      className="contact-cell"
+      onSubmit={(event) => {
+        event.preventDefault();
+        mutation.mutate();
+      }}
+    >
+      <input
+        type="email"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="careers@company.com"
+        aria-label={`Careers contact email for ${org.name}`}
+        disabled={mutation.isPending}
+      />
+      <button type="submit" className="btn btn-primary btn-sm" disabled={mutation.isPending}>
+        {mutation.isPending ? "Saving…" : "Save"}
+      </button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      {error && <span className="field-error">{error}</span>}
+    </form>
+  );
+}
 
 /**
  * Platform-admin console: bootstraps a brand-new tenant (Organization +
@@ -97,6 +169,7 @@ export function OrganizationsPage() {
                     <th>Name</th>
                     <th>Slug</th>
                     <th>Status</th>
+                    <th>Careers contact</th>
                     <th>Created</th>
                   </tr>
                 </thead>
@@ -109,6 +182,9 @@ export function OrganizationsPage() {
                       </td>
                       <td>
                         <span className="badge badge-active">{org.status}</span>
+                      </td>
+                      <td>
+                        <CareersContactCell org={org} />
                       </td>
                       <td>{new Date(org.created_at).toLocaleDateString()}</td>
                     </tr>

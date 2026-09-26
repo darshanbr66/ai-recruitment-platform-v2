@@ -17,6 +17,44 @@ verdict, no per-requirement evidence citations. If a provider isn't
 configured, screening fails with a clear error rather than fabricating a
 result (`app/integrations/ai/base.py::AIProviderNotConfiguredError`).
 
+**Submission-time screening gate (candidate intake):** in addition to the
+recruiter-triggered run, every self-service application (careers site or
+campus drive link) is screened automatically once it has been committed. The
+flow is in `docs/recruitment-workflow.md` § 6. The verdict now includes a
+binary `decision` (`MATCH` / `NOT_MATCH`) and `matched_requirements` /
+`missing_requirements`, all persisted on `ScreeningRun`. `NOT_MATCH` moves
+the application to the advisory `AI_SCREENED_OUT` status, which HR can
+override. An unavailable or failing provider never screens anyone out.
+
+**Provider selection** (`app/integrations/ai/__init__.py::get_llm_provider`):
+Ollama if `OLLAMA_BASE_URL` is set, then Anthropic (`ANTHROPIC_API_KEY`), then
+OpenAI (`OPENAI_API_KEY`), and finally **Gemini** (`GEMINI_API_KEY`) as the
+last fallback. That way a dedicated screening provider always takes
+precedence over the key most deployments already hold for Sigvi. The Gemini
+adapter (`gemini_screening_provider.py::GeminiLLMProvider`) sends the same
+shared prompt (`prompts.py`) as every other adapter. It uses the existing
+Gemini REST client with a native response schema, so the model can only
+return the verdict's JSON shape. Scores are clamped to 0–100, and a reply
+that still doesn't validate is an `AIProviderError`, never a guessed
+verdict. There's no new SDK and no new secret.
+
+Screening has its own model setting, `GEMINI_SCREENING_MODEL` (default
+`gemini-2.5-flash`), separate from `GEMINI_MODEL`. That way, changing the
+screening model never changes Sigvi or the internal AI, which stay on
+`GEMINI_MODEL`. `gemini-2.5-flash` thinks by default and counts thinking
+tokens against `maxOutputTokens`. With thinking on, almost the whole
+2,048-token budget went to thinking and the JSON verdict was cut off.
+Screening therefore sends `thinkingConfig.thinkingBudget = 0`
+(`GEMINI_SCREENING_THINKING_BUDGET`, default `0`). If that setting is empty,
+no `thinkingConfig` is sent at all, which is needed for models that reject it
+(e.g. `gemini-3.5-flash-lite`). With thinking off, a verdict uses about
+750–1,000 output tokens, so the 2,048 cap is unchanged. A reply cut off at the
+token limit is invalid JSON and fails as an `AIProviderError`, like any other
+malformed reply. Tests fake the HTTP layer
+(`tests/test_gemini_screening_provider.py`), and
+`backend/scripts/verify_ai_screening.py` runs a manual check against the
+real API with a realistic job description and resumes.
+
 ## 1. Design goal
 
 AI screening must be traceable, re-runnable without destroying history, and
@@ -117,8 +155,10 @@ these same interfaces — `services/screening/` does not change.
 - Which embedding provider/model, and therefore the `vector(N)` dimension
   for `resume_chunks.embedding` — deferred to Phase 5, when it's chosen
   alongside a cost/latency evaluation.
-- Whether `ScreeningRun` triggers automatically on application submission or
-  only on explicit recruiter action — deferred to Phase 6; likely
-  configurable per organization rather than hardcoded either way.
+- ~~Whether `ScreeningRun` triggers automatically on application submission or
+  only on explicit recruiter action~~ — decided: self-service applications
+  are screened automatically on submission (see the note at the top), and
+  recruiters can still re-run screening on demand. Per-organization
+  configuration of the automatic gate is not built.
 - Chunking strategy (fixed-size vs. semantic/section-aware) — deferred to
   Phase 5, informed by real resume samples.

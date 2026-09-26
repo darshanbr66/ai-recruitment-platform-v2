@@ -9,6 +9,7 @@ from httpx import AsyncClient
 from app.integrations.ai.base import AIProviderError, ScreeningVerdict
 from app.models.user import User
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login, make_minimal_pdf
+from tests.public_apply import apply_publicly
 
 _JOB_PAYLOAD = {
     "title": "Backend Engineer",
@@ -43,10 +44,12 @@ async def _bootstrap_org_with_applied_application(client: AsyncClient, slug: str
     )
 
     resume_bytes = make_minimal_pdf("Jane Candidate. Skills: Python, PostgreSQL, FastAPI.")
-    apply_response = await client.post(
-        f"/api/v1/public/organizations/{slug}/jobs/{job['id']}/apply",
-        data={"full_name": "Jane Candidate", "email": "jane@example.com"},
-        files={"resume": ("resume.pdf", resume_bytes, "application/pdf")},
+    apply_response = await apply_publicly(
+        client,
+        slug,
+        job["id"],
+        email="jane@example.com",
+        resume=("resume.pdf", resume_bytes, "application/pdf"),
     )
     application_id = apply_response.json()["id"]
 
@@ -115,7 +118,13 @@ async def test_screening_persists_structured_result(
         headers=ctx["headers"],
     )
     assert listing.status_code == 200
-    assert len(listing.json()) == 1
+    # Newest first: the recruiter's run, then the automatic one made when the
+    # candidate submitted — a re-run never replaces screening history.
+    manual, automatic = listing.json()
+    assert manual["id"] == body["id"]
+    assert manual["requested_by_user_id"] is not None
+    assert automatic["requested_by_user_id"] is None
+    assert automatic["decision"] == "MATCH"
 
 
 async def test_screening_failure_is_recorded_not_fabricated(

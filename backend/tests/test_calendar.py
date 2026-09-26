@@ -222,6 +222,67 @@ async def test_attendees_must_belong_to_the_same_organization(client: AsyncClien
     assert response.status_code == 404
 
 
+async def test_attendee_options_are_available_without_user_read_and_stay_tenant_scoped(
+    client: AsyncClient, super_admin: User
+) -> None:
+    """Picking a meeting attendee is not user administration: a RECRUITER has
+    `calendar.read` but not `user.read`, and must still be able to list the
+    people they may invite — from their own organization only."""
+    org_a = await _bootstrap_org_with_two_users(client, "cal-attendee-opts-a")
+    org_b = await _bootstrap_org_with_two_users(client, "cal-attendee-opts-b")
+
+    # The Team directory stays admin-only.
+    assert (await client.get("/api/v1/recruiter/users", headers=org_a["recruiter_headers"])).status_code == 403
+
+    response = await client.get(
+        "/api/v1/recruiter/calendar/attendee-options", headers=org_a["recruiter_headers"]
+    )
+    assert response.status_code == 200, response.text
+    emails = {option["email"] for option in response.json()}
+    assert emails == {"admin@cal-attendee-opts-a.dev", "recruiter@cal-attendee-opts-a.dev"}
+
+    org_b_emails = {
+        option["email"]
+        for option in (
+            await client.get(
+                "/api/v1/recruiter/calendar/attendee-options", headers=org_b["recruiter_headers"]
+            )
+        ).json()
+    }
+    assert org_b_emails.isdisjoint(emails)
+
+
+async def test_attendee_options_can_be_invited_and_are_persisted(
+    client: AsyncClient, super_admin: User
+) -> None:
+    ctx = await _bootstrap_org_with_two_users(client, "cal-attendee-opts-invite")
+    start = datetime.now(UTC) + timedelta(days=1)
+
+    options = (
+        await client.get("/api/v1/recruiter/calendar/attendee-options", headers=ctx["recruiter_headers"])
+    ).json()
+    admin_id = next(o["id"] for o in options if o["email"].startswith("admin@"))
+
+    created = await client.post(
+        "/api/v1/recruiter/calendar/events",
+        json={
+            "title": "Panel interview",
+            "start_at": _iso(start),
+            "end_at": _iso(start + timedelta(hours=1)),
+            "timezone": "UTC",
+            "attendee_ids": [admin_id],
+        },
+        headers=ctx["recruiter_headers"],
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["attendee_ids"] == [admin_id]
+
+    fetched = await client.get(
+        f"/api/v1/recruiter/calendar/events/{created.json()['id']}", headers=ctx["recruiter_headers"]
+    )
+    assert fetched.json()["attendee_ids"] == [admin_id]
+
+
 async def test_calendar_read_requires_permission(client: AsyncClient, super_admin: User) -> None:
     ctx = await _bootstrap_org_with_two_users(client, "cal-permission")
 

@@ -35,6 +35,7 @@ describe("CampusDriveApplyPage lifecycle states", () => {
       registration_deadline: null,
       status: "ACTIVE",
       has_assessment: false,
+      careers_contact_email: "careers@sigvitas.test",
     };
     vi.spyOn(careersApi, "getCampusDriveByToken").mockResolvedValue(active);
 
@@ -42,6 +43,12 @@ describe("CampusDriveApplyPage lifecycle states", () => {
 
     expect(await screen.findByRole("heading", { name: "Fall Drive" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Apply for this drive" })).toBeInTheDocument();
+    // Same mandatory, email-verified form as the careers site.
+    for (const label of [/^Email/, /Mobile number/, /Date of birth/, /Place of birth/, /Highest qualification/]) {
+      expect(screen.getByLabelText(label)).toBeRequired();
+    }
+    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Your details");
+    expect(screen.getByText("Verify email")).toBeInTheDocument();
   });
 
   it("shows the unavailable panel and no recruitment content for a closed drive", async () => {

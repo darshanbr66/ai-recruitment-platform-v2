@@ -109,3 +109,21 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
+      # Resume screening's own model, pinned explicitly rather than left to
+      # the code default (app/core/config.py). This pair is the empirically
+      # verified working configuration: gemini-3.5-flash-lite returned
+      # sustained 503 "high demand" for screening, and gemini-2.5-flash
+      # thinks by default with thinking tokens counted against
+      # maxOutputTokens — which truncated the JSON verdict — hence budget 0.
+      # Pinned here so a future change to the code default cannot silently
+      # move production off the model that was verified against the real API.
+      - key: GEMINI_SCREENING_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_SCREENING_THINKING_BUDGET
+        value: "0"
+      # Read by the candidate-intake migration (b4c5d6e7f8a9) when it
+      # normalizes *existing* production phone numbers to E.164, as well as at
+      # runtime. A data migration must not depend on an implicit default:
+      # a different region would canonicalize stored numbers differently.
+      - key: DEFAULT_PHONE_REGION
+        value: IN

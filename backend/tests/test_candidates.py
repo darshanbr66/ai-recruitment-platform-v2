@@ -74,6 +74,11 @@ async def test_duplicate_candidate_email_in_same_org_is_rejected(
 
     second = await client.post("/api/v1/recruiter/candidates", json=payload, headers=headers)
     assert second.status_code == 409
+    # The 409 names the profile it collided with, so staff can add the
+    # resume/role to that candidate rather than creating a duplicate (the
+    # HR "add resume + applying role" flow relies on this).
+    error = second.json()["error"]
+    assert error["data"]["existing_candidate_id"] == first.json()["id"]
 
 
 async def test_same_candidate_email_allowed_in_different_organizations(

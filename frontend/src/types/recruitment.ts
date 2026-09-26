@@ -2,6 +2,8 @@
  * Mirrors backend/app/schemas/{job,candidate,application}.py (Phase 3).
  */
 
+import type { ScreeningRunResponse } from "./screening";
+
 export type JobStatus = "DRAFT" | "OPEN" | "ON_HOLD" | "CLOSED" | "WITHDRAWN";
 
 export const JOB_STATUSES: JobStatus[] = ["DRAFT", "OPEN", "ON_HOLD", "CLOSED", "WITHDRAWN"];
@@ -69,6 +71,11 @@ export interface CandidateResponse {
   qualification: string | null;
   linkedin_url: string | null;
   github_url: string | null;
+  date_of_birth: string | null;
+  place_of_birth: string | null;
+  languages: string[];
+  /** Set when the candidate verified their email with a one-time code. */
+  email_verified_at: string | null;
   source: CandidateSource;
   is_active: boolean;
   deleted_at: string | null;
@@ -87,6 +94,7 @@ export interface CandidateCreateRequest {
 
 export type ApplicationStatus =
   | "APPLIED"
+  | "AI_SCREENED_OUT"
   | "UNDER_REVIEW"
   | "SCREENING"
   | "ASSESSMENT_INVITED"
@@ -100,6 +108,7 @@ export type ApplicationStatus =
 
 export const APPLICATION_STATUSES: ApplicationStatus[] = [
   "APPLIED",
+  "AI_SCREENED_OUT",
   "UNDER_REVIEW",
   "SCREENING",
   "ASSESSMENT_INVITED",
@@ -112,9 +121,13 @@ export const APPLICATION_STATUSES: ApplicationStatus[] = [
   "HIRED",
 ];
 
-/** Mirrors app/workflows/application_workflow.py's TRANSITIONS table. */
+/** Mirrors app/workflows/application_workflow.py's TRANSITIONS table, minus
+ * what a person can't pick from a status menu: AI_SCREENED_OUT is set only
+ * by the automatic screening, and leaving it for review is the dedicated
+ * "Override AI decision" action (reason required), not a plain status move. */
 export const APPLICATION_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
   APPLIED: ["UNDER_REVIEW", "REJECTED"],
+  AI_SCREENED_OUT: ["REJECTED"],
   UNDER_REVIEW: ["SCREENING", "REJECTED"],
   SCREENING: ["ASSESSMENT_INVITED", "SHORTLISTED", "REJECTED"],
   ASSESSMENT_INVITED: ["ASSESSMENT_STARTED", "REJECTED"],
@@ -152,7 +165,80 @@ export interface ApplicationCreateRequest {
   job_id: string;
 }
 
+export type ApplicationSource =
+  | "PORTAL"
+  | "RECRUITER_ADDED"
+  | "CAMPUS_IMPORT"
+  | "REFERRAL"
+  | "OTHER"
+  | "HR_MATCH";
+
+/** Mirrors backend/app/schemas/candidate_history.py. */
+export interface CandidateApplicationHistory {
+  application_id: string;
+  job_id: string;
+  job_title: string;
+  source: ApplicationSource;
+  status: ApplicationStatus;
+  applied_at: string;
+  /** The candidate's own self-service application (vs. an HR match). */
+  is_original: boolean;
+  deleted_at: string | null;
+  screenings: ScreeningRunResponse[];
+}
+
+export interface CandidateTimelineEntry {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  actor_name: string | null;
+  description: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface CandidateHistoryResponse {
+  candidate_id: string;
+  applications: CandidateApplicationHistory[];
+  timeline: CandidateTimelineEntry[];
+}
+
 export interface ApplicationDeleteRequest {
   reason: string;
 }
 
+
+/** Mirrors backend/app/schemas/candidate.py § ReapplyGrantResponse — one
+ * HR grant letting a candidate self-apply before the cooldown ends. */
+export interface ReapplyGrantResponse {
+  id: string;
+  candidate_id: string;
+  granted_by_user_id: string | null;
+  granted_by_name: string | null;
+  reason: string;
+  created_at: string;
+  used_at: string | null;
+  used_by_application_id: string | null;
+}
+
+/** When the candidate may self-apply again. `eligible_from`/
+ * `last_self_applied_at` are null for someone with no self-service
+ * history, who is never restricted. */
+export interface ReapplyStatusResponse {
+  candidate_id: string;
+  cooldown_months: number;
+  last_self_applied_at: string | null;
+  eligible_from: string | null;
+  can_self_apply_now: boolean;
+  open_grant: ReapplyGrantResponse | null;
+}
+
+/** Result of HR adding a resume + applying role for a candidate.
+ * `attached_to_existing` = the resume filled in a resume-less application
+ * this candidate already had for that role, rather than creating one. */
+export interface HrApplicationWithResumeResponse {
+  application: ApplicationResponse;
+  screening: ScreeningRunResponse | null;
+  attached_to_existing: boolean;
+}

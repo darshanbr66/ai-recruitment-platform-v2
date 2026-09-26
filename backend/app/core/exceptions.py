@@ -30,11 +30,17 @@ class AppError(Exception):
     status_code: int = status.HTTP_400_BAD_REQUEST
     code: str = "bad_request"
 
-    def __init__(self, message: str, *, code: str | None = None) -> None:
+    def __init__(
+        self, message: str, *, code: str | None = None, data: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.message = message
         if code:
             self.code = code
+        # Optional machine-readable context the client can act on (e.g. the
+        # date a locked-out candidate may reapply). Must be safe to show the
+        # caller — never internal detail.
+        self.data = data
 
 
 class NotFoundError(AppError):
@@ -96,7 +102,13 @@ class BadGatewayError(AppError):
     code = "bad_gateway"
 
 
-def _error_body(code: str, message: str, *, details: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def _error_body(
+    code: str,
+    message: str,
+    *,
+    details: list[dict[str, str]] | None = None,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     body: dict[str, Any] = {
         "error": {
             "code": code,
@@ -106,6 +118,8 @@ def _error_body(code: str, message: str, *, details: list[dict[str, str]] | None
     }
     if details:
         body["error"]["details"] = details
+    if data:
+        body["error"]["data"] = data
     return body
 
 
@@ -138,7 +152,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
-            content=_error_body(exc.code, exc.message),
+            content=_error_body(exc.code, exc.message, data=exc.data),
         )
 
     @app.exception_handler(StarletteHTTPException)

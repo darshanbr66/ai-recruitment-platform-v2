@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.screening import ScreeningStatus
+from app.models.screening import ScreeningDecision, ScreeningStatus
 
 
 class ScreeningRunResponse(BaseModel):
@@ -11,6 +11,7 @@ class ScreeningRunResponse(BaseModel):
 
     id: uuid.UUID
     application_id: uuid.UUID
+    requested_by_user_id: uuid.UUID | None = None
     status: ScreeningStatus
     provider: str
     model: str
@@ -23,6 +24,9 @@ class ScreeningRunResponse(BaseModel):
     concerns: list[str] | None
     experience_assessment: str | None
     education_assessment: str | None
+    decision: ScreeningDecision | None = None
+    matched_requirements: list[str] | None = None
+    missing_requirements: list[str] | None = None
     error_message: str | None
     created_at: datetime
     completed_at: datetime | None

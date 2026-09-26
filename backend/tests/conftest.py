@@ -23,6 +23,11 @@ for _name in (
     # Same rule for the Sigvi assistant: no test may ever reach the real
     # Gemini API, whatever a developer's .env holds.
     "GEMINI_API_KEY",
+    # ...nor any real screening model (the public apply flow screens every
+    # submission). Tests that need a verdict monkeypatch `get_llm_provider`.
+    "OLLAMA_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
 ):
     os.environ[_name] = ""
 
@@ -96,6 +101,30 @@ class RecordingEmailProvider(EmailProvider):
                 reply_to=reply_to,
             )
         )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_candidate_intake_rate_limits() -> None:
+    """The per-IP limiters on the public candidate endpoints are process-wide
+    (lru_cached); every test client shares one address, so each test starts
+    with an empty budget rather than inheriting the previous tests' hits."""
+    from app.api.v1.public.candidate_intake import get_candidate_intake_rate_limiters
+
+    get_candidate_intake_rate_limiters.cache_clear()
+
+
+@pytest.fixture
+def otp_settings(monkeypatch: pytest.MonkeyPatch):
+    """Overrides the email-verification limits for one test, e.g.
+    `otp_settings(email_otp_resend_cooldown_seconds=0)`."""
+    from app.core.config import get_settings
+    from app.services import email_verification_service
+
+    def apply(**overrides: object) -> None:
+        patched = get_settings().model_copy(update=overrides)
+        monkeypatch.setattr(email_verification_service, "get_settings", lambda: patched)
+
+    return apply
 
 
 @pytest.fixture

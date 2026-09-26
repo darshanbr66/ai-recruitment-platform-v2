@@ -11,7 +11,18 @@ import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import type { CandidateResponse, CandidateSource } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
-import { createCandidate, deleteCandidate, listCandidates } from "./api";
+import { listJobs } from "../jobs/api";
+import {
+  addApplicationWithResume,
+  createCandidate,
+  deleteCandidate,
+  getCandidate,
+  listCandidates,
+} from "./api";
+
+/** Roles a recruiter-added candidate can be put forward for — the same set
+ * the candidate detail page offers. */
+const SELECTABLE_JOB_STATUSES = ["OPEN", "DRAFT", "ON_HOLD"];
 
 const CANDIDATES_QUERY_KEY = ["recruiter", "candidates"];
 
@@ -43,35 +54,100 @@ export function CandidatesPage() {
   const [location, setLocation] = useState("");
   const [currentTitle, setCurrentTitle] = useState("");
   const [yearsExperience, setYearsExperience] = useState("");
+  // Optional in this form: HR often adds a candidate before deciding which
+  // role to put them forward for. Supplied together, they create the
+  // application and run AI screening in the same step.
+  const [jobId, setJobId] = useState("");
+  const [resume, setResume] = useState<File | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CandidateResponse | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const jobsQuery = useQuery({
+    queryKey: ["recruiter", "jobs"],
+    queryFn: () => listJobs(accessToken as string),
+    enabled: accessToken !== null,
+  });
+
+  const selectableJobs = (jobsQuery.data ?? []).filter(
+    (job) => SELECTABLE_JOB_STATUSES.includes(job.status) && !job.deleted_at,
+  );
+
+  /**
+   * Create the candidate, then — when HR also chose a role and attached a
+   * resume — create the application and run the existing AI screening on it.
+   *
+   * A candidate who already exists is never duplicated: the backend refuses
+   * the create and names the profile it collided with, and we continue on
+   * *that* candidate, so the resume and role land on the existing record
+   * along with all their history.
+   */
   const createCandidateMutation = useMutation({
-    mutationFn: () =>
-      createCandidate(
-        {
-          email,
-          full_name: fullName,
-          phone: phone || null,
-          location: location || null,
-          current_title: currentTitle || null,
-          years_experience: yearsExperience ? Number(yearsExperience) : null,
-        },
-        accessToken as string,
-      ),
-    onSuccess: () => {
-      showToast("Candidate added.", "success");
+    mutationFn: async () => {
+      const token = accessToken as string;
+      let candidate: CandidateResponse | null = null;
+      let reusedExisting = false;
+      try {
+        candidate = await createCandidate(
+          {
+            email,
+            full_name: fullName,
+            phone: phone || null,
+            location: location || null,
+            current_title: currentTitle || null,
+            years_experience: yearsExperience ? Number(yearsExperience) : null,
+          },
+          token,
+        );
+      } catch (err) {
+        const existingId =
+          err instanceof ApiError && typeof err.data?.existing_candidate_id === "string"
+            ? err.data.existing_candidate_id
+            : null;
+        // Only worth continuing if there is something to add to that
+        // profile; otherwise the collision *is* the answer HR needs.
+        if (!existingId || !jobId || !resume) throw err;
+        candidate = await getCandidate(existingId, token);
+        reusedExisting = true;
+      }
+
+      if (!jobId || !resume) {
+        return { candidate, reusedExisting, application: null };
+      }
+      const result = await addApplicationWithResume(
+        candidate.id,
+        { jobId, resume, runScreening: true },
+        token,
+      );
+      return { candidate, reusedExisting, application: result };
+    },
+    onSuccess: ({ candidate, reusedExisting, application }) => {
+      const screened =
+        application?.screening?.recommendation ?? application?.screening?.decision ?? null;
+      if (application) {
+        const who = reusedExisting
+          ? `${candidate.full_name} already existed — added to`
+          : `${candidate.full_name} added to`;
+        showToast(
+          `${who} ${application.application.job_title}.${screened ? ` AI screening: ${screened}.` : ""}`,
+          "success",
+        );
+      } else {
+        showToast("Candidate added.", "success");
+      }
       setFullName("");
       setEmail("");
       setPhone("");
       setLocation("");
       setCurrentTitle("");
       setYearsExperience("");
+      setJobId("");
+      setResume(null);
       setFormError(null);
       setShowForm(false);
       void queryClient.invalidateQueries({ queryKey: CANDIDATES_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications"] });
     },
     onError: (err) => {
       setFormError(err instanceof ApiError ? err.message : "Unable to reach the server.");
@@ -80,6 +156,16 @@ export function CandidatesPage() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Both or neither: a role with no resume has nothing to screen, and a
+    // resume with no role has nowhere to go.
+    if (Boolean(jobId) !== Boolean(resume)) {
+      setFormError(
+        jobId
+          ? "Attach the candidate's resume, or clear the applying role."
+          : "Select the applying role, or remove the resume.",
+      );
+      return;
+    }
     createCandidateMutation.mutate();
   }
 
@@ -303,6 +389,50 @@ export function CandidatesPage() {
                 disabled={createCandidateMutation.isPending}
               />
             </label>
+
+            <fieldset className="field" style={{ border: "none", padding: 0, margin: 0 }}>
+              <legend style={{ padding: 0, marginBottom: "0.35rem" }}>
+                Applying role <span className="muted">(optional)</span>
+              </legend>
+              <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+                Choose a role and attach the resume to create the application now and run AI
+                screening against that role. AI screening is advisory — you stay the decision
+                maker.
+              </p>
+
+              <label className="field">
+                <span>Role</span>
+                <select
+                  value={jobId}
+                  onChange={(e) => {
+                    setJobId(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
+                  disabled={createCandidateMutation.isPending || jobsQuery.isPending}
+                >
+                  <option value="">{jobsQuery.isPending ? "Loading roles…" : "No role yet"}</option>
+                  {selectableJobs.map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.title}
+                      {job.department ? ` — ${job.department}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Add resume</span>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt"
+                  onChange={(e) => {
+                    setResume(e.target.files?.[0] ?? null);
+                    if (formError) setFormError(null);
+                  }}
+                  disabled={createCandidateMutation.isPending}
+                />
+              </label>
+            </fieldset>
 
             {formError && <Alert>{formError}</Alert>}
 

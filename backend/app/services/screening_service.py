@@ -7,14 +7,14 @@ mutating a prior run (docs/ai-screening.md § 4).
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, NotFoundError
 from app.integrations.ai import AIProviderError, get_llm_provider
 from app.integrations.ai.extraction import extract_resume_text
 from app.integrations.storage import StorageError, get_resume_storage_for_provider
-from app.models.screening import ScreeningRun, ScreeningStatus
+from app.models.screening import ScreeningDecision, ScreeningRun, ScreeningStatus
 from app.services import application_service
 
 
@@ -23,8 +23,12 @@ async def run_screening(
     *,
     organization_id: uuid.UUID,
     application_id: uuid.UUID,
-    requested_by_user_id: uuid.UUID,
+    requested_by_user_id: uuid.UUID | None,
 ) -> ScreeningRun:
+    """`requested_by_user_id=None` is the system's own submission-time run
+    (app/services/public_application_service.py). Evaluates against the
+    job's full stored JD — also when the JD is hidden from the public page
+    (that flag is presentation only)."""
     application = await application_service.get_application(db, application_id)
     if application is None:
         raise NotFoundError("Application not found.")
@@ -72,9 +76,21 @@ async def run_screening(
     run.concerns = verdict.concerns
     run.experience_assessment = verdict.experience_assessment
     run.education_assessment = verdict.education_assessment
+    run.decision = ScreeningDecision(verdict.decision) if verdict.decision else None
+    run.matched_requirements = verdict.matched_requirements
+    run.missing_requirements = verdict.missing_requirements
     run.completed_at = datetime.now(UTC)
     await db.flush()
     return run
+
+
+#: `created_at` is the transaction's `now()`, so two runs in one transaction
+#: tie on it; `completed_at` is set in application code and always advances
+#: (same reasoning as match_engine.get_latest_match).
+NEWEST_FIRST = (
+    ScreeningRun.created_at.desc(),
+    func.coalesce(ScreeningRun.completed_at, ScreeningRun.created_at).desc(),
+)
 
 
 async def list_screening_runs(
@@ -83,6 +99,6 @@ async def list_screening_runs(
     result = await db.execute(
         select(ScreeningRun)
         .where(ScreeningRun.application_id == application_id)
-        .order_by(ScreeningRun.created_at.desc())
+        .order_by(*NEWEST_FIRST)
     )
     return list(result.scalars().all())

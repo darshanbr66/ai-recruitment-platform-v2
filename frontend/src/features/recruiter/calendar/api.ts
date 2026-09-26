@@ -1,5 +1,6 @@
 import { apiClient } from "../../../lib/apiClient";
 import type {
+  CalendarAttendeeOption,
   CalendarEventCreateRequest,
   CalendarEventResponse,
   CalendarEventUpdateRequest,
@@ -43,4 +44,14 @@ export function updateEvent(eventId: string, payload: CalendarEventUpdateRequest
 
 export function deleteEvent(eventId: string, accessToken: string) {
   return apiClient.delete(`/api/v1/recruiter/calendar/events/${eventId}`, accessToken);
+}
+
+/** People the caller may invite to an event. Distinct from the Team
+ * directory (`/recruiter/users`, `user.read` — ORG_ADMIN only): anyone who
+ * can see the calendar can pick attendees. */
+export function listAttendeeOptions(accessToken: string) {
+  return apiClient.get<CalendarAttendeeOption[]>(
+    "/api/v1/recruiter/calendar/attendee-options",
+    accessToken,
+  );
 }

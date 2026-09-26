@@ -24,6 +24,11 @@ dependencies = [
     # extension (docs/architecture.md § 1 / § 7: pgvector-backed resume
     # chunk retrieval for the internal AI matching engine).
     "pgvector>=0.3",
+    # Mobile number parsing/validation/E.164 normalization — the mobile
+    # number is a candidate's unique identity key (one profile per person),
+    # so "+91 98765-43210" and "09876543210" must normalize to the same
+    # value. Hand-rolled normalization gets country/trunk-prefix rules wrong.
+    "phonenumbers>=8.13",
 ]
 
 [project.optional-dependencies]

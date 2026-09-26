@@ -6,20 +6,14 @@ import { HeroScene } from "./hero/HeroScene";
 import { NODE_KINDS, type NodeKind } from "./hero/networkLayout";
 
 /**
- * The public hero. Left: the message and the two ways in. Behind and to the
- * right: the recruitment-intelligence network. Below: a legend that says what
+ * The public hero. Left: the company message and the two ways in (learn about
+ * the company, or deliberately choose Careers). Behind and to the right: the
+ * network visual. Below: a legend that says what
  * the network *is* — hovering (or focusing, or pressing) a category lights it
  * up in the scene — so the visual explains the product instead of decorating
  * the page.
  */
-export function HeroSection({
-  careersPath,
-  openRoleCount,
-}: {
-  careersPath: string;
-  /** Live count from the jobs API; omitted while loading or when zero. */
-  openRoleCount: number | null;
-}) {
+export function HeroSection({ careersPath }: { careersPath: string }) {
   const [hovered, setHovered] = useState<NodeKind | null>(null);
   const [pinned, setPinned] = useState<NodeKind | null>(null);
   const highlight = hovered ?? pinned;
@@ -31,38 +25,27 @@ export function HeroSection({
 
       <div className="hero-inner">
         <div className="hero-copy">
-          <p className="eyebrow hero-eyebrow">SIGVITAS Careers</p>
+          <p className="eyebrow hero-eyebrow">SIGVITAS</p>
           <h1 id="hero-title" className="hero-title">
             Build what's next,
             <span className="hero-accent"> with SIGVITAS.</span>
           </h1>
           <p className="hero-sub">
-            Explore open roles and campus opportunities, then apply in minutes. AI helps our
-            recruiters review every application — a person always makes the decision.
+            People, technology and a culture built to grow both. Get to know SIGVITAS — who we
+            are, what we value, and how we work.
           </p>
 
           <div className="hero-actions">
             <Magnetic>
-              <Link to={careersPath} className="btn btn-primary btn-lg hero-cta">
-                Explore Open Roles
+              <a href="#about" className="btn btn-primary btn-lg hero-cta">
+                About SIGVITAS
                 <Icon name="arrow-right" size={18} />
-              </Link>
+              </a>
             </Magnetic>
-            <a href="#process" className="btn btn-ghost btn-lg">
-              How we hire
-            </a>
+            <Link to={careersPath} className="btn btn-ghost btn-lg">
+              Careers
+            </Link>
           </div>
-
-          <ul className="hero-proof" aria-label="At a glance">
-            {openRoleCount !== null && openRoleCount > 0 && (
-              <li className="hero-proof-live">
-                <span className="live-dot" aria-hidden="true" />
-                {openRoleCount} open {openRoleCount === 1 ? "role" : "roles"} right now
-              </li>
-            )}
-            <li>No account needed to apply</li>
-            <li>Every decision made by a person</li>
-          </ul>
         </div>
 
         <div

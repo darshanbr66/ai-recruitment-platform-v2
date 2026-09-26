@@ -15,7 +15,9 @@ portal flow") describes a self-service candidate account that does not
 exist yet — see `docs/ai-screening.md`/`docs/assessment.md`/
 `docs/campus-hiring.md` implementation-status notes for what candidates
 actually get today (an anonymous public apply flow and token-based
-assessment links, no login).
+assessment links, no login). The anonymous apply flow — email verification,
+one-profile-per-person identity rules, submission-time AI screening and HR
+override/matching — is § 6.
 
 ## 1. Why a workflow module, not scattered status checks
 
@@ -37,6 +39,11 @@ application into an invalid state or skip the history write.
 APPLIED
   → UNDER_REVIEW
   → REJECTED
+  → AI_SCREENED_OUT          (system only — submission-time AI screening, § 6)
+
+AI_SCREENED_OUT
+  → UNDER_REVIEW             (HR override — reason required, audited)
+  → REJECTED                 (HR confirms the screen-out)
 
 UNDER_REVIEW
   → SCREENING
@@ -92,6 +99,16 @@ Notes:
   value no longer exists in the enum (application code or database). `HIRED`
   was added as the new outcome after `SELECTED`, matching the product's
   "Selected → Hired" flow.
+- **`AI_SCREENED_OUT` is advisory, never final, and system-only.** It is in
+  `SYSTEM_ONLY_TARGETS`: only the automatic submission-time screening
+  (`actor_user_id=None`) can set it — a person asking for it gets a 409. It
+  is deliberately distinct from `REJECTED`. Moving out of it to anything but
+  `REJECTED` is an *AI override* (`POST /recruiter/applications/{id}/ai-override`,
+  or a normal status change): a reason is mandatory (422 `reason_required`
+  otherwise) and an `AI_SCREENING_OVERRIDDEN` activity is recorded with it.
+- **`ApplicationSource.HR_MATCH`** marks an application HR created by
+  matching an existing candidate to another job (§ 6). It is a source, not a
+  status: the new application starts at `APPLIED` like any other.
 
 ## 3. Candidate-visible projection
 
@@ -113,6 +130,13 @@ The candidate API maps internal status to a small, stable public vocabulary:
 This mapping lives in the candidate-facing schema/serializer, not in the
 workflow module itself — the workflow module's vocabulary is the operational
 truth; the candidate projection is a presentation concern.
+
+**Not implemented yet** — there is no candidate portal API (§ 5), so no
+status is shown to candidates after they apply, and the table above has no
+row for `AI_SCREENED_OUT` yet. What a candidate is told today is only the
+submission result of the self-service flow (§ 6): `RECEIVED` or
+`NOT_SHORTLISTED_FOR_ROLE`, plus the welcome email. Neither ever names the
+internal status, the AI, its score or its reasoning.
 
 ## 4. Normal recruitment flow
 
@@ -141,3 +165,155 @@ The "Apply" action from a public job detail page, if the visitor isn't
 authenticated, routes through candidate register/login and returns to
 complete the application — the Job the candidate was applying to is
 preserved across that redirect (client-side state), not silently dropped.
+
+## 6. Candidate intake (self-service application) — implemented
+
+What a candidate actually does today, with no account: apply from the public
+careers site, or from a campus drive link (`docs/campus-hiring.md` § 3).
+Both entry points run the same code, `app/services/public_application_service.py`,
+so the identity rules below are identical for both.
+
+```
+verify email (one-time code) → fill the full form + resume → identity check
+(one profile per person) → Candidate + Application + resume COMMITTED →
+AI screening against the job → MATCH / AI unavailable: APPLIED
+                              → NOT_MATCH: AI_SCREENED_OUT (kept, HR can override)
+→ welcome email (both outcomes)
+```
+
+**1. Email verification (required).** The candidate asks for a 6-digit code
+and then confirms it. Confirming it returns a short-lived verification token,
+which the application form must send back. The browser never holds a
+"verified" flag of its own. Everything is enforced server-side in
+`app/services/email_verification_service.py`, and its state is stored in the
+tenant-scoped `email_verifications` table:
+
+- the code is stored only as an HMAC keyed with the server secret, and the
+  token only as its SHA-256. Neither is ever stored in plain text;
+- a code expires (`EMAIL_OTP_TTL_MINUTES`) and allows a limited number of
+  wrong guesses (`EMAIL_OTP_MAX_ATTEMPTS`), after which a new code is needed;
+- resending has a cooldown (`EMAIL_OTP_RESEND_COOLDOWN_SECONDS`), and each
+  email address has an hourly send cap (`EMAIL_OTP_MAX_SENDS_PER_HOUR`);
+- the token expires (`EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`) and is bound to
+  one organization and one email address. It is used up by a successful
+  submission, and also by a submission blocked as a duplicate, so it can't
+  be replayed to test other mobile numbers;
+- per-IP budgets apply in front of all of this
+  (`PUBLIC_OTP_REQUEST_LIMIT_PER_WINDOW`, `PUBLIC_OTP_VERIFY_LIMIT_PER_WINDOW`,
+  `PUBLIC_APPLY_LIMIT_PER_WINDOW`, per 10-minute window, per instance).
+
+Asking for a code never reveals whether the address already has a profile.
+Once the code is confirmed, the caller has proven they own the address, so
+an existing candidate is told at that point (409 `already_registered`) rather
+than after filling in the form.
+
+**2. The form.** All of these are mandatory: full name, email, mobile
+number, date of birth (at least 16 years old), place of birth, languages
+known (1–15), candidate type, current and preferred location, qualification,
+LinkedIn and GitHub URLs, and a resume. The database enforces the identity
+part: `ck_candidates_verified_identity_complete` means a candidate with
+`email_verified_at` set always has a phone, date of birth, place of birth and
+at least one language. Recruiter-created candidates don't go through
+verification, so for them these fields stay optional.
+
+**3. Identity: one profile per person, one self-service application.**
+Within an organization, a person is identified by email and by mobile
+number. Mobile numbers are normalized to E.164 with `phonenumbers`
+(`app/core/phone.py`). A number typed without a country code is read in
+`DEFAULT_PHONE_REGION`, so "98765 43210", "09876543210" and "+91 98765-43210"
+all count as the same person. The unique index `uq_candidates_org_phone` on
+`(organization_id, phone)` enforces this. If either detail matches an
+existing candidate, the submission is refused with a message that doesn't
+say which detail matched and points to the organization's careers contact.
+Nothing is created, and a `DUPLICATE_APPLICATION_BLOCKED` activity is
+recorded on the existing profile for HR. Further roles also come from HR
+(step 6).
+
+**3a. The reapply window.** A candidate who has applied before may
+self-apply again once `CANDIDATE_REAPPLY_COOLDOWN_MONTHS` (default 3)
+calendar months have passed since their previous *self-service*
+application. The rule lives in `app/services/reapply_service.py`:
+
+- it reuses the same Candidate profile — no duplicate is created, and every
+  previous application and its screening history is preserved;
+- only self-service applications count. A candidate HR created, imported or
+  matched to a role has no self-apply history and is never locked out by it;
+- every self-service application counts whatever its status
+  (`AI_SCREENED_OUT` included) and even if archived: the window is about
+  when the person last applied, not how it went;
+- inside the window the submission is refused with 409 `reapply_locked`,
+  carrying `last_applied_at` and `eligible_from`. The candidate is told
+  plainly when they can apply again. This is only ever raised to someone who
+  has just verified their own email address, so naming their dates is safe;
+- a `DUPLICATE_APPLICATION_BLOCKED` activity is recorded for HR, and the
+  email verification token is used up, so it can't be replayed.
+
+**HR override ("Allow Reapply").** `POST /api/v1/recruiter/candidates/{id}/reapply-grants`
+(`candidate.reapply.grant`, reason required) records a `CandidateReapplyGrant`
+letting that candidate self-apply once before the window ends. It is
+single-use: their next self-service application stamps `used_at` and
+`used_by_application_id`, after which the normal window applies again. At
+most one grant may be open per candidate. Rows are never deleted — with the
+`CANDIDATE_REAPPLY_GRANTED` / `CANDIDATE_REAPPLY_GRANT_USED` activities they
+are the audit trail of who allowed what, when and why. Existing applications
+are untouched. `GET .../reapply-status` reports the window and any open
+grant.
+
+**4. Commit first, then screen.** The candidate, application and resume are
+committed *before* the AI call and before any email. A slow or failed model,
+or a failed email, can never lose an application.
+
+**5. Submission-time AI screening.** The resume is screened against the
+job's description by the configured `LLMProvider` (`docs/ai-screening.md`).
+The `ScreeningRun` records `decision` (`MATCH` / `NOT_MATCH`) and the
+`matched_requirements` / `missing_requirements` lists.
+
+- `MATCH`: the application stays `APPLIED` for recruiter review, and the
+  candidate is told `RECEIVED`.
+- `NOT_MATCH`: the system moves it to `AI_SCREENED_OUT` (§ 2). It is kept
+  and visible to HR, and the candidate is told `NOT_SHORTLISTED_FOR_ROLE`.
+- AI unconfigured or failing: the application stays `APPLIED` and an
+  `AI_SCREENING_FAILED` activity is recorded. A failure never screens anyone
+  out; a person decides.
+
+In every case the candidate gets a welcome email. The screened-out version
+says the profile isn't eligible for this particular role and is retained for
+others. Neither version mentions AI, a score or reasons. Both use the
+organization's `careers_contact_email` as reply-to and contact address,
+when one is set. A failed email is recorded as an activity and never undoes
+the application.
+
+**6. HR decisions.**
+
+- *Override:* `POST /api/v1/recruiter/applications/{id}/ai-override`
+  (`application.status.change`, reason required) moves an `AI_SCREENED_OUT`
+  application to `UNDER_REVIEW`. HR can instead confirm it as `REJECTED`.
+- *Match to another job:* `POST /api/v1/recruiter/candidates/{id}/job-matches`
+  (`application.create`) creates a *new* `HR_MATCH` application for the same
+  candidate. The candidate's latest resume is attached to it, and the job
+  must be `OPEN`, `DRAFT` or `ON_HOLD`. The original application is left
+  untouched, and matching the same job twice returns 409.
+- *History:* `GET /api/v1/recruiter/candidates/{id}/history` (needs both
+  `candidate.read` and `screening.read`) returns every application, flagging
+  the original one, with its screening runs and an activity timeline.
+- *Add a resume + applying role:* `POST /api/v1/recruiter/candidates/{id}/applications`
+  (`application.create`, multipart: `job_id`, `resume`, `run_screening`)
+  creates a `RECRUITER_ADDED` application and runs the same AI screening
+  gate a self-service submission gets — MATCH stays `APPLIED` for review,
+  NOT_MATCH becomes `AI_SCREENED_OUT`, an AI failure leaves it `APPLIED`.
+  It composes the existing pieces (`application_service.create_application`,
+  `resume_service.save_resume`, `public_application_service.screen_new_application`)
+  rather than duplicating them. If the candidate already has a resume-less
+  application for that role, the resume is filled in there instead of a
+  second one being created. No candidate OTP is involved: HR is
+  authenticated staff acting within their own organization, and because the
+  application is not self-service it never touches the reapply window.
+
+All of these endpoints are tenant-scoped. An id from another organization
+returns 404, exactly like an id that doesn't exist.
+
+**7. Careers contact.** `organizations.careers_contact_email` is the
+recruitment team's public contact address. Only a SUPER_ADMIN sets it
+(`PATCH /api/v1/admin/organizations/{id}`; `null` un-publishes it). It is
+published through `GET /api/v1/public/organizations/{slug}`, and it is never
+hardcoded.

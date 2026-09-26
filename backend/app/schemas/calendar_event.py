@@ -8,6 +8,18 @@ from app.models.calendar_event import CalendarEventStatus, CalendarEventType
 MAX_ATTENDEES = 50
 
 
+class CalendarAttendeeOption(BaseModel):
+    """One selectable attendee for the event form — the caller's own
+    organization only. Deliberately narrower than UserResponse (no roles, no
+    organization_id): picking a meeting attendee is not user administration,
+    so it sits behind `calendar.read` rather than `user.read`.
+    """
+
+    id: uuid.UUID
+    full_name: str
+    email: str
+
+
 class CalendarEventCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=4000)

@@ -586,3 +586,223 @@
     display: none;
   }
 }
+
+/* --- Talk to Admin (features/recruiter/adminMessages) -------------------- */
+
+.admin-thread {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.admin-message {
+  display: flex;
+}
+
+/* Your own messages sit on the right — the universal reading of "mine" in
+   a conversation, and the only visual cue needed to tell the sides apart. */
+.admin-message.is-own {
+  justify-content: flex-end;
+}
+
+.admin-message-bubble {
+  max-width: min(32rem, 85%);
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.admin-message.is-own .admin-message-bubble {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.admin-message-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  margin-bottom: 0.25rem;
+}
+
+.admin-message-receipt {
+  margin-left: auto;
+}
+
+.admin-message-body {
+  margin: 0;
+  font-size: 0.9rem;
+  /* Keeps the sender's line breaks without letting a long unbroken string
+     stretch the bubble. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-composer {
+  margin-top: 1rem;
+}
+
+.admin-conversation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-conversation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-conversation-item:hover {
+  background: var(--color-bg-subtle);
+}
+
+.admin-conversation-item.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-bg-subtle);
+}
+
+.admin-conversation-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.admin-conversation-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.admin-conversation-preview,
+.admin-conversation-time {
+  font-size: 0.78rem;
+}
+
+.admin-conversation-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The inbox stacks under the thread on a phone. */
+@media (max-width: 768px) {
+  .admin-thread {
+    max-height: 60vh;
+  }
+}
+
+/* ---- Calendar attendee selector -------------------------------------- */
+/* Collapsed, the field is just the chips for who is invited plus a search
+   input; the directory is a popover anchored under that input, so the modal
+   costs the same height whether the organization has three people or three
+   hundred. */
+.attendee-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.attendee-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attendee-chips .chip {
+  color: var(--color-text);
+  white-space: normal;
+}
+
+/* `.search-input-wrap` carries `flex: 1 1 220px` for the horizontal filter
+   bars it was written for. In this column-direction flex field that basis is
+   a *height*, which is what used to open a tall blank gap under the input —
+   so the wrap is pinned to its content height here. It also anchors the
+   popover. */
+.attendee-search {
+  width: 100%;
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.attendee-popover {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  /* Reaching the end of the list must not start scrolling the dialog behind it. */
+  overscroll-behavior: contain;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.attendee-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* Pointer hover and the keyboard highlight (aria-activedescendant) share one
+   appearance, so arrowing through the list looks like hovering it. */
+.attendee-option:hover,
+.attendee-option[data-active="true"] {
+  background: var(--color-bg-subtle);
+}
+
+.attendee-option[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.attendee-option-email {
+  font-size: var(--text-meta);
+}
+
+.attendee-popover-empty {
+  padding: 0.35rem 0.5rem;
+}
+
+.attendee-empty,
+.attendee-hint {
+  margin: 0;
+  font-size: var(--text-meta);
+}

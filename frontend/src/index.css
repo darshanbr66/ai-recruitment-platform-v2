@@ -226,7 +226,11 @@ a {
   gap: 1rem;
 }
 
-.field input,
+/* Text-like controls only. A checkbox/radio must keep its native box: the
+   `width: 100%` + padding + border below would stretch one across the whole
+   field, and the focus ring then reads as a rectangle drawn around the
+   surrounding row rather than around the control. */
+.field input:not([type="checkbox"]):not([type="radio"]),
 .field select,
 .field textarea {
   padding: 0.6rem 0.75rem;
@@ -242,7 +246,7 @@ a {
     box-shadow var(--dur-fast) var(--ease-out);
 }
 
-.field input:focus,
+.field input:not([type="checkbox"]):not([type="radio"]):focus,
 .field select:focus,
 .field textarea:focus,
 .search-input:focus,
@@ -250,6 +254,15 @@ a {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+/* Checkboxes/radios are left to the global `:focus-visible` rule further
+   down: a 2px outline hugging the control itself, drawn for keyboard focus
+   only, so a mouse click paints no ring. They must not be stretched, so
+   they never shrink to fill a flex row either. */
+.field input[type="checkbox"],
+.field input[type="radio"] {
+  flex: none;
 }
 
 .field input::placeholder,
@@ -587,6 +600,17 @@ fieldset.field legend {
 
 .search-input-wrap .search-input {
   width: 100%;
+  padding-left: 2.25rem;
+  padding-right: 2.25rem;
+}
+
+/* Inside a `.field`, `.field input:not([type="checkbox"]):not([type="radio"])`
+   wins on specificity and sets `padding` as a *shorthand*, which resets the
+   gutters the leading icon and trailing clear button sit in — the icon then
+   overlaps the placeholder. Restated here at matching specificity (and later
+   in the cascade) so an icon search box looks the same inside a form field as
+   it does in a toolbar. */
+.field .search-input-wrap input.search-input {
   padding-left: 2.25rem;
   padding-right: 2.25rem;
 }
@@ -1067,6 +1091,24 @@ a,
 
 .detail-row-label {
   color: var(--color-text-muted);
+}
+
+/* Collapsible (shared/components/Collapsible.tsx) — caps a tall panel and
+   fades its last rows so the clip reads as "there is more", not as content
+   that simply stops. Only the clipped state is styled; content that fits
+   renders untouched. */
+.collapsible-content.is-clipped {
+  max-height: var(--collapsed-height);
+  overflow: hidden;
+  /* The fade is a mask, so it works on any background (card, dark mode)
+     without painting a gradient of its own. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 3rem), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3rem), transparent);
+}
+
+.collapsible-toggle {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
 }
 
 .timeline {

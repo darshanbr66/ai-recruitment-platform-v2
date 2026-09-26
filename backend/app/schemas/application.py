@@ -5,6 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.application import ApplicationSource, ApplicationStatus
+from app.schemas.screening import ScreeningRunResponse
 
 
 class ApplicationSortField(StrEnum):
@@ -28,6 +29,15 @@ class ApplicationCreateRequest(BaseModel):
     candidate_id: uuid.UUID
     job_id: uuid.UUID
     source: ApplicationSource = ApplicationSource.RECRUITER_ADDED
+
+
+class CandidateJobMatchRequest(BaseModel):
+    job_id: uuid.UUID
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class AIScreeningOverrideRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class ApplicationStatusChangeRequest(BaseModel):
@@ -57,6 +67,9 @@ class ApplicationResponse(BaseModel):
     campus_drive_id: uuid.UUID | None = None
     status: ApplicationStatus
     source: ApplicationSource
+    #: The candidate submitted it themselves (careers site / campus drive
+    #: link) — as opposed to staff creating it.
+    is_self_service: bool = False
     applied_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -74,3 +87,13 @@ class ApplicationStatusHistoryEntry(BaseModel):
     changed_by_user_id: uuid.UUID | None
     reason: str | None
     created_at: datetime
+
+
+class HrApplicationWithResumeResponse(BaseModel):
+    """HR added a resume + applying role for a candidate. `screening` is the
+    newest run (None when screening wasn't requested); the application's
+    `status` already reflects the gate (APPLIED or AI_SCREENED_OUT)."""
+
+    application: ApplicationResponse
+    screening: ScreeningRunResponse | None = None
+    attached_to_existing: bool = False
